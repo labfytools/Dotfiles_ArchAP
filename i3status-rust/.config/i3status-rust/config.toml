@@ -1,0 +1,103 @@
+invert_scrolling = true
+
+[theme]
+theme = "ctp-mocha"
+[icons]
+icons = "material-nf"
+
+[[block]]
+block = "focused_window"
+[block.format]
+full = " $title.str(max_w:15) |"
+short = " $title.str(max_w:10) |"
+
+[[block]]
+block = "music"
+format = " $icon {$combo.str(max_w:20,rot_interval:0.5) $play $next |} "
+[[block.click]]
+button = "left"
+action = "play_pause"
+[[block.click]]
+button = "middle"
+widget = "."
+action = "toggle_format"
+
+[[block]]
+block = "bluetooth"
+mac = "E4:61:F4:F4:A1:F7"
+format = " JBL Tune {{$battery_icon}} "
+disconnected_format = " 󰂲"
+[[block.click]]
+button = "left"
+action = "blueman-manager"
+
+[[block]]
+block = "net"
+device = "wlp1s0"
+format = " $icon {$signal_strength $ssid} "
+
+[[block]]
+block = "sound"
+step_width = 3
+max_vol = 100
+
+[[block]]
+block = "backlight"
+device = "amdgpu_bl1"
+invert_icons = true
+minimum = 10
+
+[[block]]
+block = "battery"
+format = " $icon $percentage "
+
+[[block]]
+block = "custom"
+command = "~/.local/bin/tlp-profile.sh"
+interval = 5
+
+[[block]]
+block = "packages"
+package_manager = ["pacman", "aur"]
+interval = 600
+error_interval = 300
+max_retries = 5
+format = " $icon $total updates "
+format_singular = " $icon $total update "
+format_up_to_date = " $icon Up to date "
+# aur_command should output available updates to stdout (ie behave as echo -ne "update\n")
+aur_command = "yay -Qua"
+
+[[block]]
+block = "notify"
+driver = "swaync"
+[[block.click]]
+button = "left"
+action = "show"
+[[block.click]]
+button = "right"
+action = "toggle_paused"
+[[block]]
+block = "time"
+interval = 60
+[block.format]
+full = " $icon $timestamp.datetime(f:'%d-%m-%Y %R')"
+short = " $icon $timestamp.datetime(f:%R) "
+
+[[block]]
+block = "menu"
+text = " \uf011 "
+[[block.items]]
+display = " ->  Sleep  <-"
+cmd = "systemctl suspend"
+[[block.items]]
+display = " ->  Logout  <-"
+cmd = "swaymsg exit"
+[[block.items]]
+display = " -> Power Off <-"
+cmd = "poweroff"
+confirm_msg = "Are you sure you want to power off?"
+[[block.items]]
+display = " ->  Reboot  <-"
+cmd = "reboot"
+confirm_msg = "Are you sure you want to reboot?"

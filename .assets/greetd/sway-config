@@ -1,0 +1,14 @@
+exec "regreet; swaymsg exit"
+include /etc/sway/config.d/*
+
+### Keyboard
+input * {
+    xkb_layout fr
+    xkb_variant oss
+}
+
+### Touchpad
+input "type:touchpad" {
+    tap enabled
+    tap_button_map lrm
+}

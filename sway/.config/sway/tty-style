@@ -1,0 +1,33 @@
+#
+### Layout 
+#
+
+# Default wallpaper (more resolutions are available in /usr/share/backgrounds/sway/)
+    output * bg /usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
+    output eDP-1 resolution 1920x1080 position 1920,0
+
+client.focused          #88c0d0 #2e3440 #eceff4 #88c0d0 #88c0d0
+client.unfocused        #4c566a #2e3440 #d8dee9 #4c566a #4c566a
+client.urgent           #bf616a #2e3440 #eceff4 #bf616a #bf616a
+client.focused_inactive #434c5e #2e3440 #eceff4 #434c5e #434c5e
+
+# set gtk+ theme
+    set $gnome-schema org.gnome.desktop.interface
+    exec_always {
+        gsettings set $gnome-schema gtk-theme 'Catppuccin-Mocha'
+        gsettings set $gnome-schema cursor-theme 'Catppuccin-cursor'
+        gsettings set $gnome-schema font-name 'jetbrains mono nerd font 12'
+        gsettings set $gnome-schema color-scheme 'prefer-dark'
+    }
+
+# Pas de titre, bordures fines ou nulles
+    default_border pixel 2
+    hide_edge_borders smart
+    default_floating_border normal
+    titlebar_border_thickness 0
+    titlebar_padding 0 0
+
+
+# Set inner/outer gaps
+    gaps inner 5
+    gaps outer -3

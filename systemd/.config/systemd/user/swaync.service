@@ -1,0 +1,11 @@
+[Unit]
+Description=Wayland notification daemon
+PartOf=wayland-session.target
+After=wayland-session.target
+
+[Service]
+ExecStart=/usr/bin/swaync
+Restart=on-failure
+
+[Install]
+WantedBy=wayland-session.target

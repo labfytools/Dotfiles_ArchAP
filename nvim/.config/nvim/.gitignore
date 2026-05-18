@@ -1,0 +1,9 @@
+# Fichiers temporaires Vim/Neovim
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+.netrwhist
+*~
+tags
+
+# Cache/plugin manager (adapter selon ton setup)
+plugin/packer_compiled.lua

@@ -1,0 +1,4 @@
+# ~/.config/bat/config
+--theme="Catppuccin Mocha"
+--color=always
+--style=plain

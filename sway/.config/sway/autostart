@@ -1,0 +1,59 @@
+# =========== #
+#  Autostart  #
+# =========== #
+
+# =================================================
+# Filtre lumière bleue (wlsunset)
+# Notifications (swaync)
+# gnome-keyring-daemon
+# protonmail-bridge
+#
+# Les outils précédent ont été ajouter à systemd --user
+#
+# =================================================
+
+# =================================================
+# Transparence
+# =================================================
+
+exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py
+
+# =================================================
+# Règles d'assignation automatique
+# =================================================
+
+assign [app_id="kitty-1"] workspace 1
+assign [app_id="kitty-2"] workspace 1
+assign [app_id="electron" title="Perplexity"] workspace 1
+assign [app_id="chromium"] workspace 2
+assign [app_id="firefox"] workspace 3
+assign [app_id="proton-bridge"] workspace 9
+assign [app_id="org.mozilla.Thunderbird"] workspace 9
+assign [class="Spotify"] workspace 10
+
+# =================================================
+# Lancement des applications
+# =================================================
+
+exec kitty --class kitty-1 --directory $HOME
+exec kitty --class kitty-2 --directory $HOME
+exec perplexity
+exec chromium
+exec thunderbird
+exec spotify-launcher
+
+exec ~/.config/sway/scripts/layout-workspace1.sh
+
+# =================================================
+# Presse-papier
+# =================================================
+
+exec wl-paste --watch clipvault store
+exec wl-paste --type image/png --watch clipvault store
+
+# =================================================
+# Verrouillage auto (swayidle)
+# =================================================
+
+exec-once=swayidle -w timeout 300 'swaylock -f -c 000000' timeout 301 'systemctl suspend' before-sleep 'swaylock -f -c 000000'
+

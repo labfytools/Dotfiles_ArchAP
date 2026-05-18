@@ -1,0 +1,10 @@
+[Unit]
+Description=Clean makepkg temporary directory
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '[ -d "%h/.cache/makepkg" ] && rm -rf "%h/.cache/makepkg/" || true'
+
+[Install]
+WantedBy=default.target

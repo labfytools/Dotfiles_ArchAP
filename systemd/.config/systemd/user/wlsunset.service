@@ -1,0 +1,11 @@
+[Unit]
+Description=Wayland color temperature (wlsunset)
+PartOf=wayland-session.target
+After=wayland-session.target
+
+[Service]
+ExecStart=/usr/bin/wlsunset -l 48.85 -L 2.35 -t 3000 -T 6500
+Restart=on-failure
+
+[Install]
+WantedBy=wayland-session.target

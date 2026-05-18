@@ -1,0 +1,11 @@
+[Unit]
+Description=GNOME keyring daemon
+PartOf=wayland-session.target
+After=wayland-session.target
+
+[Service]
+ExecStart=/usr/bin/gnome-keyring-daemon --components=pkcs11,secrets,ssh --start
+Restart=on-failure
+
+[Install]
+WantedBy=wayland-session.target

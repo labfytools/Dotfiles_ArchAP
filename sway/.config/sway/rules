@@ -1,0 +1,10 @@
+# =========== #
+#    Rules    #
+# =========== #
+
+#=================================================
+# Windows rules
+#=================================================
+
+for_window [app_id="blueman-manager"] floating enable, resize set 40ppt 40ppt, move position center
+for_window [app_id="Proton Pass"] floating enable, resize set 40ppt 40ppt, move position right top

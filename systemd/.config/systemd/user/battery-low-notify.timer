@@ -1,0 +1,10 @@
+[Unit]
+Description=Run low battery notification check every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=battery-low-notify.service
+
+[Install]
+WantedBy=timers.target

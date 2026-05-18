@@ -1,0 +1,96 @@
+#compdef aurinstall aurupdate aurremove aursearch
+
+_aurlist_dirs() {
+  local -a pkgs
+  local AUR_DIR=${AUR_DIR:-$HOME/Aur}
+
+  pkgs=()
+  if [[ -d $AUR_DIR ]]; then
+    local d
+    for d in "$AUR_DIR"/*; do
+      [[ -d $d ]] || continue
+      pkgs+=("${d:t}")
+    done
+  fi
+
+  (( ${#pkgs[@]} )) && compadd "$pkgs[@]"
+}
+
+_aurlist_installed() {
+  local -a pkgs
+  pkgs=(${(f)"$(pacman -Qm 2>/dev/null | awk '{print $1}')"})
+  (( ${#pkgs[@]} )) && compadd "$pkgs[@]"
+}
+
+_aursearch_online() {
+  local cur
+  cur="${words[CURRENT]}"
+
+  [[ -z "$cur" || ${#cur} -lt 2 ]] && return 0
+
+  command -v curl >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local encoded_cur
+  encoded_cur=$(printf '%s' "$cur" | jq -sRr @uri 2>/dev/null) || return 0
+
+  local -a remote_pkgs
+  remote_pkgs=(${(f)"$(
+    curl -fsSL "https://aur.archlinux.org/rpc/?v=5&type=search&by=name&arg=${encoded_cur}" 2>/dev/null \
+    | jq -r '.results[].Name' 2>/dev/null
+  )"})
+
+  (( ${#remote_pkgs[@]} )) && compadd "$remote_pkgs[@]"
+}
+
+_aurinstall() {
+  _arguments -s \
+    '-e[demander avant d éditer PKGBUILD et .SRCINFO]' \
+    '-E[ouvrir systématiquement PKGBUILD et .SRCINFO]' \
+    '-d[télécharger ou mettre à jour sans build ni install]' \
+    '*:paquet AUR:->pkg'
+
+  case $state in
+    pkg)
+      _aurlist_dirs
+      _aursearch_online
+      ;;
+  esac
+}
+
+_aurupdate() {
+  _arguments -s
+}
+
+_aurremove() {
+  _arguments -s \
+    '*:paquet installé:->pkg'
+
+  case $state in
+    pkg)
+      _aurlist_installed
+      ;;
+  esac
+}
+
+_aursearch() {
+  _arguments -s \
+    '-n[rechercher seulement dans le nom]' \
+    '-m[rechercher par mainteneur]' \
+    '-d[afficher les détails complets]' \
+    '-q[afficher seulement les noms]' \
+    '-l+[limiter le nombre de résultats]:nombre:' \
+    '-s+[trier les résultats]:mode:(popularity votes name modified submitted)' \
+    '*:terme ou paquet:->pkg'
+
+  case $state in
+    pkg)
+      _aursearch_online
+      ;;
+  esac
+}
+
+compdef _aurinstall aurinstall
+compdef _aurupdate aurupdate
+compdef _aurremove aurremove
+compdef _aursearch aursearch
