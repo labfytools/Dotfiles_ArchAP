@@ -1,4 +1,4 @@
-# ArchASP – Arch Sway Pentest
+# ArchASP – Arch Sway Professor 
 
 <p align="center">
     <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/screen.jpg width="600" height="400" alt="screenshot">
@@ -9,7 +9,7 @@ Personal Arch Linux configuration focused on:
 - Keyboard-driventerminal-first
 - Terminal-first workflow with Sway and MangoWM, Neovim, Kitty
 - Catppuccin Mocha themed UI.  
-- Pentest learning
+- Cyber Learning
 
 **Goal** : 
 all reproducible from a single install script and a GNU Stow‑managed dotfiles repo.
@@ -23,8 +23,6 @@ all reproducible from a single install script and a GNU Stow‑managed dotfiles 
 
 ArchASP is currently in active development.
 
-An **ArchASP Installer** is also being actively developed, and a
-dedicated [**archasp-installer**](https://github.com/grayTerminal-sh/archasp-installer) repository has been created for it.
 
 If you want to contribute, improve the codebase, suggest ideas, or help
 shape the installer workflow, feel free to contribute to that repository
@@ -79,8 +77,11 @@ This setup assumes the following tools are installed (Arch package names):
 - [catppuccin-gtk-theme-mocha](https://github.com/catppuccin/gtk)
 - [catppuccin-cursors-mocha](https://github.com/catppuccin/cursors)
 - [greetd](https://github.com/kennylevinsen/greetd)
-- [regreet](https://github.com/rharish101/regreet)
+- [tuigreet](https://github.com/apognu/tuigreet)
 - [systemd](https://github.com/systemd/systemd) (init system, login manager and user services used for greetd, idle/lock, snapper, timers, etc.)
+- [wlogout](https://github.com/ArtsyMacaw/wlogout) (Power tool for waybar)
+- [waybar](https://github.com/Alexays/Waybar) (Status bar with MangoWM)
+- [mangown](https://github.com/mangowm/mango) (Windows compositor)
 
 ---
 
