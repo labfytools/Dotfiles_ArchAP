@@ -10,6 +10,7 @@
         "backlight",
         "custom/updates",
         "systemd-failed-units",
+        "custom/tlp",
         "group/hardware",
         "clock",
         "custom/power"
@@ -27,6 +28,12 @@
             "disk"
 		]
 	},
+    "custom/tlp": {
+        "format": "{}",
+        "exec": "~/.config/waybar/scripts/tlp-profile.sh",
+        "interval": 20,
+        "return-type": "json",
+    },
     "custom/power": {
         "format": "⏻",
         "tooltip": false,
@@ -38,7 +45,7 @@
         "format-icons": ["", ""],
         "reverse-scrolling": true,
         "on-scroll-up": "brightnessctl set +2%",
-        "on-scroll-down": "brightnessctl set 2%-",
+        "on-scroll-down": "brightnessctl set 2%-"
     },
     "systemd-failed-units": {
 	    "hide-on-ok": false, // Do not hide if there is zero failed units.

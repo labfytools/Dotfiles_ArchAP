@@ -27,7 +27,8 @@ window#waybar {
 #battery,
 #backlight,
 #custom-updates,
-#custom-power {
+#custom-power, 
+#custom-tlp {
   background: alpha(@base, 0.82);
   color: @text;
   margin: 4px 4px 4px 0;
@@ -79,6 +80,11 @@ window#waybar {
 #bluetooth {
   color: @blue;
   border-color: alpha(@blue, 0.35);
+}
+
+#custom-tlp {
+  color: @pink;
+  border-color: alpha(@pink, 0.35);
 }
 
 #network {
