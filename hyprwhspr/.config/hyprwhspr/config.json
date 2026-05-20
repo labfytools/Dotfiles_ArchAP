@@ -1,0 +1,17 @@
+{
+    "$schema": "https://raw.githubusercontent.com/goodroot/hyprwhspr/main/share/config.schema.json",
+    "transcription_backend": "vulkan",
+    "model": "large-v3-turbo",
+    "audio_ducking": true,
+    "primary_shortcut": "ALT+S",
+    "recording_mode": "push_to_talk",
+    "language": "fr",
+    "start_sound_volume": 0.5,
+    "stop_sound_volume": 0.5,
+    "start_sound_path": "ping-up.ogg",
+    "stop_sound_path": "ping-down.ogg",
+    "audio_ducking": true,
+    "audio_ducking_percent": 50,
+    "mic_osd_enabled": true,
+    "whisper_prompt_fr": "Transcrire en français avec des phrases complètes, une ponctuation claire et des majuscules correctes au début des phrases, pour les noms propres et les titres, comme dans un texte rédigé"
+}

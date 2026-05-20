@@ -1,6 +1,7 @@
 {
     "modules-left": [
-        "ext/workspaces"
+        "ext/workspaces",
+        "custom/hyprwhspr"
     ],
     "modules-right": [
         "mpris",
@@ -158,5 +159,15 @@
         },
         "exec-if": "which waybar-module-pacman-updates",
         "exec": "waybar-module-pacman-updates --no-zero-output"
+    },
+    "custom/hyprwhspr": {
+        "format": "{}",
+        "exec": "/usr/lib/hyprwhspr/config/hyprland/hyprwhspr-tray.sh status",
+        "interval": 1,
+        "return-type": "json",
+        "exec-on-event": true,
+        "on-click": "/usr/lib/hyprwhspr/config/hyprland/hyprwhspr-tray.sh record",
+        "on-click-right": "/usr/lib/hyprwhspr/config/hyprland/hyprwhspr-tray.sh restart",
+        "tooltip": true
     }
 }

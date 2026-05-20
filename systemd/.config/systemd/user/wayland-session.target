@@ -1,4 +1,0 @@
-[Unit]
-Description=Wayland user session
-Requires=basic.target
-After=basic.target

@@ -9,6 +9,7 @@
 # PATH & env
 # =========================
 export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.cargo/bin:$PATH"
 export PYENV_ROOT="$HOME/.pyenv"
 export HISTFILE="$HOME/.zsh_history"
 export HISTSIZE=10000

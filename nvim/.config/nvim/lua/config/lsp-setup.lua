@@ -1,40 +1,63 @@
+-- capabilities avec cmp si disponible
 local capabilities = vim.lsp.protocol.make_client_capabilities()
 local ok_cmp, cmp_lsp = pcall(require, "cmp_nvim_lsp")
 if ok_cmp then
-  capabilities = cmp_lsp.default_capabilities(capabilities)
+    capabilities = cmp_lsp.default_capabilities(capabilities)
 end
 
-local lspconfig = require("lspconfig")
+-- Keymaps + format on save (déclenché à chaque attach LSP)
+vim.api.nvim_create_autocmd("LspAttach", {
+    callback = function(args)
+        local bufnr = args.buf
+        local map = function(lhs, rhs, desc)
+            vim.keymap.set("n", lhs, rhs, { buffer = bufnr, desc = desc })
+        end
 
--- Fonction appelée quand un serveur LSP se connecte à un buffer
-local on_attach = function(_, bufnr)
-  local map = function(mode, lhs, rhs, desc)
-    vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, desc = desc })
-  end
+        map("ld", vim.lsp.buf.definition, "LSP: Go to definition")
+        map("lD", vim.lsp.buf.declaration, "LSP: Go to declaration")
+        map("lr", vim.lsp.buf.references, "LSP: References")
+        map("K", vim.lsp.buf.hover, "LSP: Hover")
+        map("<leader>rn", vim.lsp.buf.rename, "LSP: Rename")
+        map("<leader>ca", vim.lsp.buf.code_action, "LSP: Code action")
+        map("<leader>e", vim.diagnostic.open_float, "LSP: Show diagnostic")
+        -- diagnostics dépréciés en 0.11 → remplacés par vim.diagnostic.jump
+        map("[d", function() vim.diagnostic.jump({ count = -1 }) end, "LSP: Prev diagnostic")
+        map("]d", function() vim.diagnostic.jump({ count = 1 }) end, "LSP: Next diagnostic")
 
-  -- Keymaps de base LSP
-  map("n", "gd", vim.lsp.buf.definition, "LSP: Go to definition")
-  map("n", "gr", vim.lsp.buf.references, "LSP: References")
-  map("n", "K", vim.lsp.buf.hover, "LSP: Hover")
-  map("n", "<leader>rn", vim.lsp.buf.rename, "LSP: Rename")
-  map("n", "<leader>ca", vim.lsp.buf.code_action, "LSP: Code action")
-  map("n", "[d", vim.diagnostic.goto_prev, "LSP: Prev diagnostic")
-  map("n", "]d", vim.diagnostic.goto_next, "LSP: Next diagnostic")
-
-  -- Format on save (si le serveur sait formater)
-  vim.api.nvim_create_autocmd("BufWritePre", {
-    buffer = bufnr,
-    callback = function()
-      vim.lsp.buf.format({ async = false })
+        -- Format on save
+        vim.api.nvim_create_autocmd("BufWritePre", {
+            buffer = bufnr,
+            callback = function()
+                vim.lsp.buf.format({ async = false })
+            end,
+        })
     end,
-  })
-end
-
--- Pyright pour Python
--- Exemple approximatif avec la future API
-local cfg = vim.lsp._config  -- ou vim.lsp.config selon la version
-
-cfg.setup("pyright", {
-  on_attach = on_attach,
-  capabilities = capabilities,
 })
+
+-- Config des serveurs via la nouvelle API vim.lsp.config
+vim.lsp.config("clangd", {
+    capabilities = capabilities,
+    cmd          = { "clangd", "--background-index", "--clang-tidy" },
+})
+
+vim.lsp.config("pyright", {
+    capabilities = capabilities,
+})
+
+vim.lsp.config("bashls", {
+    capabilities = capabilities,
+})
+
+vim.lsp.config("lua_ls", {
+    capabilities = capabilities,
+    settings = {
+        Lua = {
+            diagnostics = { globals = { "vim" } },
+        },
+    },
+})
+
+-- Activation des serveurs
+vim.lsp.enable({ "clangd", "pyright", "bashls", "lua_ls" })
+
+-- rust_analyzer géré par rustaceanvim, ne pas l'activer ici
