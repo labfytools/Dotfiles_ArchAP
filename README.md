@@ -1,4 +1,4 @@
-# ArchASP – Arch Professor 
+# ArchAP – Arch Professor 
 
 <p align="center">
     <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/screen.jpg width="600" height="400" alt="screenshot">
