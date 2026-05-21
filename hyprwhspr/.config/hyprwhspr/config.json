@@ -3,7 +3,7 @@
     "transcription_backend": "vulkan",
     "model": "large-v3-turbo",
     "audio_ducking": true,
-    "primary_shortcut": "ALT+S",
+    "primary_shortcut": "SUPER+SHIFT+XF86Assistant,",
     "recording_mode": "push_to_talk",
     "language": "fr",
     "start_sound_volume": 0.5,
