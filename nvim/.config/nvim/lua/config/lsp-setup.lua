@@ -25,9 +25,19 @@ vim.api.nvim_create_autocmd("LspAttach", {
         map("]d", function() vim.diagnostic.jump({ count = 1 }) end, "LSP: Next diagnostic")
 
         -- Format on save
+        -- vim.api.nvim_create_autocmd("BufWritePre", {
+        --    buffer = bufnr,
+        --    callback = function()
+        --        vim.lsp.buf.format({ async = false })
+        --    end,
+        -- })
         vim.api.nvim_create_autocmd("BufWritePre", {
-            buffer = bufnr,
             callback = function()
+                local ft = vim.bo.filetype
+                if ft == "c" or ft == "cpp" then
+                    return
+                end
+
                 vim.lsp.buf.format({ async = false })
             end,
         })
@@ -35,11 +45,6 @@ vim.api.nvim_create_autocmd("LspAttach", {
 })
 
 -- Config des serveurs via la nouvelle API vim.lsp.config
-vim.lsp.config("clangd", {
-    capabilities = capabilities,
-    cmd          = { "clangd", "--background-index", "--clang-tidy" },
-})
-
 vim.lsp.config("pyright", {
     capabilities = capabilities,
 })
@@ -55,6 +60,14 @@ vim.lsp.config("lua_ls", {
             diagnostics = { globals = { "vim" } },
         },
     },
+})
+
+vim.lsp.config("clangd", {
+    cmd = { "clangd", "--background-index", "--clang-tidy" },
+
+    on_attach = function(client, bufnr)
+        client.server_capabilities.semanticTokensProvider = nil
+    end,
 })
 
 -- Activation des serveurs

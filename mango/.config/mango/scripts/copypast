@@ -1,37 +1,41 @@
 #!/usr/bin/env bash
 
-thumb_dir="${XDG_CACHE_HOME:-$HOME/.cache}/clipvault/thumbs"
+thumb_dir="${XDG_CACHE_HOME:-$HOME/.cache}/cliphist/thumbs"
 mkdir -p "$thumb_dir"
 
-clip_list="$(clipvault list)"
+clip_list="$(cliphist list)"
 
-# nettoyer les vignettes orphelines
+# Nettoyer les vignettes orphelines
 for thumb in "$thumb_dir"/*; do
     [ -e "$thumb" ] || continue
     clip_id="${thumb##*/}"
     clip_id="${clip_id%.*}"
-    check=$(printf '%s\n' "$clip_list" | rg "^${clip_id}\s")
-    if [ -z "$check" ]; then
+
+    if ! printf '%s\n' "$clip_list" | rg -q "^${clip_id}[[:space:]]"; then
         rm -f "$thumb"
     fi
 done
 
-# programme gawk : détecter les entrées image, générer les thumbs, préfixer par img:
 read -r -d '' prog <<EOF
-match(\$0, /^([0-9]+)\s\[\[ binary data .*image\/(jpeg|jpg|png|bmp|webp)/, grp) {
+match(\$0, /^([0-9]+)[[:space:]]+\\[\\[ binary data .* (png|jpeg|jpg|bmp|webp) [0-9]+x[0-9]+ \\]\\]/, grp) {
     id = grp[1]
     ext = grp[2]
+    if (ext == "jpeg") ext = "jpg"
+
     image = id "." ext
-    cmd = "[ -f $thumb_dir/" image " ] || printf \"" id "\\n\" | clipvault get | magick - -resize '256x256>' $thumb_dir/" image
+    thumb = "$thumb_dir/" image
+
+    cmd = "[ -f '" thumb "' ] || printf '%s\\n' '" \$0 "' | cliphist decode | magick - -resize '256x256>' '" thumb "'"
     system(cmd)
-    print "img:$thumb_dir/" image
+
+    print "img:" thumb
     next
 }
 1
 EOF
 
 choice=$(
-    gawk <<< "$clip_list" "$prog" |
+    gawk "$prog" <<< "$clip_list" |
     wofi -I --dmenu --cache-file=/dev/null \
          -Dimage_size=100 -Dynamic_lines=true \
          --xoffset=600 --yoffset=20 --width=45% --height=45% --gtk-dark
@@ -43,10 +47,14 @@ if [ "${choice:0:4}" = "img:" ]; then
     thumb_file="${choice:4}"
     clip_id="${thumb_file##*/}"
     clip_id="${clip_id%.*}"
-else
-    # on prend l’ID (premier champ) de la ligne choisie
-    clip_id="$(printf '%s\n' "$choice" | awk '{print $1}')"
-fi
 
-# récupérer l’entrée choisie et la remettre dans le clipboard
-printf '%s\n' "$clip_id" | clipvault get | wl-copy
+    printf '%s\n' "$clip_list" |
+        rg "^${clip_id}[[:space:]]" |
+        head -n 1 |
+        cliphist decode |
+        wl-copy
+else
+    printf '%s\n' "$choice" |
+        cliphist decode |
+        wl-copy
+fi
