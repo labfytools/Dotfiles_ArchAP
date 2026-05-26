@@ -89,12 +89,18 @@ zstyle ':completion:*' menu select
 # Starship prompt
 # =========================
 export STARSHIP_CONFIG="$HOME/.config/starship.toml"
-eval "$(starship init zsh)"
+command -v starship >/dev/null && eval "$(starship init zsh)"
+
+# =========================
+# Atuin
+# =========================
+
+eval "$(atuin init zsh)"
 
 # =========================
 # Fzf + zoxide
 # =========================
-export FZF_DEFAULT_COMMAND="
+command -v bat >/dev/null && export FZF_DEFAULT_OPTS="
     fd 
     --type f 
     --hidden 
@@ -127,8 +133,8 @@ export FZF_DEFAULT_OPTS="
 [ -r /usr/share/fzf/key-bindings.zsh ] && source /usr/share/fzf/key-bindings.zsh
 [ -r /usr/share/fzf/completion.zsh ]   && source /usr/share/fzf/completion.zsh
 
-eval "$(zoxide init zsh)"
-eval "$(fzf --zsh)"
+command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
+command -v fzf >/dev/null && eval "$(fzf --zsh)"
 
 # =========================
 # Aliases de base
@@ -159,7 +165,7 @@ alias grep='grep --color=auto'
 alias rg='rg --hidden --smart-case'
 
 # Eza
-alias ls='eza'
+command -v eza >/dev/null && alias ls='eza'
 alias ll='eza -lha --git'
 alias la='eza -la'
 alias lt='eza -T'
@@ -188,7 +194,16 @@ alias pR='sudo pacman -Rns'
 alias pQ='pacman -Q'
 alias pSs='pacman -Ss'
 alias pSyu='sudo pacman -Syu'
-alias orphans='sudo pacman -Rns $(pacman -Qtdq)'
+orphans() {
+  local pkgs
+  pkgs="$(pacman -Qtdq 2>/dev/null)"
+
+  if [[ -n "$pkgs" ]]; then
+    sudo pacman -Rns $pkgs
+  else
+    echo "Aucun paquet orphelin"
+  fi
+}
 
 update() {
   sudo -v || return 1
@@ -253,8 +268,10 @@ psgrep() {
 # =========================
 
 export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
-eval "$(pyenv init -)"
+if command -v pyenv >/dev/null; then
+    eval "$(pyenv init --path)"
+    eval "$(pyenv init -)"
+fi
 
 va() {
     if [[ -f "venv/bin/activate" ]]; then
@@ -274,6 +291,21 @@ alias vd='deactivate'
 alias vrm='rm -rf venv .venv'
 alias vreq='pip install -r requirements.txt'
 alias vfreeze='pip freeze > requirements.txt'
+
+# =========================
+# Python / virtualenv / pyenv
+# =========================
+
+# Alias pour la compilation C
+alias gcc-debug='gcc -Wall -Wextra -g -std=c17'  
+alias gcc-release='gcc -Wall -Wextra -O2 -std=c17'  
+alias gcc-strict='gcc -Wall -Wextra -Werror -pedantic -std=c17'  
+
+# Alias pour Valgrind
+alias valgrind-check='valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes'
+
+# Alias pour le nettoyage (limité au répertoire courant, non récursif)
+alias clean-exe='find . -maxdepth 1 -type f -executable -not -name "*.sh" -delete'
 
 # =========================
 # Ansible

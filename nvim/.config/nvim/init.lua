@@ -61,6 +61,7 @@ vim.filetype.add({
 })
 
 -- require
+require("config.filetypes")
 -- Keymaps (fichier séparé)
 require("config.maps")
 
@@ -69,5 +70,49 @@ require("config.markdown")
 
 -- Mason/LSP
 require("mason-lspconfig").setup()
+
+local Terminal = require("toggleterm.terminal").Terminal
+
+local function get_devcontainer()
+    local project = vim.fn.getcwd()
+
+    local handle = io.popen(
+        'docker ps -q --filter "label=devcontainer.local_folder='
+        .. project
+        .. '"'
+    )
+
+    if not handle then
+        return nil
+    end
+
+    local container = handle:read("*a"):gsub("%s+", "")
+    handle:close()
+
+    if container == "" then
+        return nil
+    end
+
+    return container
+end
+
+vim.keymap.set("n", "<leader>dt", function()
+    local container = get_devcontainer()
+
+    if not container then
+        vim.notify("Aucun devcontainer actif", vim.log.levels.ERROR)
+        return
+    end
+
+    local docker_term = Terminal:new({
+        cmd = "docker exec -it -u vscode -w /workspace " .. container .. " zsh",
+        direction = "float",
+        hidden = true,
+    })
+
+    docker_term:toggle()
+end, {
+    desc = "Docker terminal",
+})
 
 vim.cmd.colorscheme "catppuccin-mocha"

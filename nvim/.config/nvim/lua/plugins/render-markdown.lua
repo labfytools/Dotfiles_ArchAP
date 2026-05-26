@@ -1,4 +1,4 @@
----@type LazySpec
+--@type LazySpec
 return {
     {
         "MeanderingProgrammer/render-markdown.nvim",
