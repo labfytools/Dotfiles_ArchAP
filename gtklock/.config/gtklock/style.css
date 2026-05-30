@@ -1,0 +1,53 @@
+window {
+    background-color: #1e1e2e;
+    background-image: url("/tmp/gtklock-blur.png");
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+#window-box {
+    background-color: rgba(30, 30, 46, 0.78);
+    border: 1px solid #b4befe;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 0 32px rgba(0, 0, 0, 0.55);
+}
+
+#clock-label {
+    color: #cdd6f4;
+    font-size: 72px;
+    font-weight: 700;
+}
+
+#date-label {
+    color: #bac2de;
+    font-size: 22px;
+    margin-bottom: 18px;
+}
+
+#input-field {
+    color: #cdd6f4;
+    background-color: rgba(17, 17, 27, 0.92);
+    border: 1px solid #b4befe;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 22px;
+}
+
+label {
+    color: #cdd6f4;
+}
+
+button {
+    color: #b4befe;
+    background-color: #b4befe;
+    border-radius: 6px;
+    border: 1px solid #45475a;
+    padding: 8px 12px;
+}
+
+button:hover {
+    background-color: rgba(69, 71, 90, 0.95);
+    border-color: #89b4fa;
+}

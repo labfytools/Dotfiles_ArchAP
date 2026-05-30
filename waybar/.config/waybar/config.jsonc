@@ -14,7 +14,8 @@
         "custom/tlp",
         "group/hardware",
         "clock",
-        "custom/power"
+        "custom/power",
+        "tray"
     ],
     "group/hardware": {
 		"orientation": "horizontal",
@@ -29,6 +30,10 @@
             "disk"
 		]
 	},
+    "tray": {
+        "icon-size": 18,
+        "spacing": 8
+    },
     "custom/tlp": {
         "format": "{}",
         "exec": "~/.config/waybar/scripts/tlp-profile.sh",

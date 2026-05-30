@@ -28,6 +28,7 @@ window#waybar {
 #backlight,
 #custom-updates,
 #custom-power, 
+#tray, 
 #custom-tlp {
   background: alpha(@base, 0.32);
   color: @text;
