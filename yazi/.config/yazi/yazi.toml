@@ -106,7 +106,9 @@ prepend_previewers = [
 	{ mime = "application/{json,ndjson}", run = "json" },
 
 	# Images
-	{ mime = "image/{avif,hei?,jxl}", run = "image" },
+    { mime = "image/{avif,jxl}", run = "image" },
+    { mime = "image/heic", run = "heic" },
+    { mime = "image/heif", run = "heic" },  
 	{ mime = "image/svg+xml", run = "image" },
 	{ mime = "image/*", run = "image" },
 
@@ -134,7 +136,9 @@ prepend_previewers = [
 
 prepend_preloaders = [
 	# Images
-	{ mime = "image/{avif,hei?,jxl}", run = "image", prio = "normal" },
+    { mime = "image/{avif,jxl}", run = "image", prio = "normal" },
+    { mime = "image/heic", run = "heic", prio = "normal" },
+    { mime = "image/heif", run = "heic", prio = "normal" },
 	{ mime = "image/svg+xml", run = "image", prio = "normal" },
 	{ mime = "image/*", run = "image", prio = "normal" },
 

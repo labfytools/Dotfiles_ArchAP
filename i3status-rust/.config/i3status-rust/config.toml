@@ -25,7 +25,7 @@ action = "toggle_format"
 [[block]]
 block = "bluetooth"
 mac = "E4:61:F4:F4:A1:F7"
-format = " JBL Tune {{$battery_icon}} "
+format = " JBL Tune "
 disconnected_format = " 󰂲"
 [[block.click]]
 button = "left"
@@ -67,22 +67,6 @@ format_singular = " $icon $total update "
 format_up_to_date = " $icon Up to date "
 # aur_command should output available updates to stdout (ie behave as echo -ne "update\n")
 aur_command = "yay -Qua"
-
-[[block]]
-block = "notify"
-driver = "swaync"
-[[block.click]]
-button = "left"
-action = "show"
-[[block.click]]
-button = "right"
-action = "toggle_paused"
-[[block]]
-block = "time"
-interval = 60
-[block.format]
-full = " $icon $timestamp.datetime(f:'%d-%m-%Y %R')"
-short = " $icon $timestamp.datetime(f:%R) "
 
 [[block]]
 block = "menu"

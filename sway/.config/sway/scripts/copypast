@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+thumb_dir="${XDG_CACHE_HOME:-$HOME/.cache}/cliphist/thumbs"
+mkdir -p "$thumb_dir"
+
+clip_list="$(cliphist list)"
+
+# Nettoyer les vignettes orphelines
+for thumb in "$thumb_dir"/*; do
+    [ -e "$thumb" ] || continue
+    clip_id="${thumb##*/}"
+    clip_id="${clip_id%.*}"
+
+    if ! printf '%s\n' "$clip_list" | rg -q "^${clip_id}[[:space:]]"; then
+        rm -f "$thumb"
+    fi
+done
+
+read -r -d '' prog <<EOF
+match(\$0, /^([0-9]+)[[:space:]]+\\[\\[ binary data .* (png|jpeg|jpg|bmp|webp) [0-9]+x[0-9]+ \\]\\]/, grp) {
+    id = grp[1]
+    ext = grp[2]
+    if (ext == "jpeg") ext = "jpg"
+
+    image = id "." ext
+    thumb = "$thumb_dir/" image
+
+    cmd = "[ -f '" thumb "' ] || printf '%s\\n' '" \$0 "' | cliphist decode | magick - -resize '256x256>' '" thumb "'"
+    system(cmd)
+
+    print "img:" thumb
+    next
+}
+1
+EOF
+
+choice=$(
+    gawk "$prog" <<< "$clip_list" |
+    wofi -I --dmenu --cache-file=/dev/null \
+         -Dimage_size=100 -Dynamic_lines=true \
+         --xoffset=600 --yoffset=20 --width=45% --height=45% --gtk-dark
+)
+
+[ -z "$choice" ] && exit 1
+
+if [ "${choice:0:4}" = "img:" ]; then
+    thumb_file="${choice:4}"
+    clip_id="${thumb_file##*/}"
+    clip_id="${clip_id%.*}"
+
+    printf '%s\n' "$clip_list" |
+        rg "^${clip_id}[[:space:]]" |
+        head -n 1 |
+        cliphist decode |
+        wl-copy
+else
+    printf '%s\n' "$choice" |
+        cliphist decode |
+        wl-copy
+fi

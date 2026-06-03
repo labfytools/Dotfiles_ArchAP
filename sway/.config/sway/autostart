@@ -24,9 +24,9 @@ exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py
 
 assign [app_id="kitty-1"] workspace 1
 assign [app_id="kitty-2"] workspace 1
-assign [app_id="electron" title="Perplexity"] workspace 1
 assign [app_id="chromium"] workspace 2
 assign [app_id="firefox"] workspace 3
+assign [app_id="AppFlowy"] workspace 5
 assign [app_id="proton-bridge"] workspace 9
 assign [app_id="org.mozilla.Thunderbird"] workspace 9
 assign [class="Spotify"] workspace 10
@@ -36,24 +36,23 @@ assign [class="Spotify"] workspace 10
 # =================================================
 
 exec kitty --class kitty-1 --directory $HOME
-exec kitty --class kitty-2 --directory $HOME
-exec perplexity
+# exec kitty --class kitty-2 --directory $HOME
 exec chromium
+exec protonmail-bridge
 exec thunderbird
 exec spotify-launcher
-
-exec ~/.config/sway/scripts/layout-workspace1.sh
+exec proton-pass
+exec AppFlowy
 
 # =================================================
 # Presse-papier
 # =================================================
 
-exec wl-paste --watch clipvault store
-exec wl-paste --type image/png --watch clipvault store
+exec wl-paste --watch cliphist store
+exec wl-paste --type image/png --watch cliphist store
 
 # =================================================
 # Verrouillage auto (swayidle)
 # =================================================
 
-exec-once=swayidle -w timeout 300 'swaylock -f -c 000000' timeout 301 'systemctl suspend' before-sleep 'swaylock -f -c 000000'
-
+exec swayidle -w timeout 300 'swaylock -f -c 000000' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' before-sleep 'swaylock -f -c 000000'
