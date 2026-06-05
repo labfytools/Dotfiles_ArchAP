@@ -1,0 +1,124 @@
+#!/bin/bash
+set -euo pipefail
+
+AUR_DIR="$HOME/Aur"
+EDITOR_CMD="${EDITOR:-nvim}"
+
+ASK_EDIT=0
+FORCE_EDIT=0
+DOWNLOAD_ONLY=0
+
+while getopts ":eEd" opt; do
+    case "$opt" in
+        e) ASK_EDIT=1 ;;
+        E) FORCE_EDIT=1 ;;
+        d) DOWNLOAD_ONLY=1 ;;
+        *)
+            echo "Usage: aurinstall [-e|-E] [-d] <paquet1> [paquet2 ...]"
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+RESET='\033[0m'
+BOLD='\033[1m'
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[1;36m'
+
+info()    { printf "${BLUE}==>${RESET} %s\n" "$1"; }
+ok()      { printf "${GREEN}==>${RESET} %s\n" "$1"; }
+warn()    { printf "${YELLOW}==>${RESET} %s\n" "$1"; }
+error()   { printf "${RED}==>${RESET} %s\n" "$1"; }
+section() { printf "\n${CYAN}${BOLD}>>> %s${RESET}\n" "$1"; }
+
+if [[ $# -lt 1 ]]; then
+    error "Usage: aurinstall [-e|-E] [-d] <paquet1> [paquet2 ...]"
+    exit 1
+fi
+
+mkdir -p "$AUR_DIR"
+
+if [[ "$DOWNLOAD_ONLY" -eq 0 ]]; then
+    sudo -v || exit 1
+    while true; do
+        sudo -n true || exit
+        sleep 30
+    done 2>/dev/null &
+    SUDO_LOOP_PID=$!
+    trap 'kill "$SUDO_LOOP_PID" 2>/dev/null' EXIT INT TERM
+fi
+
+for pkg in "$@" ; do
+    section "$pkg"
+    cd "$AUR_DIR" || exit 1
+
+    if [[ "$DOWNLOAD_ONLY" -eq 0 ]] && pacman -Q "$pkg" >/dev/null 2>&1; then
+        warn "$pkg est déjà installé, on passe."
+        continue
+    fi
+
+    if [[ -d "$pkg/.git" ]]; then
+        warn "$pkg déjà cloné, utilisation du dossier existant"
+        cd "$pkg" || { error "Impossible d'entrer dans $pkg"; continue; }
+
+        pull_output=$(git pull --ff-only 2>&1) || {
+            error "git pull failed pour $pkg"
+            cd "$AUR_DIR" || exit 1
+            continue
+        }
+        printf "%s\n" "$pull_output"
+    else
+        info "Clonage de $pkg"
+        if ! git clone "https://aur.archlinux.org/${pkg}.git"; then
+            error "Impossible de cloner $pkg"
+            continue
+        fi
+        cd "$pkg" || { error "Impossible d'entrer dans $pkg"; continue; }
+    fi
+
+    if [[ "$FORCE_EDIT" -eq 1 ]]; then
+        info "Ouverture de PKGBUILD et .SRCINFO dans $EDITOR_CMD"
+        "$EDITOR_CMD" PKGBUILD .SRCINFO
+    elif [[ "$ASK_EDIT" -eq 1 || "$DOWNLOAD_ONLY" -eq 1 ]]; then
+        printf "${YELLOW}Éditer PKGBUILD/.SRCINFO pour %s ? [y/N] ${RESET}" "$pkg"
+        read -r ans
+        if [[ "$ans" == "y" || "$ans" == "Y" ]]; then
+            "$EDITOR_CMD" PKGBUILD .SRCINFO
+        fi
+    fi
+
+    if [[ "$DOWNLOAD_ONLY" -eq 1 ]]; then
+        ok "$pkg prêt pour audit dans $AUR_DIR/$pkg"
+        continue
+    fi
+
+    info "Vérifie au minimum source=(), checksums, prepare()/build()/package() et validpgpkeys si présents"
+    rm -f ./*.pkg.tar ./*.pkg.tar.*
+
+    if ! makepkg -sf; then
+        error "Build failed pour $pkg"
+        cd "$AUR_DIR" || exit 1
+        continue
+    fi
+
+    pkgfile=$(find . -maxdepth 1 -type f \( -name '*.pkg.tar' -o -name '*.pkg.tar.*' \) ! -name '*.sig' | head -n1 || true)
+    echo "DEBUG: pkgfile='$pkgfile'"
+    if [[ -z "$pkgfile" ]]; then
+        error "Aucun paquet généré pour $pkg"
+        cd "$AUR_DIR" || exit 1
+        continue
+    fi
+
+    info "Installation de $pkgfile"
+    if ! sudo pacman -U --noconfirm "$pkgfile"; then
+        error "Install failed pour $pkg"
+        cd "$AUR_DIR" || exit 1
+        continue
+    fi
+
+    ok "$pkg installé avec succès"
+done

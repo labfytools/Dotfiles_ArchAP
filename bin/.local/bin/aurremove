@@ -1,0 +1,59 @@
+#!/bin/bash
+set -euo pipefail
+
+AUR_DIR="$HOME/Aur"
+
+RESET='\033[0m'
+BOLD='\033[1m'
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[1;36m'
+
+info()    { printf "${BLUE}==>${RESET} %s\n" "$1"; }
+ok()      { printf "${GREEN}==>${RESET} %s\n" "$1"; }
+warn()    { printf "${YELLOW}==>${RESET} %s\n" "$1"; }
+error()   { printf "${RED}==>${RESET} %s\n" "$1"; }
+section() { printf "\n${CYAN}${BOLD}>>> %s${RESET}\n" "$1"; }
+
+if [[ $# -lt 1 ]]; then
+    error "Usage: aurremove <paquet1> [paquet2 ...]"
+    exit 1
+fi
+
+sudo -v || exit 1
+while true; do
+    sudo -n true || exit
+    sleep 30
+done 2>/dev/null &
+SUDO_LOOP_PID=$!
+trap 'kill "$SUDO_LOOP_PID" 2>/dev/null' EXIT INT TERM
+
+for pkg in "$@" ; do
+    section "$pkg"
+
+    if ! pacman -Q "$pkg" >/dev/null 2>&1; then
+        warn "$pkg n'est pas installé"
+        continue
+    fi
+
+    info "Désinstallation de $pkg"
+    if ! sudo pacman -Rns "$pkg"; then
+        error "Échec de suppression pour $pkg"
+        continue
+    fi
+
+    ok "$pkg supprimé du système"
+
+    if [[ -d "$AUR_DIR/$pkg" ]]; then
+        printf "${YELLOW}Supprimer aussi le dossier %s ? [y/N] ${RESET}" "$AUR_DIR/$pkg"
+        read -r ans
+        if [[ "$ans" == "y" || "$ans" == "Y" ]]; then
+            rm -rf "$AUR_DIR/$pkg"
+            ok "Dossier $AUR_DIR/$pkg supprimé"
+        else
+            warn "Dossier conservé : $AUR_DIR/$pkg"
+        fi
+    fi
+done

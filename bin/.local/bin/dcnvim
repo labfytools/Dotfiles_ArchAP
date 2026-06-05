@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -e
+
+PROJECT_DIR="$(pwd)"
+
+devcontainer up --workspace-folder "$PROJECT_DIR" >/dev/null
+
+CONTAINER_ID="$(
+    docker ps -q \
+    --filter "label=devcontainer.local_folder=$PROJECT_DIR"
+)"
+
+if [ -z "$CONTAINER_ID" ]; then
+    echo "Aucun conteneur trouvé"
+    exit 1
+fi
+
+export DEVCONTAINER_ID="$CONTAINER_ID"
+
+nvim "$@"

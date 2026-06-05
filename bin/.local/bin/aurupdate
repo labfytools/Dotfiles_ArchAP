@@ -1,0 +1,194 @@
+#!/bin/bash
+set -euo pipefail
+
+AUR_DIR="${AUR_DIR:-$HOME/Aur}"
+END_UPDATE="Mis à jour avec succès ;p."
+SYSTEM_NAME="$(cat /etc/hostname 2>/dev/null || echo "unknown")"
+
+RESET='\033[0m'
+BOLD='\033[1m'
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[1;36m'
+
+info() { printf "${BLUE}==>${RESET} %s\n" "$1"; }
+ok() { printf "${GREEN}==>${RESET} %s\n" "$1"; }
+warn() { printf "${YELLOW}==>${RESET} %s\n" "$1"; }
+error() { printf "${RED}==>${RESET} %s\n" "$1"; }
+section() { printf "\n${CYAN}${BOLD}>>> %s${RESET}\n" "$1"; }
+
+[[ -d "$AUR_DIR" ]] || {
+  error "Répertoire AUR introuvable : $AUR_DIR"
+  exit 1
+}
+
+sudo -v || exit 1
+while true; do
+  sudo -n true || exit
+  sleep 30
+done 2>/dev/null &
+SUDO_LOOP_PID=$!
+trap 'kill "$SUDO_LOOP_PID" 2>/dev/null' EXIT INT TERM
+
+cd "$AUR_DIR" || exit 1
+
+shopt -s nullglob
+repos=(*/)
+shopt -u nullglob
+
+if [[ ${#repos[@]} -eq 0 ]]; then
+  warn "Aucun dépôt AUR dans $AUR_DIR"
+  exit 0
+fi
+
+declare -a outdated_repos=()
+
+audit_repo() {
+  local repo="$1"
+  local branch upstream local_rev remote_rev base_rev
+
+  cd "$AUR_DIR/$repo" || return 1
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    error "$repo n'est pas un dépôt git valide"
+    return 1
+  fi
+
+  branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  [[ -n "$branch" ]] || {
+    warn "$repo : HEAD détachée, ignoré"
+    return 1
+  }
+
+  if ! git remote update --prune >/dev/null 2>&1; then
+    error "Impossible de contacter le remote pour $repo"
+    return 1
+  fi
+
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+  [[ -n "$upstream" ]] || upstream="origin/$branch"
+
+  local_rev=$(git rev-parse HEAD 2>/dev/null || true)
+  remote_rev=$(git rev-parse "$upstream" 2>/dev/null || true)
+  base_rev=$(git merge-base HEAD "$upstream" 2>/dev/null || true)
+
+  if [[ -z "$remote_rev" || -z "$local_rev" || -z "$base_rev" ]]; then
+    error "Impossible de comparer $repo avec $upstream"
+    return 1
+  fi
+
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    return 1
+  fi
+
+  if [[ "$local_rev" != "$base_rev" ]]; then
+    warn "$repo a des commits locaux non poussés, ignoré"
+    return 1
+  fi
+
+  outdated_repos+=("$repo")
+  return 0
+}
+
+ask_update() {
+  local repo="$1"
+  while true; do
+    printf "${YELLOW}Mettre à jour %s ? [y/N/q] ${RESET}" "$repo"
+    read -r ans
+    case "$ans" in
+      y|Y) return 0 ;;
+      n|N|"") return 1 ;;
+      q|Q) return 2 ;;
+      *) warn "Réponse invalide, utilise y, n ou q" ;;
+    esac
+  done
+}
+
+info "Scan des dépôts AUR..."
+for d in "${repos[@]}"; do
+  repo="${d%/}"
+  audit_repo "$repo" || true
+done
+
+if [[ ${#outdated_repos[@]} -eq 0 ]]; then
+  ok "Aucune mise à jour AUR détectée"
+  exit 0
+fi
+
+section "Mises à jour détectées"
+for repo in "${outdated_repos[@]}"; do
+  cd "$AUR_DIR/$repo" || continue
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo "origin/HEAD")
+  printf "${YELLOW}- %s${RESET}\n" "$repo"
+  git --no-pager log --oneline --decorate HEAD.."$upstream" | sed 's/^/    /'
+done
+
+declare -a selected_repos=()
+
+section "Sélection"
+for repo in "${outdated_repos[@]}"; do
+  if ask_update "$repo"; then
+    selected_repos+=("$repo")
+  else
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      warn "Sélection interrompue"
+      break
+    fi
+  fi
+done
+
+if [[ ${#selected_repos[@]} -eq 0 ]]; then
+  warn "Aucun paquet sélectionné"
+  exit 0
+fi
+
+section "Paquets sélectionnés"
+for repo in "${selected_repos[@]}"; do
+  printf "${GREEN}- %s${RESET}\n" "$repo"
+done
+
+for repo in "${selected_repos[@]}"; do
+  cd "$AUR_DIR/$repo" || continue
+  section "$repo"
+
+  info "Récupération des changements"
+  if ! git pull --ff-only; then
+    error "git pull failed for $repo"
+    continue
+  fi
+
+  info "Vérifie au minimum PKGBUILD, sources, checksums et fonctions de build"
+  rm -f ./*.pkg.tar.*
+
+  if ! makepkg -sf; then
+    error "Build failed for $repo"
+    continue
+  fi
+
+  pkgfile=$(find . -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' | head -n1 || true)
+  if [[ -z "$pkgfile" ]]; then
+    error "Aucun paquet trouvé pour $repo"
+    continue
+  fi
+
+  info "Installation de $pkgfile"
+  if ! sudo pacman -U --noconfirm "$pkgfile"; then
+    error "Install failed for $repo"
+    continue
+  fi
+
+  ok "$repo installé avec succès"
+done
+
+printf "\n"
+if command -v figlet >/dev/null 2>&1; then
+  figlet -f slant "$SYSTEM_NAME" | while IFS= read -r line; do
+    printf "${GREEN}%s${RESET}\n" "$line"
+  done
+  printf "${GREEN}%s${RESET}\n" "$END_UPDATE"
+else
+  printf "${GREEN}%s : %s${RESET}\n" "$SYSTEM_NAME" "$END_UPDATE"
+fi

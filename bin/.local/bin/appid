@@ -1,0 +1,3 @@
+#!/bin/sh
+sleep 3
+mmsg -g -c | sed 's/^/title|appid: /'

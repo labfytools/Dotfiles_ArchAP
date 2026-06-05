@@ -1,0 +1,155 @@
+#!/bin/bash
+set -euo pipefail
+
+RPC_BASE="https://aur.archlinux.org/rpc/?v=5"
+SEARCH_BY="name-desc"
+DETAILS=0
+QUIET=0
+LIMIT=10
+SORT_BY="popularity"
+
+RESET='\033[0m'
+BOLD='\033[1m'
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[1;36m'
+
+info() { printf "${BLUE}==>${RESET} %s\n" "$1"; }
+ok() { printf "${GREEN}==>${RESET} %s\n" "$1"; }
+warn() { printf "${YELLOW}==>${RESET} %s\n" "$1"; }
+error() { printf "${RED}==>${RESET} %s\n" "$1" >&2; }
+section() { printf "\n${CYAN}${BOLD}>>> %s${RESET}\n" "$1"; }
+
+die() {
+  error "$1"
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: aursearch [options] <recherche>
+
+Options:
+  -n        rechercher seulement dans le nom
+  -m        rechercher par mainteneur
+  -d        afficher les détails complets
+  -q        afficher seulement les noms des paquets
+  -l N      limiter le nombre de résultats (défaut : 10)
+  -s mode   trier par : popularity | votes | name | modified | submitted
+  -h        afficher cette aide
+
+Exemples:
+  aursearch proton
+  aursearch -n sway
+  aursearch -m Eschwartz
+  aursearch -d rustdesk
+  aursearch -q -l 20 python
+USAGE
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Commande requise manquante : $1"
+}
+
+while getopts ":nmdql:s:h" opt; do
+  case "$opt" in
+    n) SEARCH_BY="name" ;;
+    m) SEARCH_BY="maintainer" ;;
+    d) DETAILS=1 ;;
+    q) QUIET=1 ;;
+    l)
+      [[ "$OPTARG" =~ ^[0-9]+$ ]] || die "-l attend un entier"
+      LIMIT="$OPTARG"
+      ;;
+    s)
+      case "$OPTARG" in
+        popularity|votes|name|modified|submitted) SORT_BY="$OPTARG" ;;
+        *) die "Mode de tri invalide : $OPTARG" ;;
+      esac
+      ;;
+    h)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+[[ $# -ge 1 ]] || {
+  usage
+  exit 1
+}
+
+require_cmd curl
+require_cmd jq
+
+query="$*"
+encoded_query=$(printf '%s' "$query" | jq -sRr @uri)
+url="${RPC_BASE}&type=search&by=${SEARCH_BY}&arg=${encoded_query}"
+
+json=$(curl -fsSL "$url") || die "Échec de requête vers l'AUR"
+count=$(jq '.resultcount // 0' <<< "$json")
+
+if (( count == 0 )); then
+  warn "Aucun résultat pour : $query"
+  exit 0
+fi
+
+sorted=$(jq --arg sort "$SORT_BY" '
+  .results
+  | if $sort == "name" then sort_by(.Name)
+    elif $sort == "votes" then sort_by(.NumVotes // 0) | reverse
+    elif $sort == "submitted" then sort_by(.FirstSubmitted // 0) | reverse
+    elif $sort == "modified" then sort_by(.LastModified // 0) | reverse
+    else sort_by(.Popularity // 0) | reverse
+    end
+' <<< "$json")
+
+limited=$(jq --argjson limit "$LIMIT" '.[0:$limit]' <<< "$sorted")
+shown=$(jq 'length' <<< "$limited")
+
+if (( QUIET == 1 )); then
+  jq -r '.[].Name' <<< "$limited"
+  exit 0
+fi
+
+info "$count résultat(s) trouvé(s), affichage de $shown entrée(s)"
+
+if (( DETAILS == 1 )); then
+  jq -r '
+    .[] |
+    "\(.Name)\n" +
+    "  Version      : \(.Version // "?")\n" +
+    "  Votes        : \(.NumVotes // 0)\n" +
+    "  Popularité   : \(.Popularity // 0)\n" +
+    "  Mainteneur   : \(.Maintainer // "orphan")\n" +
+    "  Soumis le    : \(.FirstSubmitted // 0 | strftime("%Y-%m-%d %H:%M"))\n" +
+    "  Modifié le   : \(.LastModified // 0 | strftime("%Y-%m-%d %H:%M"))\n" +
+    "  Hors date    : \(if .OutOfDate then "yes" else "no" end)\n" +
+    "  URL AUR      : https://aur.archlinux.org/packages/\(.Name)\n" +
+    "  Description  : \(.Description // "")\n"
+  ' <<< "$limited"
+else
+  jq -r '
+    .[] |
+    [
+      .Name,
+      (.Version // "?"),
+      ((.NumVotes // 0) | tostring),
+      ((.Popularity // 0) | tostring),
+      (.Maintainer // "orphan")
+    ] | @tsv
+  ' <<< "$limited" | awk 'BEGIN {
+      printf "%-32s %-22s %-8s %-12s %-20s\n", "Nom", "Version", "Votes", "Popularité", "Mainteneur";
+      printf "%-32s %-22s %-8s %-12s %-20s\n", "--------------------------------", "----------------------", "--------", "------------", "--------------------";
+    }
+    {
+      printf "%-32s %-22s %-8s %-12s %-20s\n", $1, $2, $3, $4, $5;
+    }'
+fi

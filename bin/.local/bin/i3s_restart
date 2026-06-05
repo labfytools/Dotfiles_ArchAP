@@ -1,0 +1,3 @@
+#!/bin/sh
+pkill i3status-rs
+i3status-rs ~/.config/i3status-rust/config.toml &

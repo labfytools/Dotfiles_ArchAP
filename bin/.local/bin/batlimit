@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+BATTERY="${1:-BAT1}"
+
+read -rp "Niveau max de charge voulu [%] : " STOP
+
+if ! [[ "$STOP" =~ ^[0-9]+$ ]]; then
+  echo "Erreur: entre un nombre."
+  exit 1
+fi
+
+if (( STOP < 40 || STOP > 100 )); then
+  echo "Erreur: choisis une valeur entre 40 et 100."
+  exit 1
+fi
+
+START=$((STOP - 5))
+
+echo "Batterie : $BATTERY"
+echo "Seuil début charge : $START%"
+echo "Seuil arrêt charge : $STOP%"
+
+sudo tlp setcharge "$START" "$STOP" "$BATTERY"
+
+echo
+echo "État actuel :"
+sudo tlp-stat -b | grep -E "Battery|threshold|charge|Plugin|Supported"
