@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/goodroot/hyprwhspr/main/share/config.schema.json",
-  "primary_shortcut": "SUPER+SHIFT+XF86Assistant,",
+  "primary_shortcut": "SUPER+SHIFT+F23",
   "recording_mode": "push_to_talk",
   "keyboard_device_names": [
     "AT Translated Set 2 keyboard"
