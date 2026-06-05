@@ -6,7 +6,7 @@ After=graphical-session.target
 [Service]
 Type=simple
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && exit 0; sleep 0.1; done; echo "No Wayland socket" >&2; exit 1'
-ExecStart=/usr/bin/wl-paste --type image --watch cliphist store
+ExecStart=/usr/bin/wl-paste --type image/png --watch cliphist store
 Restart=on-failure
 
 [Install]

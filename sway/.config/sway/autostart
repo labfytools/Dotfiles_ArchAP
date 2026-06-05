@@ -23,36 +23,38 @@ exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py
 # =================================================
 
 assign [app_id="kitty-1"] workspace 1
-assign [app_id="kitty-2"] workspace 1
 assign [app_id="chromium"] workspace 2
 assign [app_id="firefox"] workspace 3
 assign [app_id="AppFlowy"] workspace 5
-assign [app_id="proton-bridge"] workspace 9
 assign [app_id="org.mozilla.Thunderbird"] workspace 9
 assign [class="Spotify"] workspace 10
+assign [app_id="proton-bridge"] workspace 11
 
 # =================================================
 # Lancement des applications
 # =================================================
 
 exec kitty --class kitty-1 --directory $HOME
-# exec kitty --class kitty-2 --directory $HOME
 exec chromium
-exec protonmail-bridge
 exec thunderbird
 exec spotify-launcher
-exec proton-pass
 exec AppFlowy
+# move to systemctl --user
+# exec gnome-keyring-daemon --components=pkcs11,secrets,ssh --start
+# exec proton-pass
+# exec protonmail-bridge
 
 # =================================================
 # Presse-papier
 # =================================================
 
-exec wl-paste --watch cliphist store
-exec wl-paste --type image/png --watch cliphist store
+# move to systemctl --user
+# exec wl-paste --watch cliphist store
+# exec wl-paste --type image/png --watch cliphist store
 
 # =================================================
 # Verrouillage auto (swayidle)
 # =================================================
 
-exec swayidle -w timeout 300 'swaylock -f -c 000000' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' before-sleep 'swaylock -f -c 000000'
+# move to systemctl --user
+# exec swayidle -w timeout 300 'swaylock -f -c 000000' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' before-sleep 'playerctl pause; swaylock -f -c 000000'

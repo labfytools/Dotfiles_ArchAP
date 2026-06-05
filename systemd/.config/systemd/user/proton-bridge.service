@@ -5,7 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Petit délai pour laisser le réseau et l'environnement user se stabiliser
 ExecStartPre=/bin/sleep 5
 ExecStart=/usr/bin/protonmail-bridge
 Restart=on-failure

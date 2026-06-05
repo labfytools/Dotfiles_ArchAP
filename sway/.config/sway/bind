@@ -222,6 +222,7 @@ bindsym $mod+Ctrl+m exec protonmail-bridge
 bindsym $mod+Ctrl+v exec virt-manager
 bindsym $mod+Ctrl+t exec thunar
 bindsym $mod+y exec kitty -- sh -c "yazi" 
+bindsym $mod+Ctrl+w exec gtk-launch chrome-hnpfjngllnobngcgfapefoaidbinmjnm-Default
 
 ###############################################
 #

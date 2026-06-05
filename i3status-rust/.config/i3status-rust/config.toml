@@ -6,6 +6,9 @@ theme = "ctp-mocha"
 icons = "material-nf"
 
 [[block]]
+block = "scratchpad"
+
+[[block]]
 block = "focused_window"
 [block.format]
 full = " $title.str(max_w:15) |"
@@ -69,8 +72,13 @@ format_up_to_date = " $icon Up to date "
 aur_command = "yay -Qua"
 
 [[block]]
+block = "time"
+interval = 60
+format = " $timestamp.datetime(f:'%d/%m %H:%M')"
+
+[[block]]
 block = "menu"
-text = " \uf011 "
+text = " \uf011  "
 [[block.items]]
 display = " ->  Sleep  <-"
 cmd = "systemctl suspend"

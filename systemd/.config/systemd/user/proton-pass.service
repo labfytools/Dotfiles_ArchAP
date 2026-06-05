@@ -1,0 +1,11 @@
+[Unit]
+Description=Proton Pass Service
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/proton-pass
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

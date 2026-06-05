@@ -1,17 +1,17 @@
 {
-    "$schema": "https://raw.githubusercontent.com/goodroot/hyprwhspr/main/share/config.schema.json",
-    "transcription_backend": "vulkan",
-    "model": "large-v3-turbo",
-    "audio_ducking": true,
-    "primary_shortcut": "SUPER+SHIFT+XF86Assistant,",
-    "recording_mode": "push_to_talk",
-    "language": "fr",
-    "start_sound_volume": 0.5,
-    "stop_sound_volume": 0.5,
-    "start_sound_path": "ping-up.ogg",
-    "stop_sound_path": "ping-down.ogg",
-    "audio_ducking": true,
-    "audio_ducking_percent": 50,
-    "mic_osd_enabled": true,
-    "whisper_prompt_fr": "Transcrire en français avec des phrases complètes, une ponctuation claire et des majuscules correctes au début des phrases, pour les noms propres et les titres, comme dans un texte rédigé"
+  "$schema": "https://raw.githubusercontent.com/goodroot/hyprwhspr/main/share/config.schema.json",
+  "primary_shortcut": "SUPER+SHIFT+XF86Assistant,",
+  "recording_mode": "push_to_talk",
+  "keyboard_device_names": [
+    "AT Translated Set 2 keyboard"
+  ],
+  "model": "large-v3-turbo",
+  "language": "fr",
+  "transcription_backend": "vulkan",
+  "start_sound_volume": 0.5,
+  "stop_sound_volume": 0.5,
+  "start_sound_path": "ping-up.ogg",
+  "stop_sound_path": "ping-down.ogg",
+  "audio_ducking": true,
+  "whisper_prompt_fr": "Transcrire en fran\u00e7ais avec des phrases compl\u00e8tes, une ponctuation claire et des majuscules correctes au d\u00e9but des phrases, pour les noms propres et les titres, comme dans un texte r\u00e9dig\u00e9"
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Wayland color temperature (wlsunset)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/gnome-keyring-daemon --components=pkcs11,secrets,ssh --start
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
