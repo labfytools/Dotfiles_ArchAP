@@ -14,9 +14,9 @@ Personal Arch Linux configuration focused on:
 **Goal** : 
 all reproducible from a single install script and a GNU Stow‑managed dotfiles repo.
 
-[Installation Guide](#installation-on-existing-system)
-[Greetd/Regreet config](#regreet-config)
-[Snapper install & config](#snapper-config)
+- [Installation Guide](#installation-on-existing-system)
+- [Greetd/Regreet config](#regreet-config)
+- [Snapper install & config](#snapper-config)
 
 ## Status
 
@@ -58,6 +58,7 @@ This setup assumes the following tools are installed (Arch package names):
 - [neovim](https://github.com/neovim/neovim) (text editor)
 - [zsh](https://github.com/ohmyzsh/ohmyzsh/wiki/Installing-ZSH) (shell)
 - [starship](https://github.com/starship/starship) (prompt)
+- [atuin](https://github.com/atuinsh/atuin) (shell history)
 - [fzf](https://github.com/junegunn/fzf) (fuzzy finder)
 - [fd](https://github.com/sharkdp/fd) (fast file search, used by fzf)
 - [ripgrep](https://github.com/burntsushi/ripgrep) (rg, fast grep)
