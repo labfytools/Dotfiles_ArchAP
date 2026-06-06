@@ -1,8 +1,8 @@
 # ArchAP – Arch Professor 
 
 <p align="center">
-    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/src/branch/main/.assets/screen.jpg width="600" height="400" alt="screenshot">
-</picture>
+  <img src="https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/screen.jpg" width="600" alt="Screenshot">
+</p>
 
 Personal Arch Linux configuration focused on: 
 
