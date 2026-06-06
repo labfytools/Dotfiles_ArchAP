@@ -186,7 +186,7 @@ Configuration for Wofi, a Wayland application launcher and cliphist manager:
 ## Starship: `.config/starship.toml`
 
 <p align="center">
-    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/starship.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/starship.jpg width="600" alt="screenshot">
     </img>
 </p>
 
