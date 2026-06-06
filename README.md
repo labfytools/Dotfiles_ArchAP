@@ -153,7 +153,7 @@ This ensures a consistent Catppuccin Mocha look across desktops, apps and widget
 ## Yazi: `.config/yazi`
 
 <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/yazi.jpg width="600" height="400" alt="screenshot">
+    <img src=https:https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/yazi.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
@@ -186,7 +186,7 @@ Configuration for Wofi, a Wayland application launcher and cliphist manager:
 ## Starship: `.config/starship.toml`
 
 <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/starship.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/starship.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
@@ -244,7 +244,7 @@ Qt theming configuration using `qt5ct` and `qt6ct`:
 ## Neovim: `.config/nvim`
 
 <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/nvim.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/nvim.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
@@ -296,7 +296,7 @@ This setup gives a modern, IDE-like Neovim experience with LSP, Treesitter, file
 Kitty terminal configuration and themes:
 
 <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/kitty.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/kitty.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
@@ -347,7 +347,7 @@ Additional directories complete the environment:
 - `.config/i3status-rust/`  
   Used by the Sway bar via `i3status.toml` (config content is referenced from Sway’s side).
  <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/i3s.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/i3s.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
@@ -356,14 +356,14 @@ Additional directories complete the environment:
 - `.config/fastfetch/config.jsonc`  
   Fastfetch configuration controlling system summary display in the terminal.
   <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/fastfetch.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/fastfetch.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
 - `.config/eza/catppuccin-mocha-lavender.yml`  
   eza color theme file tuned to match Catppuccin Mocha.
  <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/eza.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/eza.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
@@ -378,7 +378,7 @@ Additional directories complete the environment:
 - `.config/bat/themes/Catppuccin Mocha.tmTheme`  
   Bat syntax highlighting theme, again using Catppuccin Mocha.
  <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/bat.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/bat.jpg width="600" height="400" alt="screenshot">
     </img>
 </p>
 
