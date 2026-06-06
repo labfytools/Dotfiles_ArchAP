@@ -153,7 +153,7 @@ This ensures a consistent Catppuccin Mocha look across desktops, apps and widget
 ## Yazi: `.config/yazi`
 
 <p align="center">
-    <img src=https:https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/yazi.jpg width="600" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/raw/branch/main/.assets/yazi.jpg width="600" alt="screenshot">
     </img>
 </p>
 
