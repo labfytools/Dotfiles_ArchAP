@@ -4,7 +4,7 @@
 
 # Default wallpaper (more resolutions are available in /usr/share/backgrounds/sway/)
     output * bg ~/.wallpapers/sway.png fill
-    output eDP-1 mode 3200x2000 pos 3200 0 scale 1.5
+    output eDP-1 mode 3200x2000@60Hz pos 3200 0 scale 1.5
 
 #
 # Style

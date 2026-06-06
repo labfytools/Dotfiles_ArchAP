@@ -1,7 +1,7 @@
 # ArchAP – Arch Professor 
 
 <p align="center">
-    <img src=https://raw.githubusercontent.com/grayTerminal-sh/archasp/main/.assets/screen.jpg width="600" height="400" alt="screenshot">
+    <img src=https://git.labfytools.com/fy59/Dotfiles_ArchAP/src/branch/main/.assets/screen.jpg width="600" height="400" alt="screenshot">
 </picture>
 
 Personal Arch Linux configuration focused on: 
@@ -167,8 +167,6 @@ Configuration for the Yazi terminal file manager:
   Custom key mappings for navigation and actions.
 - `package.toml`  
   Package metadata for the configuration.
-- `flavors/tokyo-night.yazi/`  
-  Additional theme flavor based on Tokyo Night, with its own README, flavor definition and preview.
 
 ---
 
@@ -223,7 +221,7 @@ Sway configuration is split into multiple modular files for clarity:
   Screenshot or background asset.
 - `scripts/`  
   Helper scripts:
-  - `cliphist-wofi-img` to integrate clipboard history with Wofi and images
+  - `copypast` to integrate clipboard history with Wofi and images
   - `inactive-windows-transparency.py` for window transparency effects
 - `README.md`  
   Local documentation for the Sway setup.
@@ -417,6 +415,7 @@ rm -r ~/archasp
 ```shell
 cd &&\
 mkdir ~/.config/config_backup &&\
+mv ~/.config/atuin ~/.config/config_backup &&\
 mv ~/.config/bat ~/.config/config_backup &&\
 mv ~/.config/btop ~/.config/config_backup &&\
 mv ~/.config/calcure ~/.config/config_backup &&\
@@ -459,7 +458,7 @@ yay -S \
   gtk3 gtk4 catppuccin-gtk-theme-mocha \
   catppuccin-cursors-mocha swaylock-effects \
   swayidle greetd greetd-tuigreet grim slurp \
-  snapper brtfs-progs grub-snapper
+  snapper brtfs-progs grub-snapper uwsm
 ```
 
 ### greetd-tuigreet config
@@ -476,7 +475,7 @@ vt = 1
 
 # The default session, also known as the greeter.
 [default_session]
-command = "tuigreet tuigreet --time --greeting 'Welcome to ArchASP' --theme 'container=brightblack;border=magenta;text=white;greet=brightmagenta;prompt=cyan;input=brightcyan;time=brightyellow;error=red;button=green;action=green' --cmd mango --power-shutdown 'shutdown -h now' --power-reboot 'reboot'"
+command = "tuigreet tuigreet --time --greeting 'Welcome to ArchASP' --theme 'container=brightblack;border=magenta;text=white;greet=brightmagenta;prompt=cyan;input=brightcyan;time=brightyellow;error=red;button=green;action=green' --cmd 'uwsm start default' --power-shutdown 'shutdown -h now' --power-reboot 'reboot'"
 
 # The user to run the command as. The privileges this user must have depends
 # on the greeter. A graphical greeter may for example require the user to be
@@ -495,32 +494,12 @@ Encoding=UTF-8
 Name=Mango
 DesktopNames=mango;wlroots
 Comment=mango WM
-Exec=/home/fy59/.local/bin/mango-session.sh
+Exec=mango
 Icon=mango
 Type=Application
 
 ```
 
----
-
-```sh
-# /etc/greetd/sway-config
-
-exec "regreet; swaymsg exit"
-include /etc/sway/config.d/*
-
-### Keyboard (modify it)
-input * {
-    xkb_layout fr
-    xkb_variant oss
-}
-
-### Touchpad
-input "type:touchpad" {
-    tap enabled
-    tap_button_map lrm
-}
-```
 ---
 
 ```sh
@@ -530,10 +509,6 @@ input "type:touchpad" {
 
 systemctl --user start wayland-session.target
 exec mango
-```
-
-```bash
-chmod +x ~/.local/bin/mango-session.sh
 ```
 
 ---
@@ -548,12 +523,15 @@ sudo systemctl enable --now greetd.service
 sudo snapper -c root create-config /\
 sudo snapper -c root create-config /@
 ```
+
 ```shell
 sudo systemctl enable --now grub-btrfsd.service grub-btrfs.path
 ```
+
 ```shell
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
+
 ```config
 # /etc/snapper/configs/root
 # subvolume to snapshot
