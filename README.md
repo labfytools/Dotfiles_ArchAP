@@ -13,7 +13,6 @@ Personal Arch Linux configuration focused on:
 
 **Goal** : 
 all reproducible from a single install script and a GNU Stow‑managed dotfiles repo.
-<p>
 
 [Installation Guide](#installation-on-existing-system)
 [Greetd/Regreet config](#regreet-config)
