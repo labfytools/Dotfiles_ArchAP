@@ -82,6 +82,7 @@ This setup assumes the following tools are installed (Arch package names):
 - [wlogout](https://github.com/ArtsyMacaw/wlogout) (Power tool for waybar)
 - [waybar](https://github.com/Alexays/Waybar) (Status bar with MangoWM)
 - [mangown](https://github.com/mangowm/mango) (Windows compositor)
+- [atuin](https://github.com/atuinsh/atuin)
 
 ---
 
@@ -387,8 +388,8 @@ yay -S catppuccin-cursors-mocha catppuccin-gtk-theme-mocha && git clone https://
 ### Move dotfiles
 
 ```shell
-mkdir ~/.dotfiles &&\
-mv ~/archasp/* ~/.dotfiles &&\
+mkdir ~/.dotfiles && \
+mv ~/archasp/* ~/.dotfiles && \
 rm -r ~/archasp
 ```
 
@@ -396,29 +397,28 @@ rm -r ~/archasp
 
 ```shell
 cd &&\
-mkdir ~/.config/config_backup &&\
-mv ~/.config/atuin ~/.config/config_backup &&\
-mv ~/.config/bat ~/.config/config_backup &&\
-mv ~/.config/btop ~/.config/config_backup &&\
-mv ~/.config/calcure ~/.config/config_backup &&\
-mv ~/.config/cliphist ~/.config/config_backup &&\
-mv ~/.config/eza ~/.config/config_backup &&\
-mv ~/.config/fastfetch ~/.config/config_backup &&\
-mv ~/.config/gtk-3.0 ~/.config/config_backup &&\
-mv ~/.config/gtk-4.O ~/.config/config_backup &&\
-mv ~/.config/icons ~/.config/config_backup &&\
-mv ~/.config/kitty ~/.config/config_backup &&\
-mv ~/.config/mango ~/.config/mango_backup &&\
-mv ~/.config/nvim ~/.config/config_backup &&\
-mv ~/.config/qt5ct ~/.config/config_backup &&\
-mv ~/.config/qt6ct ~/.config/config_backup &&\
-mv ~/.config/starship ~/.config/config_backup &&\
-mv ~/.config/sway ~/.config/config_backup &&\
-mv ~/.config/swaylock ~/.config/config_backup &&\
-mv ~/.config/swaync ~/.config/config_backup &&\ 
-mv ~/.config/themes ~/.config/config_backup &&\
-mv ~/.config/wofi ~/.config/config_backup &&\
-mv ~/.config/yazi ~/.config/config_backup &&\
+mkdir ~/.config/config_backup && \
+mv ~/.config/atuin ~/.config/config_backup && \
+mv ~/.config/bat ~/.config/config_backup && \
+mv ~/.config/btop ~/.config/config_backup && \
+mv ~/.config/calcure ~/.config/config_backup && \
+mv ~/.config/cliphist ~/.config/config_backup && \
+mv ~/.config/eza ~/.config/config_backup && \
+mv ~/.config/fastfetch ~/.config/config_backup && \
+mv ~/.config/gtk-3.0 ~/.config/config_backup && \
+mv ~/.config/gtk-4.O ~/.config/config_backup && \
+mv ~/.config/icons ~/.config/config_backup && \
+mv ~/.config/kitty ~/.config/config_backup && \
+mv ~/.config/nvim ~/.config/config_backup && \
+mv ~/.config/qt5ct ~/.config/config_backup && \
+mv ~/.config/qt6ct ~/.config/config_backup && \
+mv ~/.config/starship ~/.config/config_backup && \
+mv ~/.config/sway ~/.config/config_backup && \
+mv ~/.config/swaylock ~/.config/config_backup && \
+mv ~/.config/swaync ~/.config/config_backup && \
+mv ~/.config/themes ~/.config/config_backup && \
+mv ~/.config/wofi ~/.config/config_backup && \
+mv ~/.config/yazi ~/.config/config_backup && \
 mv ~/.config/zsh ~/.config/config_backup
 ```
 
@@ -434,7 +434,7 @@ stow *\
 
 ```shell
 yay -S \
-  mangowm-git sway wofi i3status-rust kitty neovim zsh \
+  sway wofi i3status-rust kitty neovim zsh \
   starship fzf fd ripgrep eza fastfetch yazi bat \
   cliphist calcure zoxide pyenv git \
   gtk3 gtk4 catppuccin-gtk-theme-mocha \
@@ -465,33 +465,6 @@ command = "tuigreet --time --greeting 'Welcome to ArchASP' --theme 'container=br
 # in the `video` group.
 user = "greetd"
 
-```
-
----
-
-```desktop
-# /usr/share/wayland-sessions/mango.desktop
-
-[Desktop Entry]
-Encoding=UTF-8
-Name=Mango
-DesktopNames=mango;wlroots
-Comment=mango WM
-Exec=mango
-Icon=mango
-Type=Application
-
-```
-
----
-
-```sh
-#!/bin/sh
-
-# .local/bin/mango-session.sh
-
-systemctl --user start wayland-session.target
-exec mango
 ```
 
 ---
