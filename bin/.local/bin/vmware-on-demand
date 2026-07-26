@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+set -u
+
+readonly STACK_HELPER="/usr/local/sbin/vmware-stack"
+readonly LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/vmware-on-demand.lock"
+
+services_started=0
+
+cleanup() {
+    if (( services_started == 1 )); then
+        notify-send "VMware" "Arrêt du réseau VMware et de Samba…"
+
+        if sudo -n "$STACK_HELPER" stop; then
+            notify-send "VMware" "Réseau VMware et Samba arrêtés."
+        else
+            notify-send -u critical \
+                "VMware" \
+                "Impossible d’arrêter les services."
+        fi
+    fi
+}
+
+exec 9>"$LOCK_FILE"
+
+if ! flock -n 9; then
+    notify-send "VMware" "Une session VMware est déjà lancée."
+    exit 0
+fi
+
+notify-send "VMware" "Démarrage du réseau VMware et de Samba…"
+
+if ! sudo -n "$STACK_HELPER" start; then
+    notify-send -u critical \
+        "VMware" \
+        "Impossible de démarrer les services."
+    exit 1
+fi
+
+services_started=1
+trap cleanup EXIT INT TERM
+
+vmware "$@" &
+
+while pgrep -x vmware >/dev/null ||
+      pgrep -x vmware-vmx >/dev/null; do
+    sleep 3
+done

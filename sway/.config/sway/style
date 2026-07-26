@@ -3,7 +3,7 @@
 #
 
 # Default wallpaper (more resolutions are available in /usr/share/backgrounds/sway/)
-    output * bg ~/.wallpapers/sway.png fill
+    output * bg /usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
     output eDP-1 mode 3200x2000@60Hz pos 3200 0 scale 1.4
 
 #
@@ -22,13 +22,12 @@
 # set gtk+ theme
     set $gnome-schema org.gnome.desktop.interface
     exec_always {
-        gsettings set $gnome-schema gtk-theme 'catppuccin-mocha-lavender-standard+default'
         gsettings set $gnome-schema font-name 'jetbrains mono nerd font 12'
         gsettings set $gnome-schema color-scheme 'prefer-dark'
         gsettings get $gnome-schema icon-theme 'Tela-circle-blue'
     }
 
-set $cursor_theme catppuccin-mocha-lavender-cursors
+set $cursor_theme Bibata-Modern-Classic
 set $cursor_size 24
 
 seat seat0 xcursor_theme $cursor_theme $cursor_size

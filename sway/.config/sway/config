@@ -10,5 +10,5 @@ include ~/.config/sway/bar
 include ~/.config/sway/input
 include ~/.config/sway/rules
 include ~/.config/sway/style
-include ~/.config/sway/swayfx
+# include ~/.config/sway/swayfx
 include ~/.config/sway/autostart

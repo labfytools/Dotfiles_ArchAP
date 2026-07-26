@@ -1,0 +1,13 @@
+[Unit]
+Description=Proton Mail Bridge
+After=gnome-keyring-daemon.service
+Wants=gnome-keyring-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/protonmail-bridge
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

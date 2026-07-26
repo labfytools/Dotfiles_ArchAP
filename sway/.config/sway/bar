@@ -5,7 +5,7 @@
 include ~/.config/sway/catppuccin-mocha
 
 bar {
-    font pango:JetBrainsMono Nerd Font 12
+    font pango:Fira Code 12
     position top
     status_command i3status-rs ~/.config/i3status-rust/config.toml
     colors {
@@ -18,6 +18,6 @@ bar {
         focused_workspace  $base  $mauve    $crust
         active_workspace   $base  $surface2 $text
         inactive_workspace $base  $base     $text
-        urgent_workspace   $base  $red      $crust
+        urgent_workspace   $base  $peach    $crust
     }
 }

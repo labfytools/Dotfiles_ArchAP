@@ -7,12 +7,19 @@ icons = "material-nf"
 
 [[block]]
 block = "scratchpad"
+[block.theme_overrides]
+idle_bg = "#fab387"
+idle_fg = "#1e1e2e"
+
 
 [[block]]
 block = "focused_window"
 [block.format]
 full = " $title.str(max_w:15) |"
 short = " $title.str(max_w:10) |"
+[block.theme_overrides]
+idle_bg = "#f9e2af"
+idle_fg = "#1e1e2e"
 
 [[block]]
 block = "music"
@@ -28,8 +35,17 @@ action = "toggle_format"
 [[block]]
 block = "bluetooth"
 mac = "E4:61:F4:F4:A1:F7"
-format = " JBL Tune "
-disconnected_format = " 󰂲"
+format = " 󰂯 JBL Tune "
+disconnected_format = " 󰂲 JBL Tune "
+[[block.click]]
+button = "left"
+action = "blueman-manager"
+
+[[block]]
+block = "bluetooth"
+mac = "1C:57:85:33:54:7F"
+format = " 󰂯 EDENWOOD "
+disconnected_format = " 󰂲 EDENWOOD "
 [[block.click]]
 button = "left"
 action = "blueman-manager"
@@ -38,26 +54,46 @@ action = "blueman-manager"
 block = "net"
 device = "wlp1s0"
 format = " $icon {$signal_strength $ssid} "
+[block.theme_overrides]
+idle_bg = "#a6e3a1"
+idle_fg = "#1e1e2e"
 
 [[block]]
 block = "sound"
 step_width = 3
 max_vol = 100
+[block.theme_overrides]
+idle_bg = "#94e2d5"
+idle_fg = "#1e1e2e"
 
 [[block]]
 block = "backlight"
 device = "amdgpu_bl1"
 invert_icons = true
 minimum = 10
+[block.theme_overrides]
+idle_bg = "#89dceb"
+idle_fg = "#1e1e2e"
 
 [[block]]
 block = "battery"
 format = " $icon $percentage "
+[block.theme_overrides]
+idle_bg = "#a6e3a1"
+warning_bg = "#f9e2af"
+critical_bg = "#f38ba8"
+
+idle_fg = "#1e1e2e"
+warning_fg = "#1e1e2e"
+critical_fg = "#1e1e2e"
 
 [[block]]
 block = "custom"
 command = "~/.local/bin/tlp-profile.sh"
 interval = 5
+[block.theme_overrides]
+idle_bg = "#74c7ec"
+idle_fg = "#1e1e2e"
 
 [[block]]
 block = "packages"
@@ -74,7 +110,10 @@ aur_command = "yay -Qua"
 [[block]]
 block = "time"
 interval = 60
-format = " $timestamp.datetime(f:'%d/%m %H:%M')"
+format = " $timestamp.datetime(f:'%d/%m %H:%M') "
+[block.theme_overrides]
+idle_bg = "#b4befe"
+idle_fg = "#1e1e2e"
 
 [[block]]
 block = "menu"

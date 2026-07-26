@@ -200,7 +200,7 @@ bindsym $mod+Ctrl+r Reload
 #
 ###############################################
 
-bindsym $mod+Alt+i exec chromium
+bindsym $mod+Alt+i exec ~/.local/bin/vmware-on-demand
 bindsym $mod+Alt+f exec firefox
 bindsym $mod+Alt+a exec AppFlowy
 bindsym $mod+Alt+g exec gimp
@@ -209,10 +209,14 @@ bindsym $mod+Alt+b exec blueman-manager
 bindsym $mod+Alt+o exec swaylock
 bindsym $mod+Alt+l exec wofi --cache-file=/dev/null -Dimage_size=26 -Dynamic_lines=true --location top --yoffset=10 --width=600 --height=300 --gtk-dark --show drun
 bindsym $mod+Alt+p exec proton-pass
-bindsym $mod+Alt+t exec thunar
+bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton
 bindsym $mod+Alt+y exec kitty -- sh -c "yazi" 
 bindsym $mod+Alt+w exec gtk-launch chrome-hnpfjngllnobngcgfapefoaidbinmjnm-Default
 bindsym $mod+Alt+v exec ~/.config/sway/scripts/copypast
+bindsym $mod+Alt+c exec freecad
+bindsym $mod+Alt+s exec sqlitebrowser
+bindsym $mod+Alt+e exec sh -c 'cd /home/fy59/Documents/Enquetes/Template/labfy-investigation && exec ./labfy-investigation'
+bindsym $mod+Alt+n exec ~/.local/bin/nextcloud-sync
 
 ###############################################
 #

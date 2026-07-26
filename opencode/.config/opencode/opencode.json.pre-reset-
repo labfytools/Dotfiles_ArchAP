@@ -1,0 +1,105 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "autoupdate": false,
+
+  "enabled_providers": [
+    "ollama"
+  ],
+
+  "model": "ollama/labfy-coder:latest",
+
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama local",
+      "options": {
+        "baseURL": "http://127.0.0.1:11434/v1",
+        "timeout": 600000,
+        "chunkTimeout": 120000
+      },
+      "models": {
+        "labfy-coder:latest": {
+          "name": "Labfy Coder",
+          "limit": {
+            "context": 6144,
+            "output": 1024
+          }
+        }
+      }
+    }
+  },
+
+  "permission": {
+    "*": "ask",
+
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "Enquete.sqlite": "deny",
+      "**/Enquete.sqlite": "deny"
+    },
+
+    "glob": "allow",
+    "grep": "allow",
+    "lsp": "allow",
+    "question": "allow",
+
+    "edit": {
+      "*": "ask",
+      "Enquete.sqlite": "deny",
+      "**/Enquete.sqlite": "deny"
+    },
+
+    "bash": {
+      "*": "ask",
+
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git branch --show-current": "allow",
+      "git grep*": "allow",
+      "rg *": "allow",
+      "grep *": "allow",
+
+      "git commit*": "deny",
+      "git push*": "deny",
+      "git reset*": "deny",
+      "git clean*": "deny",
+
+      "rm *": "deny",
+      "sudo *": "deny",
+      "doas *": "deny",
+
+      "curl *": "deny",
+      "wget *": "deny",
+      "ssh *": "deny",
+      "scp *": "deny",
+      "rsync *": "deny"
+    },
+
+    "external_directory": "deny",
+    "websearch": "allow",
+    "webfetch": "ask",
+    "websearch": "deny",
+    "task": "deny",
+    "skill": "deny",
+    "doom_loop": "deny"
+  },
+
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 2048
+  },
+
+  "watcher": {
+    "ignore": [
+      ".git/**",
+      "build/**",
+      "*.o",
+      "tests/tmp/**"
+    ]
+  }
+}

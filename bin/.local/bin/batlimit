@@ -2,28 +2,38 @@
 
 set -euo pipefail
 
-BATTERY="${1:-BAT1}"
+readonly BATTERY="BAT1"
+readonly THRESHOLD_FILE="/sys/class/power_supply/${BATTERY}/charge_control_end_threshold"
+readonly CAPACITY_FILE="/sys/class/power_supply/${BATTERY}/capacity"
+readonly STATUS_FILE="/sys/class/power_supply/${BATTERY}/status"
+readonly HELPER="/usr/local/sbin/batlimit-set"
+
+if [[ ! -e "$THRESHOLD_FILE" ]]; then
+    echo "Erreur : aucun seuil de charge disponible pour ${BATTERY}."
+    exit 1
+fi
 
 read -rp "Niveau max de charge voulu [%] : " STOP
 
-if ! [[ "$STOP" =~ ^[0-9]+$ ]]; then
-  echo "Erreur: entre un nombre."
-  exit 1
+if [[ ! "$STOP" =~ ^[0-9]+$ ]]; then
+    echo "Erreur : entre un nombre entier."
+    exit 1
 fi
 
 if (( STOP < 40 || STOP > 100 )); then
-  echo "Erreur: choisis une valeur entre 40 et 100."
-  exit 1
+    echo "Erreur : choisis une valeur entre 40 et 100."
+    exit 1
 fi
 
-START=$((STOP - 5))
+if ! sudo -n "$HELPER" "$STOP"; then
+    echo "Erreur : impossible d’appliquer le seuil."
+    exit 1
+fi
 
-echo "Batterie : $BATTERY"
-echo "Seuil début charge : $START%"
-echo "Seuil arrêt charge : $STOP%"
-
-sudo tlp setcharge "$START" "$STOP" "$BATTERY"
+CURRENT_THRESHOLD=$(<"$THRESHOLD_FILE")
 
 echo
-echo "État actuel :"
-sudo tlp-stat -b | grep -E "Battery|threshold|charge|Plugin|Supported"
+echo "Batterie : ${BATTERY}"
+echo "Seuil appliqué : ${CURRENT_THRESHOLD}%"
+echo "Charge actuelle : $(<"$CAPACITY_FILE")%"
+echo "État : $(<"$STATUS_FILE")"

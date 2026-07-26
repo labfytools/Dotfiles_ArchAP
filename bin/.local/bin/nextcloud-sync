@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -u
+
+readonly LOCAL_DIR="$HOME/Documents"
+readonly SERVER_URL="https://cloud.labfytools.com"
+readonly LOG_DIR="$HOME/.local/state/nextcloud"
+readonly LOG_FILE="$LOG_DIR/sync.log"
+readonly LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/nextcloud-sync.lock"
+
+mkdir -p "$LOG_DIR"
+
+# Empêche deux synchronisations simultanées.
+exec 9>"$LOCK_FILE"
+
+if ! flock -n 9; then
+    notify-send \
+        -a "Nextcloud" \
+        -u normal \
+        "Nextcloud" \
+        "Une synchronisation est déjà en cours."
+    exit 0
+fi
+
+notify-send \
+    -a "Nextcloud" \
+    -u low \
+    "Nextcloud" \
+    "Synchronisation en cours…"
+
+{
+    printf '\n=== %s ===\n' "$(date --iso-8601=seconds)"
+} >> "$LOG_FILE"
+
+if nextcloudcmd \
+    -n \
+    "$LOCAL_DIR" \
+    "$SERVER_URL" >> "$LOG_FILE" 2>&1
+then
+    notify-send \
+        -a "Nextcloud" \
+        -u normal \
+        "Nextcloud" \
+        "✅ Synchronisation réussie."
+
+    printf 'Résultat : réussite\n' >> "$LOG_FILE"
+else
+    status=$?
+
+    notify-send \
+        -a "Nextcloud" \
+        -u critical \
+        "Nextcloud" \
+        "❌ Synchronisation échouée — code ${status}."
+
+    printf 'Résultat : échec, code %d\n' "$status" >> "$LOG_FILE"
+    exit "$status"
+fi

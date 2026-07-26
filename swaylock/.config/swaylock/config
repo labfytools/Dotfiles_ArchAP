@@ -1,17 +1,21 @@
-image=~/.wallpapers/sway.png
+image=~/.wallpapers/swaylock.png
 
-clock
-indicator
+ignore-empty-password
+show-failed-attempts
+show-keyboard-layout
+indicator-idle-visible
+
+font=JetBrainsMono Nerd Font
+font-size=40
+
 indicator-radius=100
-indicator-thickness=7
-effect-blur=7x5
-effect-vignette=0.5:0.5
-effect-pixelate=10
+indicator-thickness=12
+
 color=1e1e2e
 bs-hl-color=f5e0dc
 caps-lock-bs-hl-color=f5e0dc
 caps-lock-key-hl-color=a6e3a1
-inside-color=1e1e2e
+inside-color=1e1e2e70
 inside-clear-color=1e1e2e
 inside-caps-lock-color=1e1e2e
 inside-ver-color=1e1e2e
@@ -37,5 +41,4 @@ text-caps-lock-color=fab387
 text-ver-color=89b4fa
 text-wrong-color=eba0ac
 
-grace=1
-fade-in=0.2
+line-uses-ring

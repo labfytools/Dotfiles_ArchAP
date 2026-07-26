@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+set -u
+
+# Empêche deux lanceurs simultanés.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/thunderbird-proton.lock"
+
+if ! flock -n 9; then
+    notify-send "Thunderbird" "Thunderbird est déjà en cours d’utilisation."
+    exit 0
+fi
+
+# Le Bridge utilise le trousseau GNOME pour ses identifiants.
+systemctl --user start gnome-keyring-daemon.service
+
+if ! systemctl --user start protonmail-bridge.service; then
+    notify-send -u critical \
+        "Proton Mail Bridge" \
+        "Impossible de démarrer le service."
+    exit 1
+fi
+
+notify-send "Proton Mail Bridge" "Démarrage du serveur de messagerie…"
+
+# Attendre que les processus du Bridge soient réellement présents.
+for _ in {1..20}; do
+    if pgrep -f '/usr/lib/protonmail/bridge/bridge' >/dev/null; then
+        break
+    fi
+    sleep 0.5
+done
+
+sleep 2
+
+thunderbird "$@" &
+
+# Attendre la fermeture complète de Thunderbird.
+while pgrep -x thunderbird >/dev/null; do
+    sleep 2
+done
+
+systemctl --user stop protonmail-bridge.service
+notify-send "Proton Mail Bridge" "Arrêté après la fermeture de Thunderbird."

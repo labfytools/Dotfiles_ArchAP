@@ -322,24 +322,6 @@ Together with grub-btrfs, this configuration is integrated into GRUB so that the
 
 ---
 
-## wiki
-This wiki is my personal cybersecurity knowledge base.
-It centralizes course notes, lab write‑ups and reference material for networking, blue team and red team topics, so I can grow a coherent skill set over time instead of scattered notes.
-The structure is intentionally simple: foundations first, then focused sections for tools and defensive/offensive techniques, plus dedicated reference indexes to quickly jump back to key resources when needed.
-
-All my notes live in a Neovim‑driven wiki.
-From a terminal session, I just launch: 
-```shell
-nvim
-``` 
-and use 
-```
-<leader>ww
-```
-to open my main index page, then navigate through Markdown links like a lightweight personal documentation site.
-
----
-
 ## Other configs
 
 Additional directories complete the environment:
@@ -452,13 +434,14 @@ stow *\
 
 ```shell
 yay -S \
-  mangowm-git swayfx wofi i3status-rust kitty neovim zsh \
+  mangowm-git sway wofi i3status-rust kitty neovim zsh \
   starship fzf fd ripgrep eza fastfetch yazi bat \
   cliphist calcure zoxide pyenv git \
   gtk3 gtk4 catppuccin-gtk-theme-mocha \
-  catppuccin-cursors-mocha swaylock-effects \
+  catppuccin-cursors-mocha swaylock \
   swayidle greetd greetd-tuigreet grim slurp \
-  snapper brtfs-progs grub-snapper uwsm
+  snapper brtfs-progs grub-snapper uwsm \
+  autotiling atuin
 ```
 
 ### greetd-tuigreet config
@@ -475,7 +458,7 @@ vt = 1
 
 # The default session, also known as the greeter.
 [default_session]
-command = "tuigreet tuigreet --time --greeting 'Welcome to ArchASP' --theme 'container=brightblack;border=magenta;text=white;greet=brightmagenta;prompt=cyan;input=brightcyan;time=brightyellow;error=red;button=green;action=green' --cmd 'uwsm start default' --power-shutdown 'shutdown -h now' --power-reboot 'reboot'"
+command = "tuigreet --time --greeting 'Welcome to ArchASP' --theme 'container=brightblack;border=magenta;text=white;greet=brightmagenta;prompt=cyan;input=brightcyan;time=brightyellow;error=red;button=green;action=green' --cmd 'uwsm start default' --power-shutdown 'shutdown -h now' --power-reboot 'reboot'"
 
 # The user to run the command as. The privileges this user must have depends
 # on the greeter. A graphical greeter may for example require the user to be

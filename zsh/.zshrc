@@ -16,6 +16,7 @@ export HISTSIZE=10000
 export SAVEHIST=10000
 export EDITOR=/usr/bin/nvim
 export VISUAL=/usr/bin/nvim
+export SYSTEMD_EDITOR=nvim
 export SUDO_EDITOR=/usr/bin/nvim
 export GPG_TTY=$(tty)
 
@@ -159,7 +160,24 @@ gc() {
 alias gp='git push'
 alias gwiki='git add ~/.dotfiles/wiki/Wiki/ && gc && gp && ga && gc && gp'
 alias gl='git log --oneline --graph --decorate'
+gpall() {
+    local branch
 
+    branch="$(git branch --show-current)" || return 1
+
+    if [[ -z "$branch" ]]; then
+        print -u2 "Erreur : aucune branche Git active."
+        return 1
+    fi
+
+    print "Push vers Forgejo..."
+    git push origin "$branch" || return 1
+
+    print "Push vers GitHub..."
+    git push github "$branch" || return 1
+
+    print "Synchronisation terminée pour la branche : $branch"
+}
 # Grep / ripgrep
 alias grep='grep --color=auto'
 alias rg='rg --hidden --smart-case'
@@ -332,6 +350,13 @@ aconfig() {
 alias ssh-admin='ssh-add ~/.ssh/id_ed25519-admin'
 
 # =========================
+# Hyprwhspr 
+# =========================
+#
+alias whon='systemctl --user start hyprwhspr.service'
+alias whoff='systemctl --user stop hyprwhspr.service'
+
+# =========================
 # Android
 # =========================
 
@@ -369,3 +394,12 @@ export LESS_TERMCAP_se=$'\e[0m'        # reset standout
 export LESS_TERMCAP_so=$'\e[1;44;33m'  # standout (titres encadrés)
 export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 export LESS_TERMCAP_us=$'\e[1;32m'     # underline
+
+# Outils OSINT locaux Labfy
+export PATH="$HOME/.local/share/labfy-osint/bin:$PATH"
+
+
+# Added by Antigravity CLI installer
+export PATH="/home/fy59/.local/bin:$PATH"
+
+export OPENCODE_ENABLE_EXA=1
