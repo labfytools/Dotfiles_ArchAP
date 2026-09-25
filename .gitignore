@@ -16,6 +16,7 @@ hyprwhspr/.config/hyprwhspr/recording_control
 hyprwhspr/.config/hyprwhspr/recording_status
 
 # Machine-local or project-owned launchers exposed through ~/.local/bin.
+bin/.local/bin/agy
 bin/.local/bin/android
 bin/.local/bin/arch-sentinel
 bin/.local/bin/codex
