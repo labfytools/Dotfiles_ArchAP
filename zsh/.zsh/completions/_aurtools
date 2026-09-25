@@ -2,7 +2,7 @@
 
 _aurlist_dirs() {
   local -a pkgs
-  local AUR_DIR=${AUR_DIR:-$HOME/Aur}
+  local AUR_DIR=${AUR_DIR:-$HOME/.local/src/aur}
 
   pkgs=()
   if [[ -d $AUR_DIR ]]; then

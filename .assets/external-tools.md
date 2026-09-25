@@ -21,10 +21,10 @@ Ces éléments sont volontairement hors du dépôt de dotfiles. Les liens ou
 unités du dépôt supposent leur présence à ces emplacements :
 
 - `~/.local/src/arch-sentinel` fournit `~/.local/bin/arch-sentinel` ;
-- `~/Documents/trainlog` fournit les exécutables et agents Trainlog ;
+- `~/Documents/Development/trainlog` fournit les exécutables et agents Trainlog ;
 - `~/Documents/Lardon` fournit la session FreeCAD et ses outils ;
-- `~/Documents/labfy-remote-ui` fournit `labfy-remote-ui` ;
-- `~/Applications/openmvs-2.4.0` fournit OpenMVS au pipeline `scan3d` ;
+- `~/Documents/Development/labfy-remote-ui` fournit `labfy-remote-ui` ;
+- `~/.local/opt/openmvs-2.4.0` fournit OpenMVS au pipeline `scan3d` ;
 - `~/.codex/packages/standalone/current` fournit le lien utilisateur `codex`.
 
 ## Helpers système locaux

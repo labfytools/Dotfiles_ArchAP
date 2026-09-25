@@ -8,7 +8,7 @@ set -Eeuo pipefail
 # Les photos originales ne sont jamais déplacées ni supprimées.
 # Le script s'arrête avant l'ouverture de MeshLab.
 
-OPENMVS_BIN="${OPENMVS_BIN:-$HOME/Applications/openmvs-2.4.0/openmvs}"
+OPENMVS_BIN="${OPENMVS_BIN:-$HOME/.local/opt/openmvs-2.4.0/openmvs}"
 OPENMVS_IMAGE="${OPENMVS_IMAGE:-localhost/openmvs:2.4.0}"
 
 THREADS="${SCAN3D_THREADS:-4}"

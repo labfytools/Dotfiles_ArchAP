@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-AUR_DIR="${AUR_DIR:-$HOME/Aur}"
+AUR_DIR="${AUR_DIR:-$HOME/.local/src/aur}"
 END_UPDATE="Mis à jour avec succès ;p."
 SYSTEM_NAME="$(cat /etc/hostname 2>/dev/null || echo "unknown")"
 

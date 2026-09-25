@@ -215,7 +215,7 @@ bindsym $mod+Alt+w exec gtk-launch chrome-hnpfjngllnobngcgfapefoaidbinmjnm-Defau
 bindsym $mod+Alt+v exec ~/.config/sway/scripts/copypast
 bindsym $mod+Alt+c exec --no-startup-id kitty --app-id=lardon-freecad-log --title="Lardon · FreeCAD autopush" --directory=/home/fy59/Documents/Lardon /home/fy59/Documents/Lardon/tools/lardon-freecad-launcher
 bindsym $mod+Alt+s exec sqlitebrowser
-bindsym $mod+Alt+e exec sh -c 'cd /home/fy59/Documents/Enquetes/Template/labfy-investigation && exec ./labfy-investigation'
+bindsym $mod+Alt+e exec sh -c 'cd /home/fy59/Documents/Investigations/Template/labfy-investigation && exec ./labfy-investigation'
 bindsym $mod+Alt+n exec ~/.local/bin/nextcloud-sync
 bindsym $mod+c exec codex-desktop
 
