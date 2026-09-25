@@ -12,11 +12,11 @@ exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py
 # Règles d'assignation automatique
 # =================================================
 
-assign [class="Spotify"] workspace 10
+assign [app_id="limusic-app"] workspace 10
 
 # =================================================
 # Lancement des applications
 # =================================================
 
-exec spotify-launcher
+exec limusic-app
 exec autotiling

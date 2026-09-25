@@ -4,7 +4,7 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/swayidle -w timeout 300 'swaylock -f -c 000000' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' before-sleep 'playerctl pause; swaylock -f -c 000000'
+ExecStart=/usr/bin/swayidle -w timeout 300 'swaylock -f -c 000000' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' timeout 420 'playerctl -a pause 2>/dev/null || true' idlehint 420 before-sleep 'playerctl -a pause 2>/dev/null || true; swaylock -f -c 000000'
 Restart=on-failure
 
 [Install]

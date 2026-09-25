@@ -8,3 +8,12 @@
 
 for_window [app_id="blueman-manager"] floating enable, resize set 40ppt 40ppt, move position center
 for_window [app_id="Proton Pass"] floating enable, resize set 40ppt 40ppt, move position right top
+
+#=================================================
+# Lardon
+#=================================================
+
+for_window [app_id="lardon-freecad-log"] floating enable
+for_window [app_id="lardon-freecad-log"] resize set width 850 px height 360 px
+for_window [app_id="lardon-freecad-log"] move position center
+for_window [app_id="lardon-freecad-log"] border pixel 2

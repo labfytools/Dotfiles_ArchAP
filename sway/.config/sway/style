@@ -24,7 +24,7 @@
     exec_always {
         gsettings set $gnome-schema font-name 'jetbrains mono nerd font 12'
         gsettings set $gnome-schema color-scheme 'prefer-dark'
-        gsettings get $gnome-schema icon-theme 'Tela-circle-blue'
+        gsettings set $gnome-schema icon-theme 'Tela-circle-blue'
     }
 
 set $cursor_theme Bibata-Modern-Classic
@@ -40,5 +40,5 @@ seat seat0 xcursor_theme $cursor_theme $cursor_size
 
 
 # Set inner/outer gaps
-    gaps inner 8
+    gaps inner 5
     gaps outer 0

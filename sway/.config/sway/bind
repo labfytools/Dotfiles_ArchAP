@@ -17,7 +17,7 @@ set $term kitty
 bindsym $mod+Return exec $term
 
 # Kill focused window
-bindsym $mod+q kill
+bindsym $mod+q exec ~/.local/bin/sway-close
 
 # Drag floating windows by holding down $mod and left mouse button.
 # Resize them with right mouse button + $mod.
@@ -204,7 +204,7 @@ bindsym $mod+Alt+i exec ~/.local/bin/vmware-on-demand
 bindsym $mod+Alt+f exec firefox
 bindsym $mod+Alt+a exec AppFlowy
 bindsym $mod+Alt+g exec gimp
-bindsym $mod+Alt+m exec spotify-launcher
+bindsym $mod+Alt+m exec limusic-app
 bindsym $mod+Alt+b exec blueman-manager
 bindsym $mod+Alt+o exec swaylock
 bindsym $mod+Alt+l exec wofi --cache-file=/dev/null -Dimage_size=26 -Dynamic_lines=true --location top --yoffset=10 --width=600 --height=300 --gtk-dark --show drun
@@ -213,10 +213,11 @@ bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton
 bindsym $mod+Alt+y exec kitty -- sh -c "yazi" 
 bindsym $mod+Alt+w exec gtk-launch chrome-hnpfjngllnobngcgfapefoaidbinmjnm-Default
 bindsym $mod+Alt+v exec ~/.config/sway/scripts/copypast
-bindsym $mod+Alt+c exec freecad
+bindsym $mod+Alt+c exec --no-startup-id kitty --app-id=lardon-freecad-log --title="Lardon · FreeCAD autopush" --directory=/home/fy59/Documents/Lardon /home/fy59/Documents/Lardon/tools/lardon-freecad-launcher
 bindsym $mod+Alt+s exec sqlitebrowser
 bindsym $mod+Alt+e exec sh -c 'cd /home/fy59/Documents/Enquetes/Template/labfy-investigation && exec ./labfy-investigation'
 bindsym $mod+Alt+n exec ~/.local/bin/nextcloud-sync
+bindsym $mod+c exec codex-desktop
 
 ###############################################
 #
@@ -238,7 +239,6 @@ bindsym Print exec grim -g "$(slurp)" - | wl-copy -t image/png
 # Power Daemon
 #
 ###############################################
-bindsym $mod+F9 exec powerprofilesctl set power-saver
-bindsym $mod+F10 exec powerprofilesctl set balanced
-bindsym $mod+F11 exec powerprofilesctl set performance
-
+bindsym $mod+F9 exec tlpctl power-saver
+bindsym $mod+F10 exec tlpctl balanced
+bindsym $mod+F11 exec tlpctl performance
