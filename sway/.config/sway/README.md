@@ -45,8 +45,6 @@ Personal SwayFX configuration, modular and lightweight, designed for everyday Wa
 - cliphist
 - wlsunset
 - brightnessctl
-- powerprofilesctl
-- swaync
 - nm-connection-editor
 - playerctl
 
@@ -107,7 +105,6 @@ On startup, the config launches:
 - `wlsunset` for blue light reduction,
 - `wl-paste --watch cliphist store` for clipboard history,
 - `swayidle` for automatic locking and screen power management.
-- `swaync`
 
 ## Keybinds
 

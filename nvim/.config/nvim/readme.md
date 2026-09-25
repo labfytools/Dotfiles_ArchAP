@@ -29,9 +29,7 @@ Objectif : un setup léger, lisible, facile à maintenir et à hacker.
 │       ├── lsp.lua
 │       ├── mini-icons.lua
 │       ├── mini_map.lua
-│       ├── neowiki.lua
 │       ├── nvim-autopair.lua
-│       ├── nvim-tree.lua.old
 │       ├── outline.lua
 │       ├── render-markdown.lua
 │       ├── starter.lua
@@ -153,15 +151,8 @@ Keymaps personnalisés :
 - lewis6991/gitsigns.nvim pour les signes Git dans la marge.
 - tpope/vim-fugitive
 
-9. Notes / Wiki
-- echaya/neowiki.nvim comme wiki moderne (successeur de Vimwiki). 
-
-10. starter
+9. starter
 - nvim-mini/mini.starter
-
-Support Markdown + Treesitter, GTD, multiple wikis.
-
-Mappings typiques (configurable) : <leader>ww pour ouvrir le wiki, navigation entre pages, tâches, etc.
 
 ## Keymaps principaux
 
@@ -195,4 +186,3 @@ LSP
 - <leader>h : clear search.
 
 En Visuel : Tab / Shift-Tab → indent/désindent la sélection.
-
