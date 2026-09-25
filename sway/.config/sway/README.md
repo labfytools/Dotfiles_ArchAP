@@ -31,6 +31,8 @@ Personal SwayFX configuration, modular and lightweight, designed for everyday Wa
 - swayfx
 - swaylock
 - swayidle
+- tlp
+- tlp-pd
 
 ### Bar and status
 - i3status-rs
@@ -85,7 +87,7 @@ Example:
 
 The Sway bar is placed at the top and uses `i3status-rs` as its backend.
 
-The `i3status.toml` file includes:
+The i3status-rust configuration includes:
 - workspaces,
 - focused window,
 - music,
@@ -101,10 +103,8 @@ The `i3status.toml` file includes:
 
 ## Autostart
 
-On startup, the config launches:
-- `wlsunset` for blue light reduction,
-- `wl-paste --watch cliphist store` for clipboard history,
-- `swayidle` for automatic locking and screen power management.
+On startup, Sway launches the inactive-window transparency helper, LiMusic and
+`autotiling`. Wlsunset, Cliphist and swayidle are owned by user systemd units.
 
 ## Keybinds
 
@@ -113,25 +113,26 @@ Some important shortcuts:
 - `Mod + q`: close the focused window.
 - `Mod + Shift + e`: exit Sway via `swaynag`.
 - `Mod + r`: resize mode.
-- `Mod + Shift + c`: reload the config.
-- `Mod + Ctrl + l`: lock the screen.
+- `Mod + Ctrl + r`: reload the config.
+- `Mod + Alt + o`: lock the screen.
 - `Print`: capture a selected area to the clipboard.
 - `Shift + Print`: capture the full screen to the clipboard.
-- `Mod + Ctrl + e`: launcher wofi
-- `Mod + v`: wofi cliphist
-- `Mod + F9``Mod + F10``Mod + F11`: power profiles
+- `Mod + Alt + l`: launcher Wofi.
+- `Mod + Alt + v`: Cliphist via Wofi.
+- `Mod + F9`, `Mod + F10`, `Mod + F11`: TLP power profiles.
 
 ## Power profiles
 
-The bar includes a `powerprofilesctl` block with:
+The bar displays the current TLP and platform profiles. The related keybinds
+use the unprivileged `tlpctl` interface provided by `tlp-pd`:
 - `performance`,
 - `balanced`,
 - `power-saver`.
 
 The related keybinds are:
-- `Mod + F9`: power-saver.
-- `Mod + F10`: balanced.
-- `Mod + F11`: performance.
+- `Mod + F9`: `tlpctl power-saver`.
+- `Mod + F10`: `tlpctl balanced`.
+- `Mod + F11`: `tlpctl performance`.
 
 ## Floating windows
 

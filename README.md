@@ -1,161 +1,162 @@
-# Dotfiles ArchASP
+# ArchASP Dotfiles
 
-Configurations utilisateur de mon poste principal sous **Arch Linux**, avec un environnement **Wayland / Sway**.
+Configuration de la couche utilisateur de la station Arch Linux ArchASP. Le
+dépôt privilégie des fichiers lisibles, déployés par GNU Stow, et sépare
+explicitement la session utilisateur de l'administration système.
 
-Ce dépôt contient uniquement les fichiers liés à ma session utilisateur.  
-Les configurations système, les paquets, Btrfs, Snapper, Limine, TLP, nftables et les outils nécessitant les droits root sont gérés séparément dans le dépôt [`arch-system`](https://git.labfytools.com/fy59/arch-system).
+## Overview
 
-## Environnement
+Ce dépôt gère Sway, les applications de terminal, le shell, les scripts
+personnels et les unités systemd utilisateur. La configuration root, les
+paquets de base, le stockage, le réseau, le boot et les helpers sous
+`/usr/local` appartiennent au dépôt
+[`arch-system`](https://git.labfytools.com/fy59/arch-system).
 
-- Arch Linux
-- Sway
-- Wayland
-- Kitty
-- Zsh
-- Neovim
-- PipeWire / WirePlumber
-- systemd utilisateur
-- GNU Stow pour le déploiement des fichiers
+Certaines configurations restent liées à cette machine : sorties Sway,
+périphériques, chemins sous `/home/fy59` et projets présents dans `Documents`.
+Elles doivent être relues avant un déploiement sur un autre poste.
 
-## Contenu
+## Desktop Stack
 
-Le dépôt regroupe notamment :
+La chaîne de session canonique est :
 
 ```text
-.config/
-├── kitty/
-├── nvim/
-├── sway/
-├── systemd/user/
-└── ...
-
-.local/
-├── bin/
-└── share/
-
-.zshrc
+greetd -> tuigreet -> UWSM -> Sway
 ```
 
-### Scripts utilisateur
+Sway utilise sa barre native avec i3status-rs. Mako fournit les notifications,
+Wofi le lanceur, Swaylock le verrouillage, wl-clipboard et Cliphist
+l'historique du presse-papiers, et Kitty le terminal.
 
-Le dossier `~/.local/bin` contient plusieurs outils personnels, notamment :
+Le fichier `uwsm/.config/uwsm/default-id` sélectionne `sway.desktop`. La copie
+de référence de la configuration root de greetd se trouve dans
+`.assets/greetd/config.toml`; son installation réelle sous `/etc/greetd`
+relève de `arch-system`.
 
-- gestion temporaire du seuil de charge de la batterie ;
-- synchronisation Nextcloud à la demande ;
-- lancement conjoint de Thunderbird et Proton Mail Bridge ;
-- démarrage et arrêt à la demande de VMware et Samba ;
-- notifications de batterie faible ;
-- outils de maintenance Arch et AUR ;
-- scripts liés à Sway, au presse-papiers et à la session Wayland.
+## Shell Stack
 
-### Services systemd utilisateur
+Le shell interactif est Zsh. Son environnement associe Starship, Atuin, FZF,
+Zoxide, Eza, Bat et Yazi. `.zprofile` démarre la session graphique via UWSM
+lorsque celui-ci autorise un démarrage, et `.zshenv` publie le socket de
+l'agent SSH utilisateur.
 
-Les unités présentes dans `.config/systemd/user/` permettent notamment de gérer :
+Les données Atuin, historiques de shell, clés, bases et états applicatifs ne
+font pas partie du dépôt.
 
-- les notifications de batterie ;
-- Cliphist ;
-- GNOME Keyring ;
-- l’agent SSH ;
-- Swayidle ;
-- Wlsunset ;
-- Proton Mail Bridge ;
-- différents services propres à la session graphique.
+## Repository Layout
 
-Les services lourds ou occasionnels ne sont pas démarrés en permanence.
+Chaque répertoire de premier niveau, hors `.assets` et `.git`, est un paquet
+GNU Stow indépendant. Son contenu reproduit le chemin attendu depuis `$HOME` :
 
-## Installation
+```text
+kitty/.config/kitty/       -> ~/.config/kitty/
+nvim/.config/nvim/         -> ~/.config/nvim/
+sway/.config/sway/         -> ~/.config/sway/
+bin/.local/bin/            -> ~/.local/bin/
+systemd/.config/systemd/   -> ~/.config/systemd/
+zsh/.zshrc                 -> ~/.zshrc
+```
 
-Cloner le dépôt dans le dossier personnel :
+Les thèmes, icônes et wallpapers sont volontairement versionnés. `.assets`
+contient les inventaires de reconstruction et des références système ; ce
+n'est pas un paquet Stow.
+
+## Deployment
+
+Prérequis : Git, GNU Stow et les paquets décrits dans `.assets`. Cloner le
+dépôt principal avec ses sous-modules :
 
 ```bash
-git clone \
-    https://git.labfytools.com/fy59/Dotfiles_ArchAP.git \
-    "$HOME/Dotfiles_ArchAP"
-
-cd "$HOME/Dotfiles_ArchAP"
+git clone --recurse-submodules \
+  ssh://git@git.labfytools.com:2223/fy59/Dotfiles_ArchAP.git \
+  "$HOME/.dotfiles"
+cd "$HOME/.dotfiles"
+git submodule update --init --recursive
 ```
 
-Avant tout déploiement, vérifier les liens qui seraient créés :
+Construire la liste des paquets, puis commencer obligatoirement par un dry-run :
 
 ```bash
-stow --no --verbose --target="$HOME" .
+mapfile -t packages < <(
+  find . -mindepth 1 -maxdepth 1 -type d \
+    ! -name .git ! -name .assets -printf '%f\n' | sort
+)
+stow --no --verbose=2 --target="$HOME" "${packages[@]}"
 ```
 
-Puis appliquer les dotfiles :
+Après examen des conflits éventuels, effectuer le déploiement :
 
 ```bash
-stow --verbose --target="$HOME" .
+stow --verbose=2 --target="$HOME" "${packages[@]}"
 ```
 
-En cas de conflit avec des fichiers existants, les sauvegarder ou les comparer avant de les remplacer.
+Stow reçoit les noms des paquets. Il ne faut pas lancer `stow .`, car la
+racine du dépôt n'est pas elle-même un paquet.
 
-## Recharger la configuration
+## Package Inventory
 
-Après une modification des unités systemd utilisateur :
+- `.assets/pkglist-pacman.txt` contient les paquets officiels explicitement
+  installés (`pacman -Qqen`).
+- `.assets/pkglist-aur.txt` contient les paquets foreign/AUR explicitement
+  installés (`pacman -Qqem`).
+- `.assets/external-tools.md` décrit Cargo, npm, builds manuels, projets locaux
+  et helpers système qui ne sont pas restaurés par Pacman.
+
+Ces fichiers sont des instantanés, pas un programme d'installation. Leur
+application et la validation des paquets AUR relèvent de la reconstruction du
+système.
+
+## Services
+
+`.assets/enabled-services.txt` recense les services systemd système activés.
+Les timers, sockets et paths sont séparés dans
+`.assets/enabled-system-aux-units.txt` et
+`.assets/enabled-user-aux-units.txt`. Leur activation côté système appartient
+à `arch-system`.
+
+Le paquet `systemd` contient les unités utilisateur et leurs liens
+d'activation canoniques. Après déploiement ou modification :
 
 ```bash
 systemctl --user daemon-reload
+systemd-analyze --user verify ~/.config/systemd/user/*.service
 ```
 
-Pour réactiver les unités voulues :
+Plusieurs unités lancent du code externe à ce dépôt, notamment Trainlog,
+Lardon et Arch Sentinel. Leurs sources et builds doivent être restaurés aux
+emplacements documentés dans `.assets/external-tools.md`.
 
-```bash
-systemctl --user enable --now NOM.service
-systemctl --user enable --now NOM.timer
-```
+## Secrets
 
-Pour recharger Sway :
+Ne jamais versionner de clé SSH/GPG, `.netrc`, token, cookie, credential,
+configuration Rclone ou `gh` privée, clé WireGuard, base Atuin, clé Atuin ou
+secret Nextcloud. Les états et caches applicatifs restent sous `$HOME` et sont
+exclus de Stow ou de Git.
 
-```bash
-swaymsg reload
-```
+Un contrôle du HEAD ne remplace pas une analyse de l'historique Git. Tout
+secret ayant été commité doit être révoqué ou renouvelé avant une purge de
+l'historique et avant la publication d'un miroir.
 
-## Mise à jour du dépôt
+## Rebuilding ArchASP
 
-Depuis le dépôt :
+Une reconstruction repose sur deux couches :
 
-```bash
-git status
-git add -A
-git commit -m "chore: update user configuration"
-git push
-```
+1. `arch-system` restaure la base Arch, les paquets, greetd, le réseau, le
+   stockage et les services root ;
+2. ce dépôt restaure les sous-modules, fichiers Stow, scripts et unités
+   systemd utilisateur.
 
-Les données sensibles ne doivent jamais être ajoutées au dépôt.
+Restent manuels ou externes : installation des paquets AUR, outils Cargo/npm,
+builds des projets dans `Documents`, OpenMVS local, helpers `/usr/local`,
+secrets, données applicatives et activation contrôlée des unités. Le dépôt ne
+prétend donc pas reconstruire seul une machine complète.
 
-Sont notamment exclus :
+## Repository Mirrors
 
-- clés SSH ;
-- mots de passe ;
-- jetons d’accès ;
-- fichiers `.netrc` ;
-- mots de passe d’application ;
-- clés WireGuard ;
-- bases de données personnelles ;
-- fichiers contenant des informations privées.
+Forgejo est l'upstream principal et conserve le nom de remote `origin`.
+GitHub, lorsqu'il sera configuré, sera un miroir secondaire nommé `github`.
+Un historique contenant un secret ne doit jamais être envoyé vers ce miroir.
 
-## Séparation avec `arch-system`
+## License
 
-| Dépôt | Responsabilité |
-|---|---|
-| [`Dotfiles_ArchAP`](https://git.labfytools.com/fy59/Dotfiles_ArchAP) | Configuration utilisateur, Sway, Neovim, Kitty, Zsh, scripts et unités systemd utilisateur |
-| [`arch-system`](https://git.labfytools.com/fy59/arch-system) | Paquets, configuration système, Btrfs, Snapper, Limine, TLP, nftables, sudoers et helpers root |
-
-Cette séparation évite de mélanger les fichiers personnels avec les éléments propres à l’installation du système.
-
-## Avertissement
-
-Ces fichiers correspondent à mon matériel, mon utilisateur et mon organisation personnelle.
-
-Ils peuvent servir de référence, mais ne doivent pas être déployés tels quels sur une autre machine sans vérifier :
-
-- les chemins ;
-- le nom d’utilisateur ;
-- les écrans et périphériques ;
-- les commandes disponibles ;
-- les unités systemd ;
-- les dépendances installées.
-
-## Licence
-
-Configuration personnelle fournie sans garantie.
+Aucune licence n'est actuellement déclarée pour ce dépôt.
