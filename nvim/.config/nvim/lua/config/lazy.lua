@@ -31,5 +31,36 @@ require("lazy").setup({
   -- colorscheme that will be used when installing plugins.
   install = { colorscheme = { "habamax" } },
   -- automatically check for plugin updates
-  checker = { enabled = true },
+  checker = { enabled = false },
+})
+local lazy_update_group =
+    vim.api.nvim_create_augroup("LazyAutoUpdate", { clear = true })
+
+-- Fermer l'interface lorsque la mise à jour est terminée
+vim.api.nvim_create_autocmd("User", {
+    group = lazy_update_group,
+    pattern = "LazyUpdate",
+    once = true,
+    callback = function()
+        vim.schedule(function()
+            local ok, view = pcall(require, "lazy.view")
+
+            if ok and view.view and view.visible() then
+                view.view:close()
+            end
+        end)
+    end,
+})
+
+-- Lancer la mise à jour à l'ouverture de Neovim
+vim.api.nvim_create_autocmd("VimEnter", {
+    group = lazy_update_group,
+    once = true,
+    callback = function()
+        vim.schedule(function()
+            require("lazy").update({
+                show = true,
+            })
+        end)
+    end,
 })
