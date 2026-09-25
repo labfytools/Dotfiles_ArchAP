@@ -10,6 +10,7 @@
 # =========================
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="$HOME/.local/npm/bin:$PATH"
 export PYENV_ROOT="$HOME/.pyenv"
 export HISTFILE="$HOME/.zsh_history"
 export HISTSIZE=10000
@@ -158,7 +159,6 @@ gc() {
     git commit -m "$msg"
 }
 alias gp='git push'
-alias gwiki='git add ~/.dotfiles/wiki/Wiki/ && gc && gp && ga && gc && gp'
 alias gl='git log --oneline --graph --decorate'
 gpall() {
     local branch
@@ -380,6 +380,16 @@ andromount() {
     return 1
 }
 
+# =========================
+# Android
+# =========================
+
+alias codex-dev='systemd-inhibit --what=sleep:idle --who="codex-dev" --why="Codex development session" --mode=block codex --sandbox workspace-write --ask-for-approval never'
+alias codex-hw='systemd-inhibit --what=sleep:idle --who="codex-hw" --why="Codex hardware/Vulkan session" --mode=block codex --sandbox danger-full-access --ask-for-approval never'
+alias codex-luna='codex -m gpt-5.6-luna -c model_reasoning_effort=\"low\"'
+alias codex-terra='codex -m gpt-5.6-terra -c model_reasoning_effort=\"medium\"'
+alias codex-sol='codex -m gpt-5.6-sol -c model_reasoning_effort=\"low\"'
+
 androumount() {
     local mp="${1:-$HOME/android}"
     fusermount -u "$mp" && echo "Android démonté de $mp"
@@ -395,11 +405,19 @@ export LESS_TERMCAP_so=$'\e[1;44;33m'  # standout (titres encadrés)
 export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 export LESS_TERMCAP_us=$'\e[1;32m'     # underline
 
-# Outils OSINT locaux Labfy
-export PATH="$HOME/.local/share/labfy-osint/bin:$PATH"
-
-
 # Added by Antigravity CLI installer
 export PATH="/home/fy59/.local/bin:$PATH"
 
 export OPENCODE_ENABLE_EXA=1
+export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
+
+alias ocaway="$HOME/.local/bin/opencode-away"
+
+# Goose — bornes agentiques
+export GOOSE_MAX_TURNS=80
+export GOOSE_SUBAGENT_MAX_TURNS=12
+export GOOSE_MAX_BACKGROUND_TASKS=2
+
+# Android SDK
+export ANDROID_HOME="$HOME/Android/Sdk"
+export PATH="$PATH:$ANDROID_HOME/platform-tools"
