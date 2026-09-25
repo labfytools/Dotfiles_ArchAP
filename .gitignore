@@ -1,2 +1,28 @@
 atuin/.local/share/
 hyprwhspr/.local/share/
+
+# Generated language/package-manager data
+**/__pycache__/
+*.py[cod]
+**/node_modules/
+
+# Local editor/application backups
+*.bak
+*.old
+
+# Hyprwhspr runtime endpoints are recreated below XDG_RUNTIME_DIR.
+hyprwhspr/.config/hyprwhspr/audio_level
+hyprwhspr/.config/hyprwhspr/recording_control
+hyprwhspr/.config/hyprwhspr/recording_status
+
+# Machine-local or project-owned launchers exposed through ~/.local/bin.
+bin/.local/bin/android
+bin/.local/bin/arch-sentinel
+bin/.local/bin/codex
+bin/.local/bin/goose
+bin/.local/bin/labfy-remote-ui
+bin/.local/bin/trainlog
+bin/.local/bin/trainlog-bt-watch
+bin/.local/bin/trainlog-btd
+bin/.local/bin/trainlog-sync-once
+bin/.local/bin/trainlog-syncd
