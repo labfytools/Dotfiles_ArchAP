@@ -1,0 +1,7 @@
+avahi-daemon.socket
+cups.path
+cups.socket
+fstrim.timer
+snapper-cleanup.timer
+snapper-timeline.timer
+systemd-userdbd.socket

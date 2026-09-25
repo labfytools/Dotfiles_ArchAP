@@ -1,0 +1,17 @@
+appflowy-bin
+bibata-cursor-theme
+bridge-utils
+colmap
+colmap-debug
+freeimage
+go-mtpfs-git
+hyprwhspr
+jmtpfs
+limine-snapper-sync
+limusic-bin
+meshlab-bin
+mozjpeg-debug
+proton-pass-bin
+spicetify-marketplace-bin
+vmware-workstation
+yay

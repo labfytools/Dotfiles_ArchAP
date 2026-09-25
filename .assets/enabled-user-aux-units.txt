@@ -1,0 +1,6 @@
+arch-sentinel-sample.timer
+battery-low-notify.timer
+gnome-keyring-daemon.socket
+p11-kit-server.socket
+pipewire-pulse.socket
+pipewire.socket

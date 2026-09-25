@@ -1,18 +1,6 @@
 [terminal]
-# The VT to run the greeter on. Can be "next", "current" or a number
-# designating the VT.
 vt = 1
 
-# The default session, also known as the greeter.
 [default_session]
-
-# `agreety` is the bundled agetty/login-lookalike. You can replace `/bin/sh`
-# with whatever you want started, such as `sway`.
-command = "sway --config /etc/greetd/sway-config"
-
-# The user to run the command as. The privileges this user must have depends
-# on the greeter. A graphical greeter may for example require the user to be
-# in the `video` group.
-user = ""
-
-
+command = "tuigreet --remember --asterisks --time --greeting 'Welcome to ArchASP' --theme 'container=brightblack;border=magenta;text=white;greet=brightmagenta;prompt=cyan;input=brightcyan;time=brightyellow;error=red;button=green;action=green' --cmd 'uwsm start default' --power-shutdown 'shutdown -h now' --power-reboot 'reboot'"
+user = "greeter"
