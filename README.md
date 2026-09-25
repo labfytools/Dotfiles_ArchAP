@@ -1,291 +1,143 @@
 <p align="center">
-  <img src=".assets/screen.jpg" alt="ArchASP — Sway desktop" width="100%">
+  <img src="docs/assets/banner.png" alt="ArchASP Dotfiles — Reproducible Arch Linux user environment" width="100%">
 </p>
 
 <h1 align="center">ArchASP Dotfiles</h1>
 
 <p align="center">
-  Configuration utilisateur reproductible pour une station Arch Linux sous
-  Wayland, déployée package par package avec GNU Stow.
+  Environnement utilisateur Arch Linux reproductible, composé avec GNU Stow.
 </p>
 
 <p align="center">
-  <code>Arch Linux</code> · <code>Sway</code> · <code>GNU Stow</code> ·
-  <code>systemd --user</code> · <code>Zsh</code>
+  <img alt="Arch Linux" src="https://img.shields.io/badge/Arch_Linux-user_environment-1793d1?style=flat-square&logo=archlinux&logoColor=white">
+  <img alt="Wayland avec Sway" src="https://img.shields.io/badge/Wayland-Sway-89b4fa?style=flat-square">
+  <img alt="GNU Stow" src="https://img.shields.io/badge/deployment-GNU_Stow-cba6f7?style=flat-square">
+  <img alt="Stable 0.1.0" src="https://img.shields.io/badge/stable-0.1.0-a6e3a1?style=flat-square">
 </p>
 
 <p align="center">
-  <a href="#overview">Overview</a> ·
-  <a href="#desktop-stack">Desktop</a> ·
-  <a href="#shell-stack">Shell</a> ·
-  <a href="#repository-layout">Layout</a> ·
-  <a href="#deployment">Deployment</a> ·
-  <a href="#rebuilding-archasp">Rebuild</a>
+  <a href="#-overview">Overview</a> ·
+  <a href="#-stack">Stack</a> ·
+  <a href="#-preview">Preview</a> ·
+  <a href="#-quick-start">Quick Start</a> ·
+  <a href="#-documentation">Documentation</a> ·
+  <a href="#-version">Version</a>
 </p>
-
-<a id="overview"></a>
 
 ## ✦ Overview
 
-Ce dépôt contient la couche **utilisateur** d'ArchASP : session graphique,
-applications terminal, shell, scripts personnels et unités systemd user. La
-couche **système/root** est volontairement séparée.
+`Dotfiles_ArchAP` décrit la couche **utilisateur** d'ArchASP : session Wayland,
+shell, applications terminal, scripts personnels et unités systemd user. Chaque
+package reproduit son chemin sous `$HOME` et GNU Stow déploie les liens
+symboliques correspondants.
 
-| Dépôt | Responsabilité |
+L'administration système reste séparée dans
+[`arch-system`](https://git.labfytools.com/fy59/arch-system) : installation
+Arch, boot, stockage, réseau, paquets, `/etc` et helpers root. Les inventaires
+de ce dépôt documentent la machine réelle, mais ne constituent pas un
+installateur automatique.
+
+## ✦ Stack
+
+| Desktop | Shell |
 | --- | --- |
-| **`.dotfiles`** | Sway, Kitty, Neovim, Zsh, scripts, thèmes et services utilisateur |
-| **[`arch-system`](https://git.labfytools.com/fy59/arch-system)** | Installation Arch, boot, stockage, réseau, paquets, `/etc` et helpers root |
+| `greetd → tuigreet → UWSM → Sway` | `Zsh → Starship → Atuin` |
+| `Swaybar → i3status-rs` | `FZF → Zoxide → Eza → Bat → Yazi` |
+| Mako · Wofi · Swaylock · Cliphist · Kitty | plugins Zsh et Tmux épinglés par sous-modules |
 
-Cette séparation évite de mêler état personnel et administration système. Le
-dépôt reste néanmoins spécifique à la machine : sorties Sway, périphériques,
-chemins sous `/home/fy59` et projets externes doivent être relus avant un
-déploiement ailleurs.
-
-<a id="desktop-stack"></a>
-
-## ✦ Desktop Stack
-
-```text
-greetd
-  └─ tuigreet
-      └─ UWSM
-          └─ Sway
-              ├─ Swaybar ── i3status-rs
-              ├─ Mako       notifications
-              ├─ Wofi       launcher
-              ├─ Swaylock   verrouillage
-              ├─ Cliphist   historique du presse-papiers
-              └─ Kitty      terminal
+```mermaid
+flowchart LR
+    G[greetd] --> T[tuigreet] --> U[UWSM] --> S[Sway]
+    S --> B[Swaybar] --> I[i3status-rs]
+    S --> M[Mako]
+    S --> W[Wofi]
+    S --> L[Swaylock]
+    S --> C[Cliphist]
+    S --> K[Kitty]
 ```
 
-| Fonction | Composant canonique |
-| --- | --- |
-| Session | `greetd → tuigreet → uwsm start default → sway.desktop` |
-| Compositor | Sway / SwayFX |
-| Barre | Swaybar avec i3status-rs |
-| Notifications | Mako |
-| Launcher | Wofi |
-| Verrouillage et idle | Swaylock + swayidle |
-| Presse-papiers | wl-clipboard + Cliphist |
-| Terminal | Kitty |
-| Profils d'énergie | TLP via l'interface utilisateur `tlpctl` |
+Les responsabilités et dépendances sont détaillées dans
+[`docs/desktop.md`](docs/desktop.md) et [`docs/shell.md`](docs/shell.md).
 
-`uwsm/.config/uwsm/default-id` sélectionne `sway.desktop`. La copie de
-référence de greetd se trouve dans `.assets/greetd/config.toml`; son
-installation sous `/etc/greetd` appartient à `arch-system`.
+## ✦ Preview
 
-<a id="shell-stack"></a>
+<p align="center">
+  <img src="docs/assets/screenshots/archasp.png" alt="Environnement ArchASP réel sous Sway" width="100%">
+</p>
 
-## ✦ Shell Stack
+<p align="center"><sub>Environnement ArchASP réel — Sway, applications terminal et palette Catppuccin.</sub></p>
+
+## ✦ Repository
 
 ```text
-Zsh
- ├─ Starship
- ├─ Atuin
- ├─ FZF
- ├─ Zoxide
- ├─ Eza
- ├─ Bat
- └─ Yazi
+ArchASP
+├── arch-system       système/root · /etc · services système · installation
+└── Dotfiles_ArchAP   utilisateur · $HOME · Stow · systemd --user
 ```
 
-`.zprofile` démarre la session graphique via UWSM lorsque celui-ci autorise un
-démarrage. `.zshenv` publie le socket de l'agent SSH utilisateur. L'historique,
-les bases et la clé Atuin restent strictement locaux et hors Git.
+Les 31 packages Stow couvrent le desktop, le shell, le développement, les
+services utilisateur et l'apparence. `.assets/` contient les inventaires de
+reconstruction ; `docs/` contient la documentation et n'est jamais un package
+Stow. Voir le [contrat d'architecture](docs/architecture.md).
 
-<a id="repository-layout"></a>
+## ✦ Quick Start
 
-## ✦ Repository Layout
-
-Chaque répertoire de premier niveau, hors `.assets` et `.git`, est un package
-GNU Stow indépendant. Son arborescence reproduit le chemin attendu depuis
-`$HOME`.
-
-```text
-.dotfiles/
-├── sway/.config/sway/             → ~/.config/sway/
-├── i3status-rust/.config/         → ~/.config/i3status-rust/
-├── kitty/.config/kitty/           → ~/.config/kitty/
-├── nvim/.config/nvim/             → ~/.config/nvim/
-├── systemd/.config/systemd/user/  → ~/.config/systemd/user/
-├── bin/.local/bin/                → ~/.local/bin/
-├── zsh/.zshrc                     → ~/.zshrc
-├── zsh/.zprofile                  → ~/.zprofile
-└── .assets/                       inventaires et références, non déployés
-```
-
-### Packages principaux
-
-| Groupe | Packages Stow |
-| --- | --- |
-| Desktop | `sway`, `swaylock`, `mako`, `wofi`, `cliphist`, `i3status-rust` |
-| Terminal et shell | `kitty`, `zsh`, `starship`, `atuin`, `fzf`, `eza`, `bat`, `yazi` |
-| Développement | `nvim`, `tmux`, `opencode`, `bin` |
-| Services | `systemd`, `uwsm` |
-| Apparence | `gtk-3.0`, `gtklock`, `qt5ct`, `qt6ct`, `themes`, `icons`, `wallpapers` |
-| Outils | `btop`, `fastfetch`, `hyprwhspr`, `ytmusic-tui` |
-
-Les thèmes, icônes et wallpapers sont volontairement versionnés. Les
-exécutables issus de projets externes restent hors Git même lorsqu'un script
-ou une unité user les utilise.
-
-### Sous-modules
-
-Les plugins Zsh et Tmux sont épinglés par Git :
-
-| Intégration | Chemin |
-| --- | --- |
-| Fast Syntax Highlighting | `zsh/.zsh/plugins/fast-syntax-highlighting` |
-| FZF Tab | `zsh/.zsh/plugins/fzf-tab` |
-| Zsh Autosuggestions | `zsh/.zsh/plugins/zsh-autosuggestions` |
-| Catppuccin Tmux | `tmux/.config/tmux/plugins/catppuccin/tmux` |
-
-<a id="deployment"></a>
-
-## ✦ Deployment
-
-### Prérequis
-
-- Git ;
-- GNU Stow ;
-- les paquets décrits dans `.assets` ;
-- une sauvegarde des fichiers existants qui pourraient entrer en conflit.
-
-### Clone
+Le chemin heureux utilise Bash pour le tableau des packages :
 
 ```bash
 git clone --recurse-submodules \
   ssh://git@git.labfytools.com:2223/fy59/Dotfiles_ArchAP.git \
   "$HOME/.dotfiles"
-
 cd "$HOME/.dotfiles"
-git submodule update --init --recursive
-```
 
-### Dry-run Stow
-
-Construire la liste des packages à partir des répertoires de premier niveau :
-
-```bash
-mapfile -t packages < <(
-  find . -mindepth 1 -maxdepth 1 -type d \
-    ! -name .git ! -name .assets -printf '%f\n' | sort
-)
+packages=(atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock \
+  hyprwhspr i3status-rust icons kitty mako nvim opencode qt5ct qt6ct \
+  starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi \
+  ytmusic-tui zsh)
 
 stow --no --verbose=2 --target="$HOME" "${packages[@]}"
-```
-
-Examiner tout conflit avant le déploiement réel :
-
-```bash
 stow --verbose=2 --target="$HOME" "${packages[@]}"
 ```
 
-> Stow reçoit les **noms des packages**. La racine du dépôt n'est pas un
-> package : ne pas utiliser `stow .`.
+Le dry-run doit être examiné avant le déploiement. Les prérequis, conflits,
+inventaires et validations sont décrits dans le
+[guide d'installation](docs/installation.md).
 
-<a id="package-inventory"></a>
+## ✦ Documentation
 
-## ✦ Package Inventory
+| Guide | Sujet |
+| --- | --- |
+| [Documentation](docs/README.md) | Index et responsabilités des documents |
+| [Architecture](docs/architecture.md) | Frontières ArchASP, Stow et données locales |
+| [Installation](docs/installation.md) | Clone neuf, sous-modules, Stow et validations |
+| [Desktop](docs/desktop.md) | Chaîne greetd/UWSM/Sway et composants Wayland |
+| [Shell](docs/shell.md) | Zsh, outils interactifs, plugins et scripts |
+| [systemd](docs/systemd.md) | Services système et unités utilisateur |
+| [Packages](docs/packages.md) | Inventaires Pacman, AUR, services et outils externes |
+| [Recovery](docs/recovery.md) | Reconstruction complète après perte du disque |
+| [Security](docs/security.md) | Secrets exclus et règles de publication |
 
-| Fichier | Source | Contenu |
-| --- | --- | --- |
-| `.assets/pkglist-pacman.txt` | `pacman -Qqen` | Paquets officiels explicitement installés |
-| `.assets/pkglist-aur.txt` | `pacman -Qqem` | Paquets foreign/AUR explicitement installés |
-| `.assets/enabled-services.txt` | systemd système | Services système activés |
-| `.assets/enabled-system-aux-units.txt` | systemd système | Timers, sockets et paths activés |
-| `.assets/enabled-user-aux-units.txt` | systemd user | Timers, sockets et paths utilisateur activés |
-| `.assets/external-tools.md` | inventaire manuel | Cargo, npm, builds locaux, projets et helpers `/usr/local` |
+## ✦ Mirrors
 
-Ces fichiers sont des instantanés vérifiables, pas un installateur. Les paquets
-AUR, outils Cargo/npm et builds locaux doivent être restaurés séparément.
+| Rôle | Dépôt |
+| --- | --- |
+| Upstream principal | [Forgejo](https://git.labfytools.com/fy59/Dotfiles_ArchAP) |
+| Miroir public | [GitHub](https://github.com/labfytools/Dotfiles_ArchAP) |
 
-<a id="services"></a>
+Le fetch d'`origin` reste attaché à Forgejo. Ses deux URLs de push publient
+vers Forgejo et GitHub.
 
-## ✦ Services
+## ✦ Version
 
-Le package `systemd` contient les unités utilisateur ainsi que leurs liens
-d'activation relatifs. Il couvre notamment Cliphist, swayidle, GNOME Keyring,
-l'agent SSH, les notifications de batterie et les intégrations Trainlog,
-Lardon et Arch Sentinel.
+| Branche | Rôle |
+| --- | --- |
+| `0.1.0` | Snapshot stable de la première version nettoyée et documentée |
+| `main` | Développement courant |
 
-Après une modification :
-
-```bash
-systemctl --user daemon-reload
-systemd-analyze --user verify ~/.config/systemd/user/*.service
-```
-
-Certaines unités lancent du code externe au dépôt. Leurs chemins et
-dépendances sont documentés dans `.assets/external-tools.md`. Les services
-système et toute modification de `/etc` restent sous la responsabilité
-d'`arch-system`.
-
-<a id="secrets"></a>
-
-## ✦ Secrets
-
-Ce dépôt n'a pas vocation à contenir :
-
-- clés SSH, GPG, WireGuard ou Atuin ;
-- `.netrc`, mots de passe, tokens, cookies ou credentials ;
-- configurations privées Rclone, GitHub CLI ou Nextcloud ;
-- bases de données, historiques shell ou états applicatifs personnels.
-
-Les ignorer dans le HEAD ne suffit pas : un secret déjà commité doit être
-renouvelé, puis supprimé de tout l'historique avant publication.
-
-<a id="rebuilding-archasp"></a>
-
-## ✦ Rebuilding ArchASP
-
-```text
-┌──────────────────────────────────────────────────────┐
-│ arch-system                                          │
-│ Arch · boot · stockage · réseau · paquets · /etc    │
-└──────────────────────────┬───────────────────────────┘
-                           │ socle système prêt
-                           ▼
-┌──────────────────────────────────────────────────────┐
-│ .dotfiles                                            │
-│ Stow · session · shell · scripts · systemd user     │
-└──────────────────────────┬───────────────────────────┘
-                           │ restaurations externes
-                           ▼
-┌──────────────────────────────────────────────────────┐
-│ AUR · Cargo/npm · projets locaux · secrets · données│
-└──────────────────────────────────────────────────────┘
-```
-
-Ordre de reconstruction recommandé :
-
-1. restaurer la couche système avec `arch-system` ;
-2. installer Git et GNU Stow ;
-3. cloner ce dépôt avec ses sous-modules ;
-4. restaurer les paquets officiels puis examiner les paquets AUR ;
-5. effectuer le dry-run et déployer les packages Stow ;
-6. restaurer les outils Cargo/npm et les projets locaux nécessaires ;
-7. restaurer les secrets et données applicatives depuis une sauvegarde sûre ;
-8. valider puis activer les unités systemd voulues.
-
-Le dépôt ne reconstruit pas seul les projets sous `Documents`, OpenMVS local,
-les helpers `/usr/local`, les secrets, les bases applicatives ou les réglages
-matériels propres à la machine.
-
-<a id="repository-mirrors"></a>
-
-## ✦ Repository Mirrors
-
-| Rôle | Hébergement | URL |
-| --- | --- | --- |
-| Upstream principal | Forgejo | `ssh://git@git.labfytools.com:2223/fy59/Dotfiles_ArchAP.git` |
-| Miroir public | GitHub | `https://github.com/labfytools/Dotfiles_ArchAP` |
-
-Le fetch d'`origin` reste attaché à Forgejo. Ses URLs de push publient vers
-Forgejo et GitHub afin qu'un `git push origin main` maintienne les deux copies.
-
-<a id="license"></a>
+La branche stable est immobile : les développements suivants avancent sur
+`main` sans déplacer automatiquement `0.1.0`.
 
 ## ✦ License
 
-Aucune licence n'est actuellement déclarée pour ce dépôt.
+Aucune licence n'est actuellement déclarée pour ce dépôt. En l'absence de
+licence, aucun droit de réutilisation n'est accordé implicitement.
