@@ -1,0 +1,16 @@
+[Unit]
+Description=Arch Sentinel - collecte légère
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/arch-sentinel sample
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/arch-sentinel
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes

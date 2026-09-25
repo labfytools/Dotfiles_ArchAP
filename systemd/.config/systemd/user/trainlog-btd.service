@@ -1,0 +1,13 @@
+[Unit]
+Description=Trainlog Bluetooth RFCOMM agent
+ConditionPathExists=/home/fy59/.config/trainlog/sync-generation-config-v1.json
+
+[Service]
+Type=simple
+ExecCondition=/usr/bin/grep -Eq '"bluetooth_enabled"[[:space:]]*:[[:space:]]*true' "/home/fy59/.config/trainlog/sync-generation-config-v1.json"
+ExecStart=/usr/bin/python3 "/home/fy59/Documents/trainlog/tools/trainlog_bt_agent.py" --config "/home/fy59/.config/trainlog/sync-generation-config-v1.json"
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

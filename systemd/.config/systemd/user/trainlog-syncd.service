@@ -1,0 +1,13 @@
+[Unit]
+Description=Trainlog automatic synchronization agent
+
+[Service]
+Type=simple
+Environment=TRAINLOG_SYNC_BT_ADAPTER=/home/fy59/Documents/trainlog/tools/trainlog_generation_bt_adapter.py
+Environment=TRAINLOG_SYNC_MTP_ADAPTER=/home/fy59/Documents/trainlog/build/tui/trainlog-generation-mtp-adapter
+ExecStart=/usr/bin/python3 "/home/fy59/Documents/trainlog/tools/trainlog_syncd.py" --sync-once "/home/fy59/Documents/trainlog/build/tui/trainlog-sync-once" --bt-adapter "/home/fy59/Documents/trainlog/tools/trainlog_generation_bt_adapter.py" --mtp-adapter "/home/fy59/Documents/trainlog/build/tui/trainlog-generation-mtp-adapter" --interval 3
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

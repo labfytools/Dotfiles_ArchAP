@@ -1,0 +1,16 @@
+[Unit]
+Description=Session FreeCAD Lardon avec autopush
+Documentation=file://%h/Documents/Lardon/README.md
+
+ConditionPathExists=%h/Documents/Lardon/FreeCAD/Lardon_Master.FCStd
+ConditionFileIsExecutable=%h/Documents/Lardon/tools/freecad-autopush
+ConditionFileIsExecutable=%h/Documents/Lardon/tools/lardon-freecad-session
+
+[Service]
+Type=exec
+WorkingDirectory=%h/Documents/Lardon
+ExecStart=%h/Documents/Lardon/tools/lardon-freecad-session
+
+KillMode=control-group
+TimeoutStopSec=15s
+Restart=no

@@ -1,0 +1,35 @@
+[Unit]
+Description=Trainlog Web local user service
+Documentation=https://github.com/labfytools/trainlog
+After=default.target
+# WHY: A persistent bind failure (notably an occupied 127.0.0.1:8080) must not
+# become an aggressive restart loop in the user's session.
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+# CONTRACT: The user-managed executable is the canonical manual and service
+# entry point; the repository/build location must not leak into this unit.
+ExecStart=%h/.local/bin/trainlog -w
+# INVARIANT: Trainlog stays in the foreground, owns its ordered SIGTERM
+# shutdown, and always keeps the frozen loopback address and port contract.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=10
+
+# These protections do not isolate the home directory: Trainlog must retain
+# access to its SQLite data and configuration below ~/.local/share and ~/.config.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target
