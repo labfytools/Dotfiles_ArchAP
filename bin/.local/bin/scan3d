@@ -1,0 +1,697 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# scan3d
+# Pipeline interactif :
+#   photos -> pré-tri -> COLMAP -> OpenMVS -> maillage texturé
+#
+# Les photos originales ne sont jamais déplacées ni supprimées.
+# Le script s'arrête avant l'ouverture de MeshLab.
+
+OPENMVS_BIN="${OPENMVS_BIN:-$HOME/Applications/openmvs-2.4.0/openmvs}"
+OPENMVS_IMAGE="${OPENMVS_IMAGE:-localhost/openmvs:2.4.0}"
+
+THREADS="${SCAN3D_THREADS:-4}"
+SEQUENTIAL_OVERLAP="${SCAN3D_OVERLAP:-20}"
+RESOLUTION_LEVEL="${SCAN3D_RESOLUTION_LEVEL:-3}"
+NUMBER_VIEWS="${SCAN3D_NUMBER_VIEWS:-4}"
+MIN_FREE_GIB="${SCAN3D_MIN_FREE_GIB:-45}"
+
+USE_GPU=1
+KEEP_DEPTHMAPS=0
+
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+BLUE=$'\e[34m'
+BOLD=$'\e[1m'
+RESET=$'\e[0m'
+
+log() {
+    printf '\n%s%s==>%s %s\n' "$BOLD" "$BLUE" "$RESET" "$*"
+}
+
+ok() {
+    printf '%s✓%s %s\n' "$GREEN" "$RESET" "$*"
+}
+
+warn() {
+    printf '%s⚠%s %s\n' "$YELLOW" "$RESET" "$*" >&2
+}
+
+die() {
+    printf '%sERREUR:%s %s\n' "$RED" "$RESET" "$*" >&2
+    exit 1
+}
+
+cleanup_on_error() {
+    local code=$?
+    if (( code != 0 )); then
+        printf '\n%sLe pipeline s’est arrêté avec le code %d.%s\n' \
+            "$RED" "$code" "$RESET" >&2
+        printf 'Relance simplement %sscan3d%s pour reprendre à la dernière étape validée.\n' \
+            "$BOLD" "$RESET" >&2
+    fi
+}
+trap cleanup_on_error EXIT
+
+prompt_default() {
+    local prompt="$1"
+    local default="$2"
+    local answer
+    read -r -e -p "$prompt [$default] : " answer
+    printf '%s' "${answer:-$default}"
+}
+
+yes_no() {
+    local prompt="$1"
+    local default="${2:-n}"
+    local answer suffix
+
+    if [[ "$default" == "o" ]]; then
+        suffix="[O/n]"
+    else
+        suffix="[o/N]"
+    fi
+
+    while true; do
+        read -r -p "$prompt $suffix : " answer
+        answer="${answer:-$default}"
+        case "${answer,,}" in
+            o|oui|y|yes) return 0 ;;
+            n|non|no) return 1 ;;
+            *) printf 'Réponds par o ou n.\n' ;;
+        esac
+    done
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "commande introuvable : $1"
+}
+
+run_logged() {
+    local logfile="$1"
+    shift
+    mkdir -p "$(dirname "$logfile")"
+    "$@" 2>&1 | tee "$logfile"
+}
+
+natural_list() {
+    find "$@" -print0 | sort -zV
+}
+
+choose_source_dir() {
+    local default_dir="$PWD"
+    local entered
+
+    while true; do
+        entered="$(prompt_default 'Dossier contenant les photos' "$default_dir")"
+        entered="${entered/#\~/$HOME}"
+        entered="$(realpath -m "$entered")"
+
+        if [[ -d "$entered" ]]; then
+            RAW_DIR="$entered"
+            return
+        fi
+
+        warn "Le dossier n’existe pas : $entered"
+    done
+}
+
+choose_categories() {
+    printf '\n%sQuelles photos utiliser pour la reconstruction ?%s\n' "$BOLD" "$RESET"
+    printf '  1) Bonnes uniquement          — recommandé\n'
+    printf '  2) Bonnes + suspectes         — plus complet, plus risqué\n'
+    printf '  3) Toutes, y compris mauvaises — déconseillé\n'
+
+    local choice
+    while true; do
+        read -r -p 'Choix [1] : ' choice
+        choice="${choice:-1}"
+        case "$choice" in
+            1)
+                SELECTED_CATEGORIES=("bonnes")
+                CATEGORY_LABEL="bonnes"
+                return
+                ;;
+            2)
+                SELECTED_CATEGORIES=("bonnes" "suspectes")
+                CATEGORY_LABEL="bonnes-suspectes"
+                return
+                ;;
+            3)
+                SELECTED_CATEGORIES=("bonnes" "suspectes" "mauvaises")
+                CATEGORY_LABEL="toutes"
+                return
+                ;;
+            *)
+                printf 'Choisis 1, 2 ou 3.\n'
+                ;;
+        esac
+    done
+}
+
+write_tri_script() {
+    cat > "$TRI_PY" <<'PY'
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import csv
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+import cv2
+import numpy as np
+from PIL import Image
+
+EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+
+
+@dataclass
+class Result:
+    path: Path
+    category: str
+    sharpness: float
+    white: float
+    black: float
+    brightness: float
+    reason: str
+
+
+def natural_key(path: Path) -> list[object]:
+    return [
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r"(\d+)", path.name)
+    ]
+
+
+def load_gray(path: Path) -> np.ndarray:
+    with Image.open(path) as source:
+        source = source.convert("L")
+        gray = np.asarray(source)
+
+    height, width = gray.shape
+    maximum_dimension = 1600
+
+    if max(width, height) > maximum_dimension:
+        scale = maximum_dimension / max(width, height)
+        gray = cv2.resize(
+            gray,
+            (
+                max(1, round(width * scale)),
+                max(1, round(height * scale)),
+            ),
+            interpolation=cv2.INTER_AREA,
+        )
+
+    return gray
+
+
+def analyze(path: Path) -> tuple[dict[str, float] | None, str]:
+    try:
+        gray = load_gray(path)
+    except Exception as error:
+        return None, f"illisible: {error}"
+
+    return {
+        "sharpness": float(cv2.Laplacian(gray, cv2.CV_64F).var()),
+        "white": float(np.count_nonzero(gray >= 250) / gray.size * 100),
+        "black": float(np.count_nonzero(gray <= 5) / gray.size * 100),
+        "brightness": float(gray.mean()),
+    }, ""
+
+
+def classify(path: Path, metrics: dict[str, float] | None, error: str) -> Result:
+    if metrics is None:
+        return Result(path, "mauvaises", 0.0, 0.0, 0.0, 0.0, error)
+
+    sharpness = metrics["sharpness"]
+    white = metrics["white"]
+    black = metrics["black"]
+    brightness = metrics["brightness"]
+
+    reasons: list[str] = []
+
+    if sharpness < 100:
+        reasons.append("très floue")
+    elif sharpness < 170:
+        reasons.append("floue possible")
+
+    if white > 20:
+        reasons.append("très surexposée")
+    elif white > 8:
+        reasons.append("surexposition possible")
+
+    if black > 35:
+        reasons.append("très sombre")
+    elif black > 15:
+        reasons.append("ombres bouchées possibles")
+
+    if brightness > 225 or brightness < 25:
+        reasons.append("luminosité extrême")
+
+    severe = (
+        sharpness < 100
+        or white > 20
+        or black > 35
+        or brightness > 225
+        or brightness < 25
+    )
+
+    if severe:
+        category = "mauvaises"
+    elif reasons:
+        category = "suspectes"
+    else:
+        category = "bonnes"
+
+    return Result(
+        path,
+        category,
+        sharpness,
+        white,
+        black,
+        brightness,
+        "; ".join(reasons) or "ok",
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("images", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+
+    images_dir = args.images.expanduser().resolve()
+    output_dir = args.output.expanduser().resolve()
+
+    excluded_roots = {
+        output_dir,
+        images_dir / "scan3d",
+        images_dir / "tri_resultat",
+        images_dir / "test_colmap",
+        images_dir / "colmap_complet",
+    }
+
+    images: list[Path] = []
+    for path in images_dir.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if path.suffix.lower() not in EXTENSIONS:
+            continue
+        if any(root == path or root in path.parents for root in excluded_roots):
+            continue
+        images.append(path)
+
+    images.sort(key=natural_key)
+
+    if not images:
+        print("Aucune image trouvée.", file=sys.stderr)
+        return 1
+
+    print(f"{len(images)} images trouvées.")
+
+    results: list[Result] = []
+    for index, path in enumerate(images, 1):
+        metrics, error = analyze(path)
+        results.append(classify(path, metrics, error))
+        print(
+            f"\rAnalyse {index}/{len(images)} : {path.name[:55]:55s}",
+            end="",
+            flush=True,
+        )
+    print()
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for category in ("bonnes", "suspectes", "mauvaises"):
+        category_dir = output_dir / category
+        if category_dir.exists():
+            for child in category_dir.iterdir():
+                if child.is_symlink() or child.is_file():
+                    child.unlink()
+        category_dir.mkdir(parents=True, exist_ok=True)
+
+    with (output_dir / "resultats.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(
+            [
+                "fichier",
+                "categorie",
+                "netteté",
+                "blanc_pct",
+                "noir_pct",
+                "luminosité",
+                "raison",
+            ]
+        )
+
+        counters = {"bonnes": 0, "suspectes": 0, "mauvaises": 0}
+        for result in results:
+            counters[result.category] += 1
+            link_name = f"{counters[result.category]:06d}_{result.path.name}"
+            link_path = output_dir / result.category / link_name
+            link_path.symlink_to(result.path.resolve())
+
+            writer.writerow(
+                [
+                    str(result.path),
+                    result.category,
+                    f"{result.sharpness:.2f}",
+                    f"{result.white:.2f}",
+                    f"{result.black:.2f}",
+                    f"{result.brightness:.2f}",
+                    result.reason,
+                ]
+            )
+
+    for category in ("bonnes", "suspectes", "mauvaises"):
+        count = sum(result.category == category for result in results)
+        print(f"{category}: {count}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+PY
+}
+
+podman_openmvs() {
+    podman run --rm \
+        -v "$OPENMVS_BIN:/openmvs:ro,Z" \
+        -v "$WORK_DIR:/data:Z" \
+        -w /data/openmvs \
+        "$OPENMVS_IMAGE" \
+        "$@"
+}
+
+printf '%s\n' "${BOLD}scan3d — pipeline photogrammétrique COLMAP + OpenMVS${RESET}"
+
+require_command colmap
+require_command podman
+require_command /usr/bin/python
+require_command realpath
+require_command sort
+require_command find
+require_command sqlite3
+
+/usr/bin/python - <<'PY' >/dev/null 2>&1 || die \
+"Modules Python manquants. Installe : sudo pacman -S python-opencv python-numpy python-pillow"
+import cv2
+import numpy
+from PIL import Image
+PY
+
+[[ -x "$OPENMVS_BIN/InterfaceCOLMAP" ]] ||
+    die "OpenMVS introuvable dans : $OPENMVS_BIN"
+[[ -x "$OPENMVS_BIN/DensifyPointCloud" ]] ||
+    die "DensifyPointCloud introuvable dans : $OPENMVS_BIN"
+
+podman image exists "$OPENMVS_IMAGE" ||
+    die "Image Podman absente : $OPENMVS_IMAGE"
+
+choose_source_dir
+
+PROJECT_ROOT="$RAW_DIR/scan3d"
+TRI_DIR="$PROJECT_ROOT/tri"
+TRI_PY="$PROJECT_ROOT/tri_photos.py"
+
+mkdir -p "$PROJECT_ROOT"
+write_tri_script
+
+if [[ -f "$TRI_DIR/resultats.csv" ]]; then
+    if yes_no "Un tri existe déjà. Le réutiliser ?" o; then
+        ok "Tri existant conservé."
+    else
+        log "Nouveau tri des photos"
+        rm -rf "$TRI_DIR"
+        /usr/bin/python "$TRI_PY" "$RAW_DIR" --output "$TRI_DIR"
+    fi
+else
+    log "Tri des photos"
+    /usr/bin/python "$TRI_PY" "$RAW_DIR" --output "$TRI_DIR"
+fi
+
+printf '\nRésultat du tri :\n'
+for category in bonnes suspectes mauvaises; do
+    count="$(find "$TRI_DIR/$category" -maxdepth 1 -type l 2>/dev/null | wc -l)"
+    printf '  %-11s : %s\n' "$category" "$count"
+done
+
+choose_categories
+
+WORK_DIR="$PROJECT_ROOT/projet-$CATEGORY_LABEL"
+
+if [[ -d "$WORK_DIR" ]] && find "$WORK_DIR" -mindepth 1 -print -quit | grep -q .; then
+    printf '\nUn projet existe déjà : %s\n' "$WORK_DIR"
+    printf '  1) Reprendre là où il s’est arrêté\n'
+    printf '  2) Tout effacer et recommencer\n'
+    printf '  3) Annuler\n'
+
+    while true; do
+        read -r -p 'Choix [1] : ' resume_choice
+        resume_choice="${resume_choice:-1}"
+        case "$resume_choice" in
+            1) break ;;
+            2)
+                rm -rf "$WORK_DIR"
+                break
+                ;;
+            3) exit 0 ;;
+            *) printf 'Choisis 1, 2 ou 3.\n' ;;
+        esac
+    done
+fi
+
+mkdir -p "$WORK_DIR"/{images,sparse,logs,openmvs}
+
+free_gib="$(df -Pk "$WORK_DIR" | awk 'NR==2 {printf "%d", $4/1024/1024}')"
+printf '\nEspace libre : %s Gio\n' "$free_gib"
+if (( free_gib < MIN_FREE_GIB )); then
+    warn "Moins de ${MIN_FREE_GIB} Gio libres."
+    yes_no "Continuer malgré le risque de remplir le disque ?" n ||
+        exit 1
+fi
+
+if yes_no "Conserver les cartes de profondeur après le résultat final ?" n; then
+    KEEP_DEPTHMAPS=1
+fi
+
+if yes_no "Utiliser la Radeon via OpenGL pour l’extraction et le matching ?" o; then
+    USE_GPU=1
+else
+    USE_GPU=0
+fi
+
+log "Préparation des images sélectionnées"
+rm -rf "$WORK_DIR/images"
+mkdir -p "$WORK_DIR/images"
+
+index=1
+for category in "${SELECTED_CATEGORIES[@]}"; do
+    while IFS= read -r -d '' image; do
+        target="$(readlink -f "$image")"
+        [[ -f "$target" ]] || continue
+
+        extension="${target##*.}"
+        extension="${extension,,}"
+        printf -v output_name 'img_%07d.%s' "$index" "$extension"
+        ln -s "$target" "$WORK_DIR/images/$output_name"
+        ((index++))
+    done < <(
+        find "$TRI_DIR/$category" -maxdepth 1 -type l -print0 | sort -zV
+    )
+done
+
+IMAGE_COUNT="$(find "$WORK_DIR/images" -maxdepth 1 -type l | wc -l)"
+(( IMAGE_COUNT > 0 )) || die "Aucune image sélectionnée."
+ok "$IMAGE_COUNT images préparées."
+
+DATABASE="$WORK_DIR/database.db"
+
+if [[ ! -f "$WORK_DIR/.features.done" ]]; then
+    log "COLMAP — extraction des caractéristiques"
+    rm -f "$DATABASE"
+    run_logged "$WORK_DIR/logs/01-features.log" \
+        colmap feature_extractor \
+            --database_path "$DATABASE" \
+            --image_path "$WORK_DIR/images" \
+            --ImageReader.single_camera 1 \
+            --ImageReader.camera_model SIMPLE_RADIAL \
+            --FeatureExtraction.use_gpu "$USE_GPU"
+    touch "$WORK_DIR/.features.done"
+else
+    ok "Extraction déjà terminée."
+fi
+
+if [[ ! -f "$WORK_DIR/.matching.done" ]]; then
+    log "COLMAP — matching séquentiel"
+    run_logged "$WORK_DIR/logs/02-matching.log" \
+        colmap sequential_matcher \
+            --database_path "$DATABASE" \
+            --FeatureMatching.use_gpu "$USE_GPU" \
+            --SequentialMatching.overlap "$SEQUENTIAL_OVERLAP"
+    touch "$WORK_DIR/.matching.done"
+else
+    ok "Matching déjà terminé."
+fi
+
+if [[ ! -f "$WORK_DIR/.mapper.done" ]]; then
+    log "COLMAP — reconstruction clairsemée"
+    rm -rf "$WORK_DIR/sparse"
+    mkdir -p "$WORK_DIR/sparse"
+    run_logged "$WORK_DIR/logs/03-mapper.log" \
+        colmap mapper \
+            --database_path "$DATABASE" \
+            --image_path "$WORK_DIR/images" \
+            --output_path "$WORK_DIR/sparse"
+    touch "$WORK_DIR/.mapper.done"
+else
+    ok "Reconstruction clairsemée déjà terminée."
+fi
+
+BEST_MODEL=""
+BEST_REGISTERED=-1
+
+while IFS= read -r model; do
+    analysis="$(colmap model_analyzer --path "$model" 2>&1 || true)"
+    registered="$(
+        awk -F': ' '/Registered images:/ {print $NF; exit}' <<<"$analysis" |
+            tr -dc '0-9'
+    )"
+    [[ -n "$registered" ]] || registered=0
+    printf '%s\n' "$analysis" > "$model/model-analysis.txt"
+
+    printf '  Modèle %-5s : %s images enregistrées\n' \
+        "$(basename "$model")" "$registered"
+
+    if (( registered > BEST_REGISTERED )); then
+        BEST_REGISTERED="$registered"
+        BEST_MODEL="$model"
+    fi
+done < <(
+    find "$WORK_DIR/sparse" -mindepth 1 -maxdepth 1 -type d | sort -V
+)
+
+[[ -n "$BEST_MODEL" ]] || die "COLMAP n’a produit aucun modèle."
+printf '%s\n' "$BEST_MODEL" > "$WORK_DIR/best-model.txt"
+
+ok "Meilleur modèle : $BEST_REGISTERED/$IMAGE_COUNT images."
+
+DENSE_DIR="$WORK_DIR/dense"
+
+if [[ ! -f "$WORK_DIR/.undistort.done" ]]; then
+    log "COLMAP — correction des images"
+    rm -rf "$DENSE_DIR"
+    run_logged "$WORK_DIR/logs/04-undistort.log" \
+        colmap image_undistorter \
+            --image_path "$WORK_DIR/images" \
+            --input_path "$BEST_MODEL" \
+            --output_path "$DENSE_DIR" \
+            --output_type COLMAP
+    touch "$WORK_DIR/.undistort.done"
+else
+    ok "Images déjà corrigées."
+fi
+
+if [[ ! -f "$WORK_DIR/openmvs/scene.mvs" ]]; then
+    log "OpenMVS — import du modèle COLMAP"
+    run_logged "$WORK_DIR/logs/05-interface-colmap.log" \
+        podman_openmvs \
+            /openmvs/InterfaceCOLMAP \
+            --input-file /data/dense \
+            --image-folder /data/dense/images \
+            --output-file /data/openmvs/scene.mvs \
+            --working-folder /data/openmvs \
+            --verbosity 1
+else
+    ok "Projet OpenMVS déjà importé."
+fi
+
+if [[ ! -f "$WORK_DIR/openmvs/scene_dense.ply" ]]; then
+    log "OpenMVS — densification"
+    run_logged "$WORK_DIR/logs/06-densify.log" \
+        podman_openmvs \
+            /openmvs/DensifyPointCloud \
+            --input-file /data/openmvs/scene.mvs \
+            --output-file /data/openmvs/scene_dense.mvs \
+            --working-folder /data/openmvs \
+            --resolution-level "$RESOLUTION_LEVEL" \
+            --number-views "$NUMBER_VIEWS" \
+            --max-threads "$THREADS" \
+            --verbosity 1
+else
+    ok "Nuage dense déjà généré."
+fi
+
+if [[ ! -f "$WORK_DIR/openmvs/scene_dense_mesh.ply" ]]; then
+    log "OpenMVS — reconstruction du maillage"
+    run_logged "$WORK_DIR/logs/07-reconstruct-mesh.log" \
+        podman_openmvs \
+            /openmvs/ReconstructMesh \
+            --input-file /data/openmvs/scene_dense.mvs \
+            --output-file /data/openmvs/scene_dense_mesh.mvs \
+            --working-folder /data/openmvs \
+            --max-threads "$THREADS" \
+            --min-point-distance 4 \
+            --verbosity 1
+else
+    ok "Maillage déjà reconstruit."
+fi
+
+if [[ ! -f "$WORK_DIR/openmvs/scene_dense_mesh_refine.ply" ]]; then
+    log "OpenMVS — raffinement du maillage"
+    run_logged "$WORK_DIR/logs/08-refine-mesh.log" \
+        podman_openmvs \
+            /openmvs/RefineMesh \
+            --input-file /data/openmvs/scene_dense.mvs \
+            --mesh-file /data/openmvs/scene_dense_mesh.ply \
+            --output-file /data/openmvs/scene_dense_mesh_refine.mvs \
+            --working-folder /data/openmvs \
+            --resolution-level "$RESOLUTION_LEVEL" \
+            --max-threads "$THREADS" \
+            --verbosity 1
+else
+    ok "Maillage déjà raffiné."
+fi
+
+if [[ ! -f "$WORK_DIR/openmvs/scene_dense_mesh_refine_texture.ply" ]]; then
+    log "OpenMVS — texturage"
+    run_logged "$WORK_DIR/logs/09-texture-mesh.log" \
+        podman_openmvs \
+            /openmvs/TextureMesh \
+            --input-file /data/openmvs/scene_dense.mvs \
+            --mesh-file /data/openmvs/scene_dense_mesh_refine.ply \
+            --output-file /data/openmvs/scene_dense_mesh_refine_texture.mvs \
+            --working-folder /data/openmvs \
+            --max-threads "$THREADS" \
+            --verbosity 1
+else
+    ok "Maillage déjà texturé."
+fi
+
+if (( !KEEP_DEPTHMAPS )); then
+    log "Nettoyage des cartes de profondeur intermédiaires"
+    find "$WORK_DIR/openmvs" -maxdepth 1 -type f \
+        \( -name 'depth*.png' -o -name 'depth*.conf.png' \) \
+        -delete
+fi
+
+FINAL="$WORK_DIR/openmvs/scene_dense_mesh_refine_texture.ply"
+[[ -f "$FINAL" ]] || die "Le modèle final est absent."
+
+trap - EXIT
+
+printf '\n%s%sSCAN 3D TERMINÉ%s\n' "$BOLD" "$GREEN" "$RESET"
+printf 'Modèle texturé :\n  %s\n' "$FINAL"
+printf 'Images enregistrées : %s/%s\n' "$BEST_REGISTERED" "$IMAGE_COUNT"
+printf 'Espace occupé : '
+du -sh "$WORK_DIR" | awk '{print $1}'
+printf '\nPour l’ouvrir manuellement :\n'
+printf '  meshlab %q\n' "$FINAL"

@@ -1,0 +1,6 @@
+[ui]
+theme = "catppuccin"
+
+[player]
+volume = 80
+audio_quality = "high"

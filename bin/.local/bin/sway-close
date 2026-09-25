@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+app_id="$(
+    swaymsg -t get_tree |
+    jq -r '.. | objects | select(.focused? == true) |
+           (.app_id // .window_properties.class // "")'
+)"
+
+case "$app_id" in
+    limusic-app|LiMusic|limusic)
+        pkill -TERM -x limusic-app
+        ;;
+    *)
+        swaymsg kill
+        ;;
+esac

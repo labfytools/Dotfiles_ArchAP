@@ -1,0 +1,430 @@
+#!/usr/bin/env python3
+"""scan3d-watch — TUI Textual en lecture seule pour scan3d."""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from time import monotonic
+
+import psutil
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Footer, Label, ProgressBar, Static
+
+
+PROCESS_NAMES = {
+    "colmap",
+    "DensifyPointCloud",
+    "ReconstructMesh",
+    "RefineMesh",
+    "TextureMesh",
+    "InterfaceCOLMAP",
+}
+
+PROGRESS_PATTERNS = (
+    re.compile(r"Processing image \[(\d+)/(\d+)\]"),
+    re.compile(r"Estimated depth-maps (\d+) \((\d+)%"),
+    re.compile(r"Geometric-consistent estimated depth-maps (\d+) \((\d+)%"),
+    re.compile(r"Dense fused depth-maps (\d+) \((\d+)%"),
+)
+
+PHASES = (
+    ("features", "Extraction"),
+    ("sequential", "Matching séquentiel"),
+    ("vocab", "Matching global"),
+    ("transitive", "Matching transitif"),
+    ("matching", "Matching"),
+    ("mapper", "Mapper"),
+    ("undistort", "Undistortion"),
+    ("interface", "Import OpenMVS"),
+    ("densify", "Densification"),
+    ("reconstruct", "Maillage"),
+    ("refine", "Raffinement"),
+    ("texture", "Texturage"),
+)
+
+
+@dataclass
+class Progress:
+    phase: str = "En attente"
+    current: int = 0
+    total: int = 0
+    percent: float = 0.0
+    message: str = ""
+
+
+def human_bytes(value: int | float) -> str:
+    units = ("o", "Kio", "Mio", "Gio", "Tio")
+    number = float(value)
+    for unit in units:
+        if abs(number) < 1024 or unit == units[-1]:
+            return f"{number:.1f} {unit}"
+        number /= 1024
+    return f"{number:.1f} Tio"
+
+
+def directory_size(path: Path) -> int:
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    total += (Path(root) / name).stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+def find_project(root: Path) -> Path:
+    scan3d = root / "scan3d"
+    return scan3d if scan3d.is_dir() else root
+
+
+def latest_log(project: Path) -> Path | None:
+    logs: list[Path] = []
+    try:
+        logs = [path for path in project.rglob("*.log") if path.is_file()]
+    except OSError:
+        return None
+    return max(logs, key=lambda path: path.stat().st_mtime, default=None)
+
+
+def read_tail(path: Path, lines: int = 12) -> list[str]:
+    try:
+        with path.open("rb") as file:
+            file.seek(0, os.SEEK_END)
+            size = file.tell()
+            block = 8192
+            data = b""
+            while size > 0 and data.count(b"\n") <= lines:
+                read_size = min(block, size)
+                size -= read_size
+                file.seek(size)
+                data = file.read(read_size) + data
+        return data.decode("utf-8", errors="replace").splitlines()[-lines:]
+    except OSError:
+        return []
+
+def detect_progress(project: Path) -> Progress:
+    log = latest_log(project)
+    if log is None:
+        return Progress()
+
+    lower_name = log.name.lower()
+    phase = next(
+        (label for token, label in PHASES if token in lower_name),
+        log.stem,
+    )
+
+    result = Progress(phase=phase)
+    tail = read_tail(log, 120)
+
+    # COLMAP : extraction ou matching.
+    for line in reversed(tail):
+        match = re.search(r"Processing image \[(\d+)/(\d+)\]", line)
+        if match:
+            current = int(match.group(1))
+            total = int(match.group(2))
+
+            result.current = current
+            result.total = total
+            result.percent = current * 100 / total if total else 0
+            result.message = line.strip()
+            return result
+
+    # COLMAP Mapper : nombre d’images réellement enregistrées.
+    for line in reversed(tail):
+        match = re.search(r"num_reg_frames=(\d+)", line)
+        if not match:
+            continue
+
+        current = int(match.group(1))
+
+        # Le log est normalement dans projet-*/logs/.
+        work_dir = log.parent.parent
+        images_dir = work_dir / "images"
+
+        try:
+            total = sum(
+                1
+                for path in images_dir.iterdir()
+                if path.is_file() or path.is_symlink()
+            )
+        except OSError:
+            total = 0
+
+        result.current = current
+        result.total = total
+        result.percent = current * 100 / total if total else 0
+        result.message = line.strip()
+        return result
+
+    # OpenMVS : cartes de profondeur.
+    for line in reversed(tail):
+        match = re.search(
+            r"(?:Estimated|Geometric-consistent estimated|Dense fused) "
+            r"depth-maps (\d+) \((\d+)%",
+            line,
+        )
+        if match:
+            result.current = int(match.group(1))
+            result.percent = float(match.group(2))
+            result.message = line.strip()
+            return result
+
+    if tail:
+        result.message = tail[-1].strip()
+
+    return result
+
+def amd_gpu() -> tuple[str, str, str]:
+    for card in sorted(Path("/sys/class/drm").glob("card[0-9]*")):
+        device = card / "device"
+        try:
+            if (device / "vendor").read_text().strip() != "0x1002":
+                continue
+        except OSError:
+            continue
+
+        busy = "?"
+        used = total = None
+        temperature = "?"
+
+        try:
+            busy = (device / "gpu_busy_percent").read_text().strip()
+        except OSError:
+            pass
+
+        try:
+            used = int((device / "mem_info_vram_used").read_text())
+            total = int((device / "mem_info_vram_total").read_text())
+        except (OSError, ValueError):
+            pass
+
+        for hwmon in (device / "hwmon").glob("hwmon*"):
+            try:
+                temperature = f"{int((hwmon / 'temp1_input').read_text()) / 1000:.0f}°C"
+                break
+            except (OSError, ValueError):
+                continue
+
+        vram = (
+            f"{human_bytes(used)}/{human_bytes(total)}"
+            if used is not None and total is not None
+            else "indisponible"
+        )
+        return f"{busy}%", vram, temperature
+
+    return "absent", "—", "—"
+
+def active_process() -> str:
+    cpu_count = psutil.cpu_count(logical=True) or 1
+    rows: list[tuple[float, str]] = []
+
+    for process in psutil.process_iter(
+        ["name", "cpu_percent", "memory_percent"]
+    ):
+        try:
+            name = process.info["name"] or ""
+            if name not in PROCESS_NAMES:
+                continue
+
+            raw_cpu = float(process.info["cpu_percent"] or 0)
+            global_cpu = raw_cpu / cpu_count
+            memory = float(process.info["memory_percent"] or 0)
+
+            rows.append(
+                (
+                    raw_cpu,
+                    f"{name}  CPU {global_cpu:.0f}%  RAM {memory:.1f}%",
+                )
+            )
+
+        except (
+            psutil.NoSuchProcess,
+            psutil.AccessDenied,
+            TypeError,
+        ):
+            continue
+
+    if not rows:
+        return "Aucun processus COLMAP/OpenMVS"
+
+    rows.sort(reverse=True)
+    return rows[0][1]
+
+class Scan3DWatch(App[None]):
+    TITLE = "scan3d-watch"
+    SUB_TITLE = "lecture seule"
+
+    BINDINGS = [
+        Binding("q", "quit", "Quitter"),
+        Binding("r", "refresh_now", "Actualiser"),
+        Binding("l", "toggle_logs", "Logs"),
+    ]
+
+    CSS = """
+    Screen {
+        layout: vertical;
+        background: #11111b;
+        color: #cdd6f4;
+    }
+
+    #title {
+        height: 1;
+        padding: 0 1;
+        background: #313244;
+        color: #cba6f7;
+        text-style: bold;
+    }
+
+    #phase {
+        height: 3;
+        padding: 0 1;
+        border: round #89b4fa;
+    }
+
+    ProgressBar {
+        height: 1;
+        margin: 0 1;
+    }
+
+    #stats {
+        height: 7;
+        padding: 0 1;
+        border: round #a6e3a1;
+    }
+
+    #project {
+        height: 5;
+        padding: 0 1;
+        border: round #f9e2af;
+    }
+
+    #logs {
+        height: 1fr;
+        min-height: 4;
+        padding: 0 1;
+        border: round #fab387;
+        overflow-y: hidden;
+    }
+
+    Footer {
+        height: 1;
+    }
+
+    .hidden {
+        display: none;
+    }
+    """
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self.root = root
+        self.project = find_project(root)
+        self.logs_visible = True
+        psutil.cpu_percent(interval=None)
+
+    def compose(self) -> ComposeResult:
+        yield Label("", id="title")
+        yield Static("", id="phase")
+        yield ProgressBar(total=100, show_eta=False, id="progress")
+        yield Static("", id="stats")
+        yield Static("", id="project")
+        yield Static("", id="logs")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.refresh_data()
+        self.set_interval(1.0, self.refresh_data)
+
+    def action_refresh_now(self) -> None:
+        self.refresh_data()
+
+    def action_toggle_logs(self) -> None:
+        self.logs_visible = not self.logs_visible
+        logs = self.query_one("#logs")
+        logs.set_class(not self.logs_visible, "hidden")
+
+    def refresh_data(self) -> None:
+        progress = detect_progress(self.project)
+        memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        disk = psutil.disk_usage(self.root)
+        cpu = psutil.cpu_percent(interval=None)
+        gpu, vram, gpu_temp = amd_gpu()
+
+        self.query_one("#title", Label).update(
+            f"SCAN3D  {self.root.name}  •  {self.project}"
+        )
+
+        progress_text = progress.phase
+        if progress.total:
+            progress_text += (
+                f"\n{progress.current}/{progress.total}  "
+                f"({progress.percent:.1f}%)"
+            )
+        elif progress.percent:
+            progress_text += f"\n{progress.current}  ({progress.percent:.1f}%)"
+        elif progress.message:
+            progress_text += "\nactivité détectée"
+
+        self.query_one("#phase", Static).update(progress_text)
+        self.query_one("#progress", ProgressBar).update(
+            total=100,
+            progress=max(0, min(100, progress.percent)),
+        )
+
+        self.query_one("#stats", Static).update(
+            "[b]Système[/b]\n"
+            f"CPU {cpu:.0f}%   GPU {gpu}   Temp GPU {gpu_temp}\n"
+            f"RAM {human_bytes(memory.used)}/{human_bytes(memory.total)}   "
+            f"dispo {human_bytes(memory.available)}\n"
+            f"Swap {human_bytes(swap.used)}/{human_bytes(swap.total)}   "
+            f"VRAM {vram}\n"
+            f"{active_process()}"
+        )
+
+        size = directory_size(self.project)
+        self.query_one("#project", Static).update(
+            "[b]Projet[/b]\n"
+            f"Taille {human_bytes(size)}\n"
+            f"Disque {human_bytes(disk.used)}/{human_bytes(disk.total)}   "
+            f"libre {human_bytes(disk.free)}"
+        )
+
+        log = latest_log(self.project)
+        if log is None:
+            log_text = "[b]Logs[/b]\nAucun fichier .log trouvé"
+        else:
+            lines = read_tail(log, 8)
+            cleaned = [
+                re.sub(r"^[IWEF]\d+\s+\S+\s+\d+\s+", "", line)
+                for line in lines
+            ]
+            log_text = f"[b]Logs — {log.name}[/b]\n" + "\n".join(cleaned)
+
+        self.query_one("#logs", Static).update(log_text)
+
+
+def main() -> int:
+    root = Path(sys.argv[1] if len(sys.argv) > 1 else Path.cwd())
+    root = root.expanduser().resolve()
+
+    if not root.is_dir():
+        print(f"Dossier introuvable : {root}", file=sys.stderr)
+        return 1
+
+    Scan3DWatch(root).run()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

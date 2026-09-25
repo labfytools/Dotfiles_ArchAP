@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+SWAYIDLE_MODE="none"
+declare -a SWAYIDLE_CMD=()
+
+cleanup() {
+    rc=$?
+
+    trap - EXIT INT TERM HUP
+
+    printf '\n[pi-dev] Arrêt de la session...\n'
+
+    # Restaurer swayidle exactement selon son mode d'origine.
+    case "$SWAYIDLE_MODE" in
+        systemd)
+            printf '[pi-dev] Redémarrage de swayidle.service...\n'
+            systemctl --user start swayidle.service || true
+            ;;
+
+        process)
+            if ((${#SWAYIDLE_CMD[@]})); then
+                printf '[pi-dev] Redémarrage de swayidle...\n'
+                nohup "${SWAYIDLE_CMD[@]}" \
+                    >/dev/null 2>&1 &
+            fi
+            ;;
+    esac
+
+    printf '[pi-dev] Session restaurée.\n'
+
+    exit "$rc"
+}
+
+trap cleanup EXIT INT TERM HUP
+
+
+#
+# 1. Neutraliser swayidle
+#
+
+if systemctl --user is-active --quiet swayidle.service 2>/dev/null; then
+
+    SWAYIDLE_MODE="systemd"
+
+    printf '[pi-dev] Neutralisation de swayidle.service...\n'
+    systemctl --user stop swayidle.service
+
+else
+
+    SWAYIDLE_PID="$(pgrep -xo swayidle || true)"
+
+    if [[ -n "$SWAYIDLE_PID" ]]; then
+
+        SWAYIDLE_MODE="process"
+
+        # Sauvegarder exactement argv avant d'arrêter swayidle.
+        mapfile -d '' SWAYIDLE_CMD \
+            < "/proc/$SWAYIDLE_PID/cmdline"
+
+        printf '[pi-dev] Neutralisation de swayidle (PID %s)...\n' \
+            "$SWAYIDLE_PID"
+
+        kill "$SWAYIDLE_PID"
+
+        # Attendre sa disparition.
+        for _ in {1..20}; do
+            kill -0 "$SWAYIDLE_PID" 2>/dev/null || break
+            sleep 0.05
+        done
+    fi
+fi
+
+
+#
+# 2. Lancer Pi avec inhibition de la fermeture du capot
+#
+# L'inhibitor existe uniquement pendant que Pi tourne.
+#
+
+printf '[pi-dev] swayidle neutralisé.\n'
+printf '[pi-dev] Veille fermeture du capot neutralisée.\n'
+printf '[pi-dev] Lancement de Pi / OpenRouter.\n\n'
+
+systemd-inhibit \
+    --what=handle-lid-switch \
+    --who="pi-dev" \
+    --why="Session de développement Pi / Lardon3D" \
+    --mode=block \
+    pi "$@"

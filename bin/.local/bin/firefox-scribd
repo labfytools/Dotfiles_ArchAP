@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly PROFILE="$HOME/.mozilla/firefox-scribd"
+readonly URL="${1:-https://fr.scribd.com/}"
+
+case "$URL" in
+    http://scribd.com/*|https://scribd.com/*|\
+    http://*.scribd.com/*|https://*.scribd.com/*)
+        ;;
+    *)
+        notify-send \
+            "Firefox Scribd" \
+            "URL refusée : ce lanceur accepte uniquement scribd.com"
+        exit 2
+        ;;
+esac
+
+mkdir -p "$PROFILE"
+
+exec systemd-run \
+    --user \
+    --scope \
+    --quiet \
+    --unit="firefox-scribd-$(date +%s)-$$" \
+    --slice=app-graphical.slice \
+    --property=MemoryMax=8G \
+    --property=MemorySwapMax=0 \
+    /usr/bin/firefox \
+        --no-remote \
+        --profile "$PROFILE" \
+        --new-window "$URL"
