@@ -26,6 +26,8 @@ Bar
     ├── Volume
     ├── Brightness
     ├── Power Profile
+    ├── Apparence
+    │   └── Fond d'écran
     ├── Battery limit
     └── Session
 ```
@@ -49,6 +51,10 @@ backlight utilise le noeud machine `amdgpu_bl1` dans `BrightnessSlider.qml` ;
 le System Monitor résout dynamiquement les noeuds DRM AMD et hwmon
 `k10temp`/`amdgpu` par identité, noms et labels. Les scans Wi-Fi et Bluetooth
 ne sont possédés que par les pages ouvertes.
+
+Le gestionnaire de fonds d'écran local est décrit dans
+[WALLPAPER.md](controlcenter/WALLPAPER.md). Il utilise Sway et `swaybg`, sans
+service permanent ni changement automatique du thème.
 
 ## Parité avec i3status-rs
 

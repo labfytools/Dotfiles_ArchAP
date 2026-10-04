@@ -5,6 +5,14 @@ Les couleurs et variables d'apparence viennent du
 `theme-default.conf` assure le démarrage Mocha avant génération ;
 `generated/theme.conf` est l'état runtime créé atomiquement par
 `bin/.local/bin/generate-appearance.py` depuis la palette QuickShell.
+`wallpaper-default.conf` définit le repli bleu `fill` ;
+`generated/wallpaper.conf` redéfinit seulement `$wallpaper`. Une unique
+directive `output * bg $wallpaper fill` applique le résultat. Le glob
+`generated/*.conf` peut être vide et le repli reste valide. Les chemins
+utilisateur contenant des espaces ou accents sont représentés par un lien
+symbolique persistant à nom ASCII dans
+`$XDG_CONFIG_HOME/labfy-appearance/wallpapers/`, car SwayFX 0.6 refuse
+ces chemins dans une directive `output bg`, même entre guillemets.
 
 Le compositeur actif est **SwayFX 0.6** avec `scenefx`. La session UWSM
 sélectionne `sway.desktop` et charge `config` : `bind`, `input`, `rules`,

@@ -11,7 +11,12 @@ PopupWindow {
     id: popup
 
     required property var barWindow
-    property int currentPage: 0 // 0 = MAIN, 1 = Wi-Fi, 2 = Bluetooth, 3 = Session, 4 = confirmation, 5 = Batterie.
+    // CONTRACT: indices externes historiques conservés ; tout nouveau routage
+    // passe par ces noms afin de ne pas multiplier les indices StackLayout.
+    readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
+        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7 })
+    property int currentPage: pages.main
+    function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
     property var pendingAction: null
     // Une seule table associe les libellés, confirmations et commandes de session.
@@ -38,7 +43,7 @@ PopupWindow {
 
     // Une nouvelle ouverture recommence sur MAIN ; les pages libèrent leurs scans à la fermeture.
     onVisibleChanged: if (!visible) {
-        currentPage = 0;
+        openPage("main");
         pendingAction = null;
     }
 
@@ -50,7 +55,7 @@ PopupWindow {
             return;
         }
         pendingAction = selected;
-        currentPage = 4;
+        openPage("confirmation");
     }
 
     function executeSessionAction(id) {
@@ -72,7 +77,8 @@ PopupWindow {
     implicitHeight: currentPage === 0 ? mainPage.implicitHeight + 32
         : currentPage === 3 ? sessionPage.implicitHeight + 32
         : currentPage === 4 ? confirmationPage.implicitHeight + 32
-        : currentPage === 5 ? batteryPage.implicitHeight + 32 : 440
+        : currentPage === 5 ? batteryPage.implicitHeight + 32
+        : currentPage === 7 ? 550 : 440
     visible: false
     // CONTRACT: PopupWindow n'applique un changement de grabFocus qu'après
     // fermeture/réouverture ; le prendre dès MAIN garde le clavier disponible
@@ -109,18 +115,26 @@ PopupWindow {
                     WifiTile {
                         width: (parent.width - parent.spacing) / 2
                         wifiDevice: popup.wifiDevice
-                        onDetailsRequested: popup.currentPage = 1
+                        onDetailsRequested: popup.openPage("wifi")
                     }
                     BluetoothTile {
                         width: (parent.width - parent.spacing) / 2
                         adapter: popup.adapter
-                        onDetailsRequested: popup.currentPage = 2
+                        onDetailsRequested: popup.openPage("bluetooth")
                     }
                 }
 
                 VolumeSlider { width: parent.width }
                 BrightnessSlider { width: parent.width }
                 PowerProfile { width: parent.width }
+
+                Rectangle {
+                    width: parent.width; height: 38; radius: 4
+                    color: appearancePointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+                    NerdIcon { anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; text: "󰸉"; color: Theme.accent; font.pixelSize: 18 }
+                    Text { anchors.left: parent.left; anchors.leftMargin: 42; anchors.verticalCenter: parent.verticalCenter; text: "Apparence"; color: Theme.foreground; font.pixelSize: 13 }
+                    MouseArea { id: appearancePointer; anchors.fill: parent; hoverEnabled: true; onClicked: popup.openPage("appearance") }
+                }
 
                 Item {
                     width: parent.width
@@ -142,7 +156,7 @@ PopupWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             acceptedButtons: Qt.LeftButton
-                            onClicked: popup.currentPage = 3
+                            onClicked: popup.openPage("session")
                         }
                     }
                 }
@@ -152,20 +166,20 @@ PopupWindow {
                 id: wifiPage
                 wifiDevice: popup.wifiDevice
                 activePage: popup.visible && popup.currentPage === 1
-                onBackRequested: popup.currentPage = 0
+                onBackRequested: popup.openPage("main")
             }
 
             BluetoothPage {
                 id: bluetoothPage
                 adapter: popup.adapter
                 activePage: popup.visible && popup.currentPage === 2
-                onBackRequested: popup.currentPage = 0
+                onBackRequested: popup.openPage("main")
             }
 
             SessionPage {
                 id: sessionPage
                 actions: popup.sessionActions
-                onBackRequested: popup.currentPage = 0
+                onBackRequested: popup.openPage("main")
                 onActionRequested: id => popup.requestSessionAction(id)
             }
 
@@ -175,7 +189,7 @@ PopupWindow {
                     description: "", accent: Theme.foreground })
                 onCancelled: {
                     popup.pendingAction = null;
-                    popup.currentPage = 3;
+                    popup.openPage("session");
                 }
                 onConfirmed: id => {
                     if (popup.pendingAction && popup.pendingAction.id === id)
@@ -186,8 +200,18 @@ PopupWindow {
             BatterySettings {
                 id: batteryPage
                 activePage: popup.visible && popup.currentPage === 5
-                onBackRequested: popup.currentPage = 0
+                onBackRequested: popup.openPage("main")
                 onThresholdApplied: popup.thresholdApplied()
+            }
+
+            AppearancePage {
+                onBackRequested: popup.openPage("main")
+                onWallpaperRequested: popup.openPage("wallpaper")
+            }
+
+            WallpaperPage {
+                activePage: popup.visible && popup.currentPage === popup.pages.wallpaper
+                onBackRequested: popup.openPage("appearance")
             }
         }
     }

@@ -7,6 +7,8 @@ hyprwhspr/.local/share/
 **/node_modules/
 sway/.config/sway/generated/theme.conf
 sway/.config/sway/generated/theme.conf.tmp
+sway/.config/sway/generated/wallpaper.conf
+sway/.config/sway/generated/wallpaper.conf.tmp
 
 # Local editor/application backups
 *.bak

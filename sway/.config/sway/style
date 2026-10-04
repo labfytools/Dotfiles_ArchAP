@@ -2,8 +2,8 @@
 ### Layout 
 #
 
-# Default wallpaper (more resolutions are available in /usr/share/backgrounds/sway/)
-    output * bg /usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
+# CONTRACT: le repli versionné reste valide si le fichier runtime est absent.
+    include ~/.config/sway/wallpaper-default.conf
     # Seul écran utilisé : origine logique stable pour les fenêtres et la barre.
     output eDP-1 mode 3200x2000@60Hz pos 0 0 scale 1.4
 
@@ -14,6 +14,8 @@
     # Le fichier runtime, s'il existe, remplace les variables sans palette parallèle.
     include ~/.config/sway/theme-default.conf
     include ~/.config/sway/generated/*.conf
+    # INVARIANT: une seule directive output lit la dernière variable wallpaper.
+    output * bg $wallpaper fill
 
 # target                 title     bg    text   indicator  border
     client.focused           $accent $base $text  $rosewater $accent

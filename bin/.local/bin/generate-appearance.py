@@ -98,10 +98,14 @@ def main():
                            or previous.get('effectiveAccent') != args.accent
                            or previous.get('effectiveMode') != 'normal')
                 revision = max(0, int(previous.get('revision', 0))) + int(changed)
-                state = {'version': 1, 'effectiveFlavor': args.flavor,
-                         'effectiveMode': 'normal', 'effectiveDark': args.flavor != 'latte',
-                         'effectiveHighContrast': False, 'effectiveAccent': args.accent,
-                         'revision': revision}
+                # CONTRACT: le moteur de thème conserve les champs wallpaper
+                # du schéma 2 ; changer une palette n'efface pas l'état 17C.
+                state = dict(previous)
+                state.update(version=max(1, int(previous.get('version', 1))),
+                             effectiveFlavor=args.flavor, effectiveMode='normal',
+                             effectiveDark=args.flavor != 'latte',
+                             effectiveHighContrast=False, effectiveAccent=args.accent,
+                             revision=revision)
                 # CONTRACT: le backend persiste l'état après validation Sway ;
                 # le contrôleur l'expose aux consommateurs et le lit au restart.
                 atomic_write(STATE, (json.dumps(state, separators=(',', ':')) + '\n').encode('utf-8'))

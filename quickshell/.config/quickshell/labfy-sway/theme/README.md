@@ -44,7 +44,7 @@ Lavender. Les séries CPU/RAM du System Monitor restent intentionnellement
 Mauve. Ce choix rend les contrôles historiques Mauve légèrement plus bleus
 qu'avant. Les trois anciens Lavender restent l'accent principal.
 
-L'API pour 17C est `AppearanceController.applyTheme(flavor, accent)` ; l'IPC
+L'API de thème est `AppearanceController.applyTheme(flavor, accent)` ; l'IPC
 `qs -c labfy-sway ipc call appearance effectiveState` expose l'état complet
 et `qs -c labfy-sway ipc call appearance setTheme mocha lavender` change
 QuickShell en direct. La commande unifiée depuis le dépôt est :
@@ -56,8 +56,11 @@ python bin/.local/bin/generate-appearance.py latte --accent lavender --apply
 Elle écrit atomiquement le fichier runtime Sway, valide la configuration,
 recharge Sway, persiste l'état effectif, puis met à jour QuickShell. En cas
 d'échec elle restaure la dernière génération valide, l'état persistant et
-l'état QuickShell précédent. Aucune décision automatique de profil ni gestion
-du wallpaper n'existe encore dans le QML.
+l'état QuickShell précédent. Aucune décision automatique de profil n'existe
+encore. Le wallpaper 17C est séparé dans `generated/wallpaper.conf` ; voir
+[WALLPAPER.md](../controlcenter/WALLPAPER.md). `generate-appearance.py`
+préserve les champs wallpaper du schéma effectif 2 lors d'un changement de
+thème.
 Le repli versionné `sway/theme-default.conf` fournit Mocha même avant toute
 génération. Ses quelques variables sont un artefact dérivé, pas une palette
 complète indépendante. `sway/style` inclut le repli, puis un glob de fichier
