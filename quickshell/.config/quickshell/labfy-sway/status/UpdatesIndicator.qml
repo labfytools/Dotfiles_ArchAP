@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../components"
+import "../theme"
 
 Item {
     id: indicator
@@ -46,7 +47,7 @@ Item {
         running: !snapshot.loaded
         onTriggered: snapshot.reload()
     }
-    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? "#45475a" : "transparent" }
+    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     NerdIcon {
         id: icon
         width: 18
@@ -56,7 +57,7 @@ Item {
         anchors.leftMargin: 3
         anchors.verticalCenter: parent.verticalCenter
         text: indicator.hasError ? "" : "󰚰"
-        color: indicator.hasError ? "#fab387" : "#cba6f7"
+        color: indicator.hasError ? Theme.urgentForeground : Theme.accent
     }
     Text {
         id: count
@@ -65,7 +66,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         visible: !indicator.hasError
         text: indicator.state.totalUpdates
-        color: "#cba6f7"
+        color: Theme.accent
         font.family: "JetBrainsMono Nerd Font Mono"
         font.pixelSize: 12
     }

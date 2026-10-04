@@ -10,10 +10,13 @@
 #
 # Style
 #
-    include ~/.config/sway/catppuccin-mocha
+    # CONTRACT: le glob vide est valide dans Sway ; le repli fonctionne dès Stow.
+    # Le fichier runtime, s'il existe, remplace les variables sans palette parallèle.
+    include ~/.config/sway/theme-default.conf
+    include ~/.config/sway/generated/*.conf
 
 # target                 title     bg    text   indicator  border
-    client.focused           $lavender $base $text  $rosewater $lavender
+    client.focused           $accent $base $text  $rosewater $accent
     client.focused_inactive  $overlay0 $base $text  $rosewater $overlay0
     client.unfocused         $overlay0 $base $text  $rosewater $overlay0
     client.urgent            $peach    $base $peach $overlay0  $peach

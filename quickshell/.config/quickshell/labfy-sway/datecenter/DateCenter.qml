@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import "../theme"
 
 PopupWindow {
     id: popup
@@ -32,8 +33,8 @@ PopupWindow {
     Rectangle {
         anchors.fill: parent
         radius: 4
-        color: "#1e1e2e"
-        border.color: "#45475a"
+        color: Theme.popupBackground
+        border.color: Theme.border
         Column {
             id: content
             anchors.left: parent.left
@@ -43,7 +44,7 @@ PopupWindow {
             spacing: 14
             Text {
                 text: clock.date.toLocaleDateString(Qt.locale("fr_FR"), "dddd d MMMM")
-                color: "#cba6f7"; font.pixelSize: 17; font.bold: true
+                color: Theme.accentForeground; font.pixelSize: 17; font.bold: true
             }
             MediaPlayer { width: parent.width }
             NotificationList { width: parent.width; service: popup.notificationService }

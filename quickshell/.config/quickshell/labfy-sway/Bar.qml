@@ -8,6 +8,7 @@ import "datecenter"
 import "notifications"
 import "status"
 import "systemmonitor"
+import "theme"
 
 PanelWindow {
     id: bar
@@ -37,7 +38,7 @@ PanelWindow {
     // layer-shell est focusable dès son ouverture. OnDemand n'accapare pas
     // le clavier hors interaction avec la barre ou son popup.
     focusable: true
-    color: "#eb1e1e2e"
+    color: Theme.panelBackground
 
     // CONTRACT: toute la capsule centrale partage le même popup et la même exclusion XOR.
     function toggleDateCenter() {

@@ -1,5 +1,6 @@
 import QtQuick
 import "../components"
+import "../theme"
 
 Rectangle {
     id: actionButton
@@ -9,7 +10,7 @@ Rectangle {
 
     height: 48
     radius: 4
-    color: pointer.containsMouse ? "#45475a" : "#313244"
+    color: pointer.containsMouse ? Theme.border : Theme.buttonBackground
 
     NerdIcon {
         id: icon
@@ -27,7 +28,7 @@ Rectangle {
         anchors.leftMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         text: actionButton.actionInfo.label
-        color: "#cdd6f4"
+        color: Theme.foreground
         font.pixelSize: 14
     }
 

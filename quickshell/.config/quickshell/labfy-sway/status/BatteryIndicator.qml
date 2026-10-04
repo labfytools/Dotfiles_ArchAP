@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell.Io
 import Quickshell.Services.UPower
 import "../components"
+import "../theme"
 
 Item {
     id: indicator
@@ -42,7 +43,7 @@ Item {
         onFileChanged: reload()
     }
 
-    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? "#45475a" : "transparent" }
+    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     NerdIcon {
         id: icon
         width: 18
@@ -57,8 +58,8 @@ Item {
             : indicator.percent <= 30 ? "󰁻"
             : indicator.percent <= 50 ? "󰁽"
             : indicator.percent <= 75 ? "󰁿" : "󰁹"
-        color: indicator.percent <= 15 ? "#f38ba8"
-            : indicator.percent <= 30 ? "#fab387" : "#cdd6f4"
+        color: indicator.percent <= 15 ? Theme.danger
+            : indicator.percent <= 30 ? Theme.urgentForeground : Theme.foreground
     }
     Text {
         id: value

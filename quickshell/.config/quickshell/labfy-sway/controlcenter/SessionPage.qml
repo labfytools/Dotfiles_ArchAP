@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "../components"
+import "../theme"
 
 Item {
     id: page
@@ -34,7 +35,7 @@ Item {
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Session"
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 16
                 font.bold: true
             }

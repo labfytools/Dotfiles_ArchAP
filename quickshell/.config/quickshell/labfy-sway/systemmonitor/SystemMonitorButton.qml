@@ -1,6 +1,7 @@
 import QtQuick
 import "../components"
 import "../status"
+import "../theme"
 
 Rectangle {
     id: button
@@ -10,14 +11,14 @@ Rectangle {
     width: 26
     height: 26
     radius: 4
-    color: open ? "#cba6f7" : pointer.containsMouse ? "#45475a" : "#313244"
+    color: open ? Theme.accent : pointer.containsMouse ? Theme.border : Theme.buttonBackground
 
     NerdIcon {
         anchors.centerIn: parent
         text: "󰍛"
         // WHY: compenser la surface plus faible du glyphe sans agrandir le bouton.
         font.pixelSize: 20
-        color: button.open ? "#1e1e2e" : "#cdd6f4"
+        color: button.open ? Theme.onAccent : Theme.foreground
     }
     MouseArea {
         id: pointer

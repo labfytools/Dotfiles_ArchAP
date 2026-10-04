@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Services.UPower
 import "../components"
+import "../theme"
 
 Item {
     id: powerControl
@@ -22,7 +23,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: ""
                 font.pixelSize: 18
-                color: "#cdd6f4"
+                color: Theme.foreground
             }
 
             Text {
@@ -30,7 +31,7 @@ Item {
                 anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Profil d'énergie"
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 14
             }
         }
@@ -57,12 +58,12 @@ Item {
                     width: (choices.width - 2 * choices.spacing) / 3
                     height: choices.height
                     radius: 4
-                    color: !available ? "#313244" : selected ? "#cba6f7" : hover.hovered ? "#45475a" : "#313244"
+                    color: !available ? Theme.buttonBackground : selected ? Theme.accent : hover.hovered ? Theme.border : Theme.buttonBackground
 
                     Text {
                         anchors.centerIn: parent
                         text: parent.modelData.label
-                        color: !parent.available ? "#6c7086" : parent.selected ? "#1e1e2e" : "#cdd6f4"
+                        color: !parent.available ? Theme.disabledForeground : parent.selected ? Theme.onAccent : Theme.foreground
                         font.pixelSize: 12
                     }
 

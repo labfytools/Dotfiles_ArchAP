@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.I3
 import "../status"
+import "../theme"
 
 Row {
     id: workspaces
@@ -58,9 +59,9 @@ Row {
                 width: button.active ? 24 : 16
                 height: button.active ? 16 : 11
                 radius: 4
-                color: button.urgent ? "#fab387"
-                    : button.active ? "#cba6f7"
-                    : pointer.containsMouse ? "#6c7086" : "#585b70"
+                color: button.urgent ? Theme.urgent
+                    : button.active ? Theme.accent
+                    : pointer.containsMouse ? Theme.disabledForeground : Theme.strongBorder
             }
 
             MouseArea {

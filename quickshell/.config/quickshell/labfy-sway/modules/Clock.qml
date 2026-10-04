@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "../notifications"
+import "../theme"
 
 Rectangle {
     id: clockCapsule
@@ -12,7 +13,7 @@ Rectangle {
     width: 184
     height: 26
     radius: 4
-    color: open ? "#cba6f7" : pointer.containsMouse ? "#45475a" : "#313244"
+    color: open ? Theme.accent : pointer.containsMouse ? Theme.border : Theme.buttonBackground
     Accessible.role: Accessible.Button
     Accessible.name: unreadCount === 0 ? "Date et heure"
         : "Date et heure, " + unreadCount + (unreadCount === 1
@@ -28,7 +29,7 @@ Rectangle {
         // CONTRACT: le centre du texte coïncide avec celui de la barre, sans dépendre du badge.
         anchors.centerIn: parent
         text: Qt.formatDateTime(clock.date, "dd/MM HH:mm")
-        color: clockCapsule.open ? "#1e1e2e" : "#cdd6f4"
+        color: clockCapsule.open ? Theme.onAccent : Theme.foreground
         font.pixelSize: 13
         font.weight: Font.Bold
     }
@@ -63,15 +64,15 @@ Rectangle {
         Rectangle {
             anchors.fill: parent
             radius: 4
-            color: "#313244"
-            border.color: "#45475a"
+            color: Theme.buttonBackground
+            border.color: Theme.border
             Text {
                 id: tooltipText
                 anchors.centerIn: parent
                 text: clockCapsule.unreadCount === 0 ? "Date et notifications"
                     : clockCapsule.unreadCount + (clockCapsule.unreadCount === 1
                         ? " notification non lue" : " notifications non lues")
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 11
             }
         }

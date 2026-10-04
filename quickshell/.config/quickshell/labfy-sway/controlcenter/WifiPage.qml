@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Networking
 import "../components"
+import "../theme"
 
 Item {
     id: page
@@ -122,12 +123,12 @@ Item {
                 text: page.stage === "main" ? "Wi-Fi" : page.stage === "password"
                     ? "Se connecter à " + page.selectedName : page.stage === "forget"
                     ? "Oublier un réseau" : page.selectedName
-                color: "#cdd6f4"; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight
+                color: Theme.foreground; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight
             }
         }
         Text {
             width: parent.width; visible: page.message.length > 0
-            text: page.message; wrapMode: Text.Wrap; color: "#f9e2af"; font.pixelSize: 12
+            text: page.message; wrapMode: Text.Wrap; color: Theme.warningForeground; font.pixelSize: 12
         }
         Loader {
             id: body
@@ -147,27 +148,27 @@ Item {
                 width: page.width; spacing: 9
                 Row {
                     width: parent.width; spacing: 8
-                    Text { width: parent.width - 100; text: "Wi-Fi " + (Networking.wifiEnabled ? "activé" : "désactivé"); color: "#cdd6f4"; font.pixelSize: 13 }
+                    Text { width: parent.width - 100; text: "Wi-Fi " + (Networking.wifiEnabled ? "activé" : "désactivé"); color: Theme.foreground; font.pixelSize: 13 }
                     ActionButton {
                         label: Networking.wifiEnabled ? "Désactiver" : "Activer"
                         enabled: Networking.wifiHardwareEnabled
                         onClicked: Networking.wifiEnabled = !Networking.wifiEnabled
                     }
                 }
-                Text { text: page.scanWanted ? "Recherche de réseaux…" : "Scan arrêté"; color: "#a6adc8"; font.pixelSize: 11 }
-                Text { text: "Réseau actuel"; color: "#cba6f7"; font.bold: true; font.pixelSize: 13 }
+                Text { text: page.scanWanted ? "Recherche de réseaux…" : "Scan arrêté"; color: Theme.secondaryForeground; font.pixelSize: 11 }
+                Text { text: "Réseau actuel"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 13 }
                 Rectangle {
-                    width: parent.width; height: 66; radius: 4; color: "#313244"
+                    width: parent.width; height: 66; radius: 4; color: Theme.buttonBackground
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.top: parent.top; anchors.topMargin: 8
                         text: page.currentNetwork ? page.currentNetwork.name : "Aucun réseau connecté"
-                        color: "#cdd6f4"; font.pixelSize: 13; font.bold: true
+                        color: Theme.foreground; font.pixelSize: 13; font.bold: true
                     }
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.bottom: parent.bottom; anchors.bottomMargin: 8
                         text: page.currentNetwork ? page.securityLabel(page.currentNetwork) + " • "
                             + Math.round(page.currentNetwork.signalStrength * 100) + " %" : ""
-                        color: "#a6adc8"; font.pixelSize: 11
+                        color: Theme.secondaryForeground; font.pixelSize: 11
                     }
                     ActionButton {
                         anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
@@ -175,11 +176,11 @@ Item {
                         onClicked: page.choose(page.currentNetwork)
                     }
                 }
-                Text { text: "Réseaux disponibles"; color: "#cba6f7"; font.bold: true; font.pixelSize: 13 }
+                Text { text: "Réseaux disponibles"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 13 }
                 Text {
                     visible: page.sortedNetworks.length === 0
                     text: !Networking.wifiHardwareEnabled ? "Wi-Fi bloqué matériellement" : "Aucun réseau visible"
-                    color: "#a6adc8"; font.pixelSize: 12
+                    color: Theme.secondaryForeground; font.pixelSize: 12
                 }
                 Repeater {
                     model: ScriptModel { values: page.sortedNetworks; objectProp: "name" }
@@ -187,23 +188,23 @@ Item {
                         required property var modelData
                         readonly property var network: modelData
                         width: page.width; height: 44; radius: 4
-                        color: pointer.containsMouse ? "#45475a" : "#313244"
+                        color: pointer.containsMouse ? Theme.border : Theme.buttonBackground
                         NerdIcon {
                             anchors.left: parent.left; anchors.leftMargin: 9; anchors.verticalCenter: parent.verticalCenter
                             text: network.connected ? "" : network.security === WifiSecurityType.Open ? "󰖩" : ""
-                            color: network.connected ? "#a6e3a1" : "#cdd6f4"; font.pixelSize: 16
+                            color: network.connected ? Theme.success : Theme.foreground; font.pixelSize: 16
                         }
                         Text {
                             anchors.left: parent.left; anchors.leftMargin: 37; anchors.right: strength.left
                             anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                             text: network.name + " • " + page.stateLabel(network)
-                            color: "#cdd6f4"; font.pixelSize: 12; elide: Text.ElideRight
+                            color: Theme.foreground; font.pixelSize: 12; elide: Text.ElideRight
                         }
                         Text {
                             id: strength; anchors.right: parent.right; anchors.rightMargin: 9
                             anchors.verticalCenter: parent.verticalCenter
                             text: Math.round(network.signalStrength * 100) + "%"
-                            color: "#a6adc8"; font.pixelSize: 11
+                            color: Theme.secondaryForeground; font.pixelSize: 11
                         }
                         MouseArea {
                             id: pointer; anchors.fill: parent; hoverEnabled: true
@@ -215,7 +216,7 @@ Item {
                         }
                     }
                 }
-                Text { text: "Réseaux enregistrés visibles"; color: "#cba6f7"; font.bold: true; font.pixelSize: 13 }
+                Text { text: "Réseaux enregistrés visibles"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 13 }
                 Repeater {
                     model: ScriptModel { values: page.sortedNetworks.filter(n => n.known); objectProp: "name" }
                     delegate: ActionButton {
@@ -233,7 +234,7 @@ Item {
             clip: true; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
                 width: page.width; spacing: 10
-                Text { text: page.selectedNetwork ? page.stateLabel(page.selectedNetwork) + " • " + page.securityLabel(page.selectedNetwork) + " • " + Math.round(page.selectedNetwork.signalStrength * 100) + " %" : "Réseau indisponible"; color: "#cdd6f4"; font.pixelSize: 13 }
+                Text { text: page.selectedNetwork ? page.stateLabel(page.selectedNetwork) + " • " + page.securityLabel(page.selectedNetwork) + " • " + Math.round(page.selectedNetwork.signalStrength * 100) + " %" : "Réseau indisponible"; color: Theme.foreground; font.pixelSize: 13 }
                 Row {
                     spacing: 8
                     ActionButton {
@@ -250,15 +251,15 @@ Item {
                         onClicked: { page.selectedProfile = -1; page.stage = "forget"; }
                     }
                 }
-                Text { text: "Profils NetworkManager"; color: "#cba6f7"; font.pixelSize: 13; font.bold: true }
-                Text { visible: page.profiles.length === 0; text: "Aucun profil enregistré"; color: "#a6adc8"; font.pixelSize: 12 }
+                Text { text: "Profils NetworkManager"; color: Theme.accentForeground; font.pixelSize: 13; font.bold: true }
+                Text { visible: page.profiles.length === 0; text: "Aucun profil enregistré"; color: Theme.secondaryForeground; font.pixelSize: 12 }
                 Repeater {
                     model: page.profiles
                     delegate: Row {
                         required property var modelData
                         required property int index
                         spacing: 6
-                        Text { width: 205; text: modelData.id + "\n" + modelData.uuid; color: "#cdd6f4"; font.pixelSize: 11; wrapMode: Text.WrapAnywhere }
+                        Text { width: 205; text: modelData.id + "\n" + modelData.uuid; color: Theme.foreground; font.pixelSize: 11; wrapMode: Text.WrapAnywhere }
                         ActionButton { label: "Utiliser"; onClicked: { page.message = ""; page.selectedNetwork.connectWithSettings(modelData); } }
                         ActionButton { label: "Oublier"; danger: true; onClicked: { page.selectedProfile = index; page.stage = "forget"; } }
                     }
@@ -271,12 +272,12 @@ Item {
         Column {
             property alias passwordInput: input
             spacing: 10
-            Text { text: "Mot de passe"; color: "#cdd6f4"; font.pixelSize: 13 }
+            Text { text: "Mot de passe"; color: Theme.foreground; font.pixelSize: 13 }
             TextField {
                 id: input; width: page.width; echoMode: TextInput.Password
                 placeholderText: "Mot de passe Wi-Fi"; selectByMouse: true
-                color: "#cdd6f4"; placeholderTextColor: "#6c7086"
-                background: Rectangle { color: "#313244"; border.color: input.activeFocus ? "#cba6f7" : "#585b70"; radius: 4 }
+                color: Theme.foreground; placeholderTextColor: Theme.disabledForeground
+                background: Rectangle { color: Theme.buttonBackground; border.color: input.activeFocus ? Theme.accent : Theme.strongBorder; radius: 4 }
                 onAccepted: submit.clicked()
             }
             Row {
@@ -303,8 +304,8 @@ Item {
         id: forgetComponent
         Column {
             spacing: 10
-            Text { width: page.width; wrapMode: Text.Wrap; text: "Oublier " + page.selectedName + " ?"; color: "#f38ba8"; font.pixelSize: 13 }
-            Text { width: page.width; wrapMode: Text.Wrap; text: page.selectedProfile >= 0 ? "Seul le profil sélectionné sera supprimé." : "Tous les profils de ce réseau seront supprimés."; color: "#a6adc8"; font.pixelSize: 12 }
+            Text { width: page.width; wrapMode: Text.Wrap; text: "Oublier " + page.selectedName + " ?"; color: Theme.danger; font.pixelSize: 13 }
+            Text { width: page.width; wrapMode: Text.Wrap; text: page.selectedProfile >= 0 ? "Seul le profil sélectionné sera supprimé." : "Tous les profils de ce réseau seront supprimés."; color: Theme.secondaryForeground; font.pixelSize: 12 }
             Row {
                 spacing: 8
                 ActionButton { label: "Annuler"; onClicked: page.stage = "details" }

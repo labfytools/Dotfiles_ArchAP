@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell.Services.Mpris
 import "../components"
+import "../theme"
 
 Rectangle {
     id: card
@@ -22,7 +23,7 @@ Rectangle {
     implicitHeight: visible ? 116 : 0
     height: implicitHeight
     radius: 4
-    color: "#313244"
+    color: Theme.buttonBackground
 
     RowLayout {
         anchors.fill: parent
@@ -33,7 +34,7 @@ Rectangle {
             Layout.preferredWidth: 72
             Layout.preferredHeight: 72
             radius: 4
-            color: "#45475a"
+            color: Theme.border
             clip: true
 
             Image {
@@ -48,7 +49,7 @@ Rectangle {
                 anchors.centerIn: parent
                 visible: !artwork.visible
                 text: ""
-                color: "#cba6f7"
+                color: Theme.accent
                 font.pixelSize: 27
             }
         }
@@ -60,7 +61,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: card.player ? card.player.trackTitle : ""
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 13
                 font.bold: true
                 elide: Text.ElideRight
@@ -69,7 +70,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: card.player ? card.player.trackArtist : ""
                 visible: text.length > 0
-                color: "#a6adc8"
+                color: Theme.secondaryForeground
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }
@@ -92,12 +93,12 @@ Rectangle {
                         width: 32
                         height: 27
                         radius: 4
-                        color: controlPointer.containsMouse && available ? "#585b70" : "#45475a"
+                        color: controlPointer.containsMouse && available ? Theme.strongBorder : Theme.border
 
                         NerdIcon {
                             anchors.centerIn: parent
                             text: modelData.icon
-                            color: parent.available ? "#cdd6f4" : "#6c7086"
+                            color: parent.available ? Theme.foreground : Theme.disabledForeground
                             font.pixelSize: 14
                         }
                         MouseArea {

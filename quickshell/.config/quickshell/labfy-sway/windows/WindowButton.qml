@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.I3
 import "../components"
+import "../theme"
 
 Rectangle {
     id: button
@@ -27,9 +28,9 @@ Rectangle {
         : 26
     height: 26
     radius: 4
-    color: primary ? "#45475a" : pointer.containsMouse ? "#45475a" : "#313244"
+    color: primary ? Theme.border : pointer.containsMouse ? Theme.border : Theme.buttonBackground
     border.width: primary ? 1 : 0
-    border.color: "#cba6f7"
+    border.color: Theme.accent
 
     NerdIcon {
         id: icon
@@ -51,7 +52,7 @@ Rectangle {
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
         text: button.fullTitle
-        color: "#cdd6f4"
+        color: Theme.foreground
         font.pixelSize: 13
         elide: Text.ElideRight
         maximumLineCount: 1
@@ -105,8 +106,8 @@ Rectangle {
         Rectangle {
             anchors.fill: parent
             radius: 4
-            color: "#313244"
-            border.color: "#45475a"
+            color: Theme.buttonBackground
+            border.color: Theme.border
 
             Column {
                 id: tooltipContent
@@ -118,14 +119,14 @@ Rectangle {
 
                 Text {
                     text: button.appName
-                    color: "#cdd6f4"
+                    color: Theme.foreground
                     font.pixelSize: 12
                     font.bold: true
                 }
                 Text {
                     width: parent.width
                     text: button.fullTitle
-                    color: "#a6adc8"
+                    color: Theme.secondaryForeground
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
                     maximumLineCount: 3

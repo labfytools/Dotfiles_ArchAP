@@ -5,6 +5,8 @@ hyprwhspr/.local/share/
 **/__pycache__/
 *.py[cod]
 **/node_modules/
+sway/.config/sway/generated/theme.conf
+sway/.config/sway/generated/theme.conf.tmp
 
 # Local editor/application backups
 *.bak

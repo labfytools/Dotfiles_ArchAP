@@ -1,5 +1,8 @@
 # QuickShell labfy-sway
 
+Le [moteur de thème commun](theme/README.md) fournit les couleurs effectives
+à QuickShell et Sway/SwayFX depuis une seule palette Catppuccin versionnée.
+
 Barre principale et serveur de notifications de la session SwayFX.
 
 ```text

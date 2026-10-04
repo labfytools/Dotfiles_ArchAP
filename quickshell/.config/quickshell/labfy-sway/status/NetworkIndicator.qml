@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Networking
 import "../components"
+import "../theme"
 
 Item {
     id: indicator
@@ -19,7 +20,7 @@ Item {
         : !connectedNetwork ? "Wi-Fi\nNon connecté"
         : "Wi-Fi\n" + connectedNetwork.name + "\nSignal : " + signalPercent + " %"
 
-    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? "#45475a" : "transparent" }
+    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     NerdIcon {
         anchors.centerIn: parent
         // WHY: md-wifi remplit mieux la hauteur visuelle que les quatre glyphes
@@ -30,8 +31,8 @@ Item {
         text: !Networking.wifiHardwareEnabled ? "󰖪"
             : !Networking.wifiEnabled ? "󰖪"
             : !indicator.connectedNetwork ? "󰤯" : "󰖩"
-        color: !Networking.wifiHardwareEnabled ? "#f38ba8"
-            : !Networking.wifiEnabled ? "#a6adc8" : "#cdd6f4"
+        color: !Networking.wifiHardwareEnabled ? Theme.danger
+            : !Networking.wifiEnabled ? Theme.secondaryForeground : Theme.foreground
     }
     MouseArea {
         id: pointer

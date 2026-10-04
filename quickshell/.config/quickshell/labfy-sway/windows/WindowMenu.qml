@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.I3
+import "../theme"
 
 PopupWindow {
     id: menu
@@ -30,8 +31,8 @@ PopupWindow {
     Rectangle {
         anchors.fill: parent
         radius: 4
-        color: "#1e1e2e"
-        border.color: "#45475a"
+        color: Theme.popupBackground
+        border.color: Theme.border
 
         Column {
             id: content
@@ -45,7 +46,7 @@ PopupWindow {
                 width: parent.width
                 text: menu.entry ? menu.entry.name
                     : menu.selectedWindow ? menu.selectedWindow.appId : ""
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 15
                 font.bold: true
                 elide: Text.ElideRight
@@ -53,7 +54,7 @@ PopupWindow {
 
             Text {
                 text: "Fenêtres ouvertes"
-                color: "#a6adc8"
+                color: Theme.secondaryForeground
                 font.pixelSize: 11
             }
 
@@ -65,7 +66,7 @@ PopupWindow {
                     width: content.width
                     height: 30
                     radius: 4
-                    color: pointer.containsMouse ? "#45475a" : "#313244"
+                    color: pointer.containsMouse ? Theme.border : Theme.buttonBackground
 
                     Text {
                         anchors.left: parent.left
@@ -74,7 +75,7 @@ PopupWindow {
                         anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.title
-                        color: "#cdd6f4"
+                        color: Theme.foreground
                         font.pixelSize: 12
                         elide: Text.ElideRight
                     }
@@ -94,7 +95,7 @@ PopupWindow {
             Text {
                 visible: menu.actions.length > 0
                 text: "Actions"
-                color: "#a6adc8"
+                color: Theme.secondaryForeground
                 font.pixelSize: 11
             }
 
@@ -106,7 +107,7 @@ PopupWindow {
                     width: content.width
                     height: 30
                     radius: 4
-                    color: actionPointer.containsMouse ? "#45475a" : "#313244"
+                    color: actionPointer.containsMouse ? Theme.border : Theme.buttonBackground
 
                     Text {
                         anchors.left: parent.left
@@ -115,7 +116,7 @@ PopupWindow {
                         anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.name
-                        color: "#cdd6f4"
+                        color: Theme.foreground
                         font.pixelSize: 12
                         elide: Text.ElideRight
                     }

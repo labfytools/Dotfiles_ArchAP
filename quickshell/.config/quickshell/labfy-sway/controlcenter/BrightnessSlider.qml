@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell.Io
 import "../components"
+import "../theme"
 
 Item {
     id: brightnessControl
@@ -44,7 +45,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: ""
                 font.pixelSize: 18
-                color: "#cdd6f4"
+                color: Theme.foreground
             }
 
             Text {
@@ -52,7 +53,7 @@ Item {
                 anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Luminosité"
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 14
             }
 
@@ -60,7 +61,7 @@ Item {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: brightnessControl.available ? brightnessControl.percent + "%" : "Indisponible"
-                color: "#a6adc8"
+                color: Theme.secondaryForeground
                 font.pixelSize: 14
             }
         }
@@ -88,13 +89,13 @@ Item {
                 width: slider.availableWidth
                 height: 8
                 radius: 4
-                color: "#313244"
+                color: Theme.buttonBackground
 
                 Rectangle {
                     width: slider.visualPosition * parent.width
                     height: parent.height
                     radius: parent.radius
-                    color: "#cba6f7"
+                    color: Theme.accent
                 }
             }
 
@@ -104,7 +105,7 @@ Item {
                 width: 16
                 height: 16
                 radius: 8
-                color: "#cdd6f4"
+                color: Theme.foreground
             }
         }
     }

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "../components"
+import "../theme"
 
 PopupWindow {
     id: popup
@@ -24,8 +25,8 @@ PopupWindow {
     Rectangle {
         anchors.fill: parent
         radius: 4
-        color: "#1e1e2e"
-        border.color: "#45475a"
+        color: Theme.popupBackground
+        border.color: Theme.border
 
         Column {
             id: content
@@ -38,7 +39,7 @@ PopupWindow {
             Row {
                 spacing: 8
                 NerdIcon { text: "󰍛"; font.pixelSize: 18 }
-                Text { text: "Moniteur système"; color: "#cdd6f4"; font.pixelSize: 16; font.bold: true }
+                Text { text: "Moniteur système"; color: Theme.foreground; font.pixelSize: 16; font.bold: true }
             }
 
             MetricRow {
@@ -46,7 +47,7 @@ PopupWindow {
                 percentage: metrics.cpuPercent
                 value: (metrics.cpuPercent >= 0 ? Math.round(metrics.cpuPercent) + " %" : "—")
                     + (metrics.cpuTemp >= 0 ? "    " + Math.round(metrics.cpuTemp) + " °C" : "")
-                accent: metrics.cpuPercent >= 90 ? "#f38ba8" : metrics.cpuPercent >= 70 ? "#fab387" : "#cba6f7"
+                accent: metrics.cpuPercent >= 90 ? Theme.danger : metrics.cpuPercent >= 70 ? Theme.urgent : Theme.mauve
             }
 
             MetricRow {
@@ -55,7 +56,7 @@ PopupWindow {
                 value: metrics.ramPercent >= 0
                     ? metrics.ramUsedGiB.toFixed(1) + " / " + metrics.ramTotalGiB.toFixed(1)
                         + " GiB    " + Math.round(metrics.ramPercent) + " %" : "—"
-                accent: metrics.ramPercent >= 90 ? "#f38ba8" : metrics.ramPercent >= 75 ? "#fab387" : "#cba6f7"
+                accent: metrics.ramPercent >= 90 ? Theme.danger : metrics.ramPercent >= 75 ? Theme.urgent : Theme.mauve
             }
 
             MetricRow {
@@ -77,15 +78,15 @@ PopupWindow {
 
             Row {
                 width: parent.width
-                Text { id: loadLabel; text: "Charge (1/5/15 min)"; color: "#cdd6f4"; font.pixelSize: 12 }
+                Text { id: loadLabel; text: "Charge (1/5/15 min)"; color: Theme.foreground; font.pixelSize: 12 }
                 Item { width: Math.max(0, parent.width - loadValue.width - loadLabel.width); height: 1 }
-                Text { id: loadValue; text: metrics.loadAverage || "—"; color: "#bac2de"; font.pixelSize: 12 }
+                Text { id: loadValue; text: metrics.loadAverage || "—"; color: Theme.subtext1; font.pixelSize: 12 }
             }
             Row {
                 width: parent.width
-                Text { id: uptimeLabel; text: "En marche"; color: "#cdd6f4"; font.pixelSize: 12 }
+                Text { id: uptimeLabel; text: "En marche"; color: Theme.foreground; font.pixelSize: 12 }
                 Item { width: Math.max(0, parent.width - uptimeValue.width - uptimeLabel.width); height: 1 }
-                Text { id: uptimeValue; text: metrics.uptimeText || "—"; color: "#bac2de"; font.pixelSize: 12 }
+                Text { id: uptimeValue; text: metrics.uptimeText || "—"; color: Theme.subtext1; font.pixelSize: 12 }
             }
         }
     }

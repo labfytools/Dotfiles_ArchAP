@@ -1,5 +1,11 @@
 # Configuration SwayFX
 
+Les couleurs et variables d'apparence viennent du
+[moteur commun](../../../../quickshell/.config/quickshell/labfy-sway/theme/README.md).
+`theme-default.conf` assure le démarrage Mocha avant génération ;
+`generated/theme.conf` est l'état runtime créé atomiquement par
+`bin/.local/bin/generate-appearance.py` depuis la palette QuickShell.
+
 Le compositeur actif est **SwayFX 0.6** avec `scenefx`. La session UWSM
 sélectionne `sway.desktop` et charge `config` : `bind`, `input`, `rules`,
 `style`, `swayfx` et `autostart`. `eDP-1` est l'unique écran configuré, à

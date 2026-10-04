@@ -1,4 +1,5 @@
 import QtQuick
+import "../theme"
 
 Rectangle {
     id: button
@@ -8,13 +9,13 @@ Rectangle {
     implicitWidth: caption.implicitWidth + 20
     implicitHeight: 30
     radius: 4
-    color: !enabled ? "#313244" : pointer.containsMouse ? "#585b70" : "#45475a"
+    color: !enabled ? Theme.buttonBackground : pointer.containsMouse ? Theme.strongBorder : Theme.border
     opacity: enabled ? 1 : 0.55
     Text {
         id: caption
         anchors.centerIn: parent
         text: button.label
-        color: button.danger ? "#f38ba8" : "#cdd6f4"
+        color: button.danger ? Theme.danger : Theme.foreground
         font.pixelSize: 12
     }
     MouseArea {

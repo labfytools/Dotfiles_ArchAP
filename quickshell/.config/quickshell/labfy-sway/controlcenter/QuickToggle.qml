@@ -1,5 +1,6 @@
 import QtQuick
 import "../components"
+import "../theme"
 
 Rectangle {
     id: tile
@@ -14,8 +15,8 @@ Rectangle {
 
     height: 58
     radius: 4
-    color: active ? "#cba6f7" : "#313244"
-    readonly property color foreground: active ? "#1e1e2e" : "#cdd6f4"
+    color: active ? Theme.accent : Theme.buttonBackground
+    readonly property color foreground: active ? Theme.onAccent : Theme.foreground
 
     NerdIcon {
         id: symbol

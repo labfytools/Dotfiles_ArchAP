@@ -1,5 +1,6 @@
 import QtQuick
 import "../components"
+import "../theme"
 
 Rectangle {
     id: controlButton
@@ -10,14 +11,14 @@ Rectangle {
     width: 48
     height: 26
     radius: 4
-    color: open ? "#cba6f7" : pointer.containsMouse ? "#45475a" : "#313244"
+    color: open ? Theme.accent : pointer.containsMouse ? Theme.border : Theme.buttonBackground
 
     NerdIcon {
         anchors.centerIn: parent
         text: ""
         // WHY: garder le même poids visuel que les statuts voisins dans la capsule fixe.
         font.pixelSize: 20
-        color: controlButton.open ? "#1e1e2e" : "#cdd6f4"
+        color: controlButton.open ? Theme.onAccent : Theme.foreground
     }
 
     MouseArea {

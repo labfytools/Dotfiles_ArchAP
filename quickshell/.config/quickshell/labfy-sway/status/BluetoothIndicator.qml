@@ -1,5 +1,6 @@
 import QtQuick
 import "../components"
+import "../theme"
 
 Item {
     id: indicator
@@ -16,14 +17,14 @@ Item {
         : "Bluetooth activé\n" + connectedDevices.length + " appareils connectés\n"
             + connectedDevices.map(device => device.name).join("\n")
 
-    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? "#45475a" : "transparent" }
+    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     NerdIcon {
         anchors.centerIn: parent
         // WHY: la silhouette Bluetooth est étroite ; seul le dessin grandit, pas la hitbox.
         font.pixelSize: 22
         text: indicator.adapter && indicator.adapter.enabled ? "" : "󰂲"
-        color: !indicator.adapter || !indicator.adapter.enabled ? "#a6adc8"
-            : indicator.connectedDevices.length > 0 ? "#cba6f7" : "#cdd6f4"
+        color: !indicator.adapter || !indicator.adapter.enabled ? Theme.secondaryForeground
+            : indicator.connectedDevices.length > 0 ? Theme.accent : Theme.foreground
     }
     MouseArea {
         id: pointer

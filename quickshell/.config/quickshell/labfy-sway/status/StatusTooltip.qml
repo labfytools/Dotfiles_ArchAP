@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import "../theme"
 
 PopupWindow {
     id: tip
@@ -25,15 +26,15 @@ PopupWindow {
     Rectangle {
         anchors.fill: parent
         radius: 4
-        color: "#313244"
-        border.color: "#45475a"
+        color: Theme.buttonBackground
+        border.color: Theme.border
         Text {
             id: content
             anchors.centerIn: parent
             width: Math.min(304, implicitWidth)
             text: tip.message
             wrapMode: Text.Wrap
-            color: "#cdd6f4"
+            color: Theme.foreground
             font.pixelSize: 11
         }
     }

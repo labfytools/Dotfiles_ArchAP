@@ -1,5 +1,6 @@
 import QtQuick
 import "../components"
+import "../theme"
 
 Item {
     id: indicator
@@ -19,16 +20,16 @@ Item {
             id: bell
             // Le glyphe fa-bell est présent dans JetBrainsMono Nerd Font Mono.
             text: ""
-            color: indicator.inverted ? "#1e1e2e"
-                : indicator.criticalUnreadCount > 0 ? "#f38ba8" : "#cba6f7"
+            color: indicator.inverted ? Theme.onAccent
+                : indicator.criticalUnreadCount > 0 ? Theme.danger : Theme.accent
             // CONTRACT: la cloche gagne en lisibilité sans agrandir le badge ni déplacer la date.
             font.pixelSize: 16
         }
         Text {
             id: countLabel
             text: indicator.unreadCount > 9 ? "9+" : String(indicator.unreadCount)
-            color: indicator.inverted ? "#1e1e2e"
-                : indicator.criticalUnreadCount > 0 ? "#f38ba8" : "#cdd6f4"
+            color: indicator.inverted ? Theme.onAccent
+                : indicator.criticalUnreadCount > 0 ? Theme.danger : Theme.foreground
             font.pixelSize: 10
             font.bold: true
         }

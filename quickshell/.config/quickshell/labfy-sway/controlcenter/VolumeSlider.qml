@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell.Services.Pipewire
 import "../components"
+import "../theme"
 
 Item {
     id: volumeControl
@@ -33,7 +34,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: volumeControl.sinkAudio ? (volumeControl.muted ? "" : "") : ""
                 font.pixelSize: 18
-                color: volumeControl.muted ? "#f38ba8" : "#cdd6f4"
+                color: volumeControl.muted ? Theme.danger : Theme.foreground
 
                 MouseArea {
                     anchors.fill: parent
@@ -48,7 +49,7 @@ Item {
                 anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Volume"
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 14
             }
 
@@ -56,7 +57,7 @@ Item {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: volumeControl.sinkAudio ? volumeControl.percent + "%" : "Indisponible"
-                color: volumeControl.muted ? "#f38ba8" : "#a6adc8"
+                color: volumeControl.muted ? Theme.danger : Theme.secondaryForeground
                 font.pixelSize: 14
             }
         }
@@ -82,13 +83,13 @@ Item {
                 width: slider.availableWidth
                 height: 8
                 radius: 4
-                color: "#313244"
+                color: Theme.buttonBackground
 
                 Rectangle {
                     width: slider.visualPosition * parent.width
                     height: parent.height
                     radius: parent.radius
-                    color: "#cba6f7"
+                    color: Theme.accent
                 }
             }
 
@@ -98,7 +99,7 @@ Item {
                 width: 16
                 height: 16
                 radius: 8
-                color: "#cdd6f4"
+                color: Theme.foreground
             }
         }
     }

@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Bluetooth
 import "../components"
+import "../theme"
 
 Item {
     id: page
@@ -61,10 +62,10 @@ Item {
             Text {
                 width: parent.width - 60; height: 30; verticalAlignment: Text.AlignVCenter
                 text: page.stage === "main" ? "Bluetooth" : page.nameOf(page.selectedDevice)
-                color: "#cdd6f4"; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight
+                color: Theme.foreground; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight
             }
         }
-        Text { width: parent.width; visible: page.message.length > 0; text: page.message; wrapMode: Text.Wrap; color: "#f9e2af"; font.pixelSize: 12 }
+        Text { width: parent.width; visible: page.message.length > 0; text: page.message; wrapMode: Text.Wrap; color: Theme.warningForeground; font.pixelSize: 12 }
         Loader {
             width: parent.width; height: Math.max(0, parent.height - y)
             sourceComponent: page.stage === "main" ? mainComponent : page.stage === "details"
@@ -80,22 +81,22 @@ Item {
                 width: page.width; spacing: 10
                 Row {
                     width: parent.width; spacing: 8
-                    Text { width: parent.width - 100; text: !page.adapter ? "Adaptateur indisponible" : page.adapter.enabled ? "Bluetooth activé" : "Bluetooth désactivé"; color: "#cdd6f4"; font.pixelSize: 13 }
+                    Text { width: parent.width - 100; text: !page.adapter ? "Adaptateur indisponible" : page.adapter.enabled ? "Bluetooth activé" : "Bluetooth désactivé"; color: Theme.foreground; font.pixelSize: 13 }
                     ActionButton { label: page.adapter && page.adapter.enabled ? "Désactiver" : "Activer"; enabled: !!page.adapter; onClicked: page.adapter.enabled = !page.adapter.enabled }
                 }
-                Text { text: page.scanWanted ? "Recherche d'appareils…" : "Scan arrêté"; color: "#a6adc8"; font.pixelSize: 11 }
-                Text { visible: page.devices.length === 0; text: "Aucun appareil connu"; color: "#a6adc8"; font.pixelSize: 12 }
-                Text { visible: page.connectedDevices.length > 0; text: "Connectés"; color: "#cba6f7"; font.bold: true; font.pixelSize: 13 }
+                Text { text: page.scanWanted ? "Recherche d'appareils…" : "Scan arrêté"; color: Theme.secondaryForeground; font.pixelSize: 11 }
+                Text { visible: page.devices.length === 0; text: "Aucun appareil connu"; color: Theme.secondaryForeground; font.pixelSize: 12 }
+                Text { visible: page.connectedDevices.length > 0; text: "Connectés"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 13 }
                 Repeater {
                     model: ScriptModel { values: page.connectedDevices; objectProp: "address" }
                     delegate: deviceRowComponent
                 }
-                Text { visible: page.pairedDevices.length > 0; text: "Appairés"; color: "#cba6f7"; font.bold: true; font.pixelSize: 13 }
+                Text { visible: page.pairedDevices.length > 0; text: "Appairés"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 13 }
                 Repeater {
                     model: ScriptModel { values: page.pairedDevices; objectProp: "address" }
                     delegate: deviceRowComponent
                 }
-                Text { visible: page.newDevices.length > 0; text: "Nouveaux appareils"; color: "#cba6f7"; font.bold: true; font.pixelSize: 13 }
+                Text { visible: page.newDevices.length > 0; text: "Nouveaux appareils"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 13 }
                 Repeater {
                     model: ScriptModel { values: page.newDevices; objectProp: "address" }
                     delegate: deviceRowComponent
@@ -109,7 +110,7 @@ Item {
             required property var modelData
             readonly property var device: modelData
             width: page.width; height: 48; radius: 4
-            color: pointer.containsMouse ? "#45475a" : "#313244"
+            color: pointer.containsMouse ? Theme.border : Theme.buttonBackground
             Image {
                 id: iconImage; anchors.left: parent.left; anchors.leftMargin: 9; anchors.verticalCenter: parent.verticalCenter
                 width: 19; height: 19; source: device.icon ? Quickshell.iconPath(device.icon, true) : ""
@@ -117,13 +118,13 @@ Item {
             }
             NerdIcon {
                 anchors.centerIn: iconImage; visible: !iconImage.visible
-                text: "󰂯"; color: "#cba6f7"; font.pixelSize: 17
+                text: "󰂯"; color: Theme.accentForeground; font.pixelSize: 17
             }
             Column {
                 anchors.left: parent.left; anchors.leftMargin: 38; anchors.right: parent.right
                 anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                Text { width: parent.width; text: page.nameOf(device); color: "#cdd6f4"; font.pixelSize: 12; elide: Text.ElideRight }
-                Text { text: page.stateOf(device) + (device.batteryAvailable ? " • " + Math.round(device.battery * 100) + " %" : ""); color: "#a6adc8"; font.pixelSize: 11 }
+                Text { width: parent.width; text: page.nameOf(device); color: Theme.foreground; font.pixelSize: 12; elide: Text.ElideRight }
+                Text { text: page.stateOf(device) + (device.batteryAvailable ? " • " + Math.round(device.battery * 100) + " %" : ""); color: Theme.secondaryForeground; font.pixelSize: 11 }
             }
             MouseArea { id: pointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.choose(device) }
         }
@@ -134,10 +135,10 @@ Item {
             clip: true; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             Column {
                 width: page.width; spacing: 10
-                Text { text: page.selectedDevice ? page.stateOf(page.selectedDevice) : "Appareil indisponible"; color: "#cdd6f4"; font.pixelSize: 13 }
-                Text { visible: !!page.selectedDevice && page.selectedDevice.deviceName !== page.selectedDevice.name; text: "Nom d'origine : " + (page.selectedDevice ? page.selectedDevice.deviceName : ""); color: "#a6adc8"; font.pixelSize: 11 }
-                Text { visible: !!page.selectedDevice && page.selectedDevice.batteryAvailable; text: "Batterie : " + (page.selectedDevice ? Math.round(page.selectedDevice.battery * 100) : 0) + " %"; color: "#cdd6f4"; font.pixelSize: 12 }
-                Text { text: page.selectedDevice ? "Appairé : " + (page.selectedDevice.paired ? "oui" : "non") + " • Lié : " + (page.selectedDevice.bonded ? "oui" : "non") : ""; color: "#a6adc8"; font.pixelSize: 11 }
+                Text { text: page.selectedDevice ? page.stateOf(page.selectedDevice) : "Appareil indisponible"; color: Theme.foreground; font.pixelSize: 13 }
+                Text { visible: !!page.selectedDevice && page.selectedDevice.deviceName !== page.selectedDevice.name; text: "Nom d'origine : " + (page.selectedDevice ? page.selectedDevice.deviceName : ""); color: Theme.secondaryForeground; font.pixelSize: 11 }
+                Text { visible: !!page.selectedDevice && page.selectedDevice.batteryAvailable; text: "Batterie : " + (page.selectedDevice ? Math.round(page.selectedDevice.battery * 100) : 0) + " %"; color: Theme.foreground; font.pixelSize: 12 }
+                Text { text: page.selectedDevice ? "Appairé : " + (page.selectedDevice.paired ? "oui" : "non") + " • Lié : " + (page.selectedDevice.bonded ? "oui" : "non") : ""; color: Theme.secondaryForeground; font.pixelSize: 11 }
                 Row {
                     spacing: 8
                     ActionButton {
@@ -159,37 +160,37 @@ Item {
                 }
                 Row {
                     spacing: 8
-                    Text { width: 165; text: "Appareil de confiance"; color: "#cdd6f4"; font.pixelSize: 12 }
+                    Text { width: 165; text: "Appareil de confiance"; color: Theme.foreground; font.pixelSize: 12 }
                     ActionButton { label: page.selectedDevice && page.selectedDevice.trusted ? "Activé" : "Désactivé"; enabled: !!page.selectedDevice && page.selectedDevice.paired; onClicked: page.selectedDevice.trusted = !page.selectedDevice.trusted }
                 }
                 Row {
                     spacing: 8
-                    Text { width: 165; text: "Bloqué"; color: "#cdd6f4"; font.pixelSize: 12 }
+                    Text { width: 165; text: "Bloqué"; color: Theme.foreground; font.pixelSize: 12 }
                     ActionButton { label: page.selectedDevice && page.selectedDevice.blocked ? "Oui" : "Non"; enabled: !!page.selectedDevice; onClicked: { if (page.selectedDevice.blocked) page.selectedDevice.blocked = false; else page.stage = "block"; } }
                 }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Un appareil bloqué ne peut pas se connecter."; color: "#a6adc8"; font.pixelSize: 11 }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: "Un appareil bloqué ne peut pas se connecter."; color: Theme.secondaryForeground; font.pixelSize: 11 }
                 Row {
                     visible: !!page.selectedDevice && page.selectedDevice.paired
                         && page.adapter && page.adapter.enabled
                         && page.selectedDevice.wakeAllowed !== undefined
                     spacing: 8
-                    Text { width: 165; text: "Autoriser le réveil"; color: "#cdd6f4"; font.pixelSize: 12 }
+                    Text { width: 165; text: "Autoriser le réveil"; color: Theme.foreground; font.pixelSize: 12 }
                     ActionButton { label: page.selectedDevice && page.selectedDevice.wakeAllowed ? "Activé" : "Désactivé"; onClicked: page.selectedDevice.wakeAllowed = !page.selectedDevice.wakeAllowed }
                 }
-                Text { text: "Nom local"; color: "#cba6f7"; font.pixelSize: 13; font.bold: true }
+                Text { text: "Nom local"; color: Theme.accentForeground; font.pixelSize: 13; font.bold: true }
                 TextField {
                     id: aliasInput; width: page.width
                     text: page.selectedDevice ? page.selectedDevice.name : ""
                     placeholderText: "Alias local"; selectByMouse: true
-                    color: "#cdd6f4"; placeholderTextColor: "#6c7086"
-                    background: Rectangle { color: "#313244"; border.color: aliasInput.activeFocus ? "#cba6f7" : "#585b70"; radius: 4 }
+                    color: Theme.foreground; placeholderTextColor: Theme.disabledForeground
+                    background: Rectangle { color: Theme.buttonBackground; border.color: aliasInput.activeFocus ? Theme.accent : Theme.strongBorder; radius: 4 }
                 }
                 Row {
                     spacing: 8
                     ActionButton { label: "Réinitialiser"; enabled: !!page.selectedDevice; onClicked: { page.selectedDevice.name = ""; aliasInput.text = page.selectedDevice.name; } }
                     ActionButton { label: "Enregistrer"; enabled: !!page.selectedDevice; onClicked: page.selectedDevice.name = aliasInput.text.trim() }
                 }
-                Text { text: "Informations techniques : " + (page.selectedDevice ? page.selectedDevice.address : ""); color: "#6c7086"; font.pixelSize: 10 }
+                Text { text: "Informations techniques : " + (page.selectedDevice ? page.selectedDevice.address : ""); color: Theme.disabledForeground; font.pixelSize: 10 }
             }
         }
     }
@@ -197,8 +198,8 @@ Item {
         id: forgetComponent
         Column {
             spacing: 10
-            Text { width: page.width; wrapMode: Text.Wrap; text: "Oublier " + page.nameOf(page.selectedDevice) + " ?"; color: "#f38ba8"; font.pixelSize: 13 }
-            Text { width: page.width; wrapMode: Text.Wrap; text: "Cela supprimera les informations de pairage."; color: "#a6adc8"; font.pixelSize: 12 }
+            Text { width: page.width; wrapMode: Text.Wrap; text: "Oublier " + page.nameOf(page.selectedDevice) + " ?"; color: Theme.danger; font.pixelSize: 13 }
+            Text { width: page.width; wrapMode: Text.Wrap; text: "Cela supprimera les informations de pairage."; color: Theme.secondaryForeground; font.pixelSize: 12 }
             Row {
                 spacing: 8
                 ActionButton { label: "Annuler"; onClicked: page.stage = "details" }
@@ -210,8 +211,8 @@ Item {
         id: blockComponent
         Column {
             spacing: 10
-            Text { width: page.width; wrapMode: Text.Wrap; text: "Bloquer " + page.nameOf(page.selectedDevice) + " ?"; color: "#f38ba8"; font.pixelSize: 13 }
-            Text { width: page.width; wrapMode: Text.Wrap; text: "Un appareil bloqué ne peut pas se connecter."; color: "#a6adc8"; font.pixelSize: 12 }
+            Text { width: page.width; wrapMode: Text.Wrap; text: "Bloquer " + page.nameOf(page.selectedDevice) + " ?"; color: Theme.danger; font.pixelSize: 13 }
+            Text { width: page.width; wrapMode: Text.Wrap; text: "Un appareil bloqué ne peut pas se connecter."; color: Theme.secondaryForeground; font.pixelSize: 12 }
             Row {
                 spacing: 8
                 ActionButton { label: "Annuler"; onClicked: page.stage = "details" }

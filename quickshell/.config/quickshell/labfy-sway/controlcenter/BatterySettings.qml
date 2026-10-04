@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell.Io
 import Quickshell.Services.UPower
 import "../components"
+import "../theme"
 
 Item {
     id: page
@@ -211,7 +212,7 @@ Item {
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Batterie"
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 16
                 font.bold: true
             }
@@ -228,7 +229,7 @@ Item {
             width: parent.width
             height: 68
             radius: 4
-            color: "#313244"
+            color: Theme.buttonBackground
             NerdIcon {
                 id: batteryIcon
                 anchors.left: parent.left
@@ -245,12 +246,12 @@ Item {
                 spacing: 2
                 Text {
                     text: page.available ? page.percent + " %" : "Batterie indisponible"
-                    color: "#cdd6f4"
+                    color: Theme.foreground
                     font.pixelSize: 16
                 }
                 Text {
                     text: page.batteryState
-                    color: "#a6adc8"
+                    color: Theme.secondaryForeground
                     font.pixelSize: 12
                 }
             }
@@ -258,7 +259,7 @@ Item {
 
         Text {
             text: "Limite de charge"
-            color: "#cdd6f4"
+            color: Theme.foreground
             font.pixelSize: 14
         }
 
@@ -267,8 +268,8 @@ Item {
             spacing: 8
             Rectangle {
                 width: 42; height: 38; radius: 4
-                color: minusPointer.containsMouse ? "#45475a" : "#313244"
-                Text { anchors.centerIn: parent; text: "−"; color: "#cdd6f4"; font.pixelSize: 18 }
+                color: minusPointer.containsMouse ? Theme.border : Theme.buttonBackground
+                Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.pixelSize: 18 }
                 MouseArea {
                     id: minusPointer
                     anchors.fill: parent
@@ -283,7 +284,7 @@ Item {
                 width: parent.width - 100
                 height: 38
                 horizontalAlignment: TextInput.AlignHCenter
-                color: "#cdd6f4"
+                color: Theme.foreground
                 font.pixelSize: 16
                 maximumLength: 3
                 inputMethodHints: Qt.ImhDigitsOnly
@@ -303,22 +304,22 @@ Item {
                 }
                 background: Rectangle {
                     radius: 4
-                    color: "#313244"
-                    border.color: page.validProposed ? "#45475a" : "#f38ba8"
+                    color: Theme.buttonBackground
+                    border.color: page.validProposed ? Theme.border : Theme.danger
                 }
                 Text {
                     anchors.right: parent.right
                     anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     text: "%"
-                    color: "#a6adc8"
+                    color: Theme.secondaryForeground
                     font.pixelSize: 13
                 }
             }
             Rectangle {
                 width: 42; height: 38; radius: 4
-                color: plusPointer.containsMouse ? "#45475a" : "#313244"
-                Text { anchors.centerIn: parent; text: "+"; color: "#cdd6f4"; font.pixelSize: 18 }
+                color: plusPointer.containsMouse ? Theme.border : Theme.buttonBackground
+                Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.pixelSize: 18 }
                 MouseArea {
                     id: plusPointer
                     anchors.fill: parent
@@ -344,11 +345,11 @@ Item {
                     height: 32
                     radius: 4
                     opacity: modelData !== "" ? 1 : 0
-                    color: keyPointer.containsMouse ? "#45475a" : "#313244"
+                    color: keyPointer.containsMouse ? Theme.border : Theme.buttonBackground
                     Text {
                         anchors.centerIn: parent
                         text: modelData
-                        color: "#cdd6f4"
+                        color: Theme.foreground
                         font.pixelSize: 13
                     }
                     MouseArea {
@@ -369,13 +370,13 @@ Item {
                 delegate: Rectangle {
                     required property int modelData
                     width: 60; height: 32; radius: 4
-                    color: page.reportedThreshold === modelData ? "#585b70" : "#313244"
+                    color: page.reportedThreshold === modelData ? Theme.strongBorder : Theme.buttonBackground
                     border.color: page.validProposed && Number(valueField.text) === modelData
-                        ? "#cba6f7" : "transparent"
+                        ? Theme.accent : "transparent"
                     Text {
                         anchors.centerIn: parent
                         text: modelData
-                        color: "#cdd6f4"
+                        color: Theme.foreground
                         font.pixelSize: 13
                     }
                     MouseArea {
@@ -390,7 +391,7 @@ Item {
         Text {
             text: page.reportedThreshold >= 0
                 ? "Limite rapportée : " + page.reportedThreshold + " %" : "Limite indisponible"
-            color: "#a6adc8"
+            color: Theme.secondaryForeground
             font.pixelSize: 12
         }
 
@@ -398,12 +399,12 @@ Item {
             width: parent.width
             height: 36
             radius: 4
-            color: applyPointer.containsMouse && applyPointer.enabled ? "#b4befe" : "#cba6f7"
+            color: Theme.accent
             opacity: applyPointer.enabled ? 1 : 0.5
             Text {
                 anchors.centerIn: parent
                 text: page.phase === "Applying" ? "Application…" : "Appliquer"
-                color: "#1e1e2e"
+                color: Theme.onAccent
                 font.pixelSize: 13
             }
             MouseArea {
@@ -423,7 +424,7 @@ Item {
                 : !page.validProposed ? "Valeur comprise entre 40 et 100"
                 : !page.helperReady ? "Service de charge non déployé" : ""
             color: page.phase === "Error" || !page.validProposed || !page.helperReady
-                ? "#f38ba8" : "#a6e3a1"
+                ? Theme.danger : Theme.success
             font.pixelSize: 12
             wrapMode: Text.WordWrap
         }

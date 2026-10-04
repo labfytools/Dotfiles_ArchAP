@@ -1,4 +1,5 @@
 import QtQuick
+import "../theme"
 
 Item {
     id: confirmation
@@ -19,7 +20,7 @@ Item {
         Text {
             width: parent.width
             text: confirmation.actionInfo.confirmTitle
-            color: "#cdd6f4"
+            color: Theme.foreground
             font.pixelSize: 16
             font.bold: true
             wrapMode: Text.Wrap
@@ -28,7 +29,7 @@ Item {
         Text {
             width: parent.width
             text: confirmation.actionInfo.description
-            color: "#a6adc8"
+            color: Theme.secondaryForeground
             font.pixelSize: 13
             wrapMode: Text.Wrap
         }
@@ -42,12 +43,12 @@ Item {
                 width: (parent.width - parent.spacing) / 2
                 height: parent.height
                 radius: 4
-                color: cancelPointer.containsMouse ? "#45475a" : "#313244"
+                color: cancelPointer.containsMouse ? Theme.border : Theme.buttonBackground
 
                 Text {
                     anchors.centerIn: parent
                     text: "Annuler"
-                    color: "#cdd6f4"
+                    color: Theme.foreground
                     font.pixelSize: 13
                 }
                 MouseArea {
@@ -68,7 +69,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: confirmation.actionInfo.label
-                    color: "#1e1e2e"
+                    color: Theme.contrastingText(confirmation.actionInfo.accent)
                     font.pixelSize: 13
                     font.bold: true
                 }

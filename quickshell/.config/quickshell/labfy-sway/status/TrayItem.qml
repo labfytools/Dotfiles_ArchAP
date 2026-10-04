@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Services.SystemTray
 import Quickshell.Widgets
+import "../theme"
 
 Item {
     id: entry
@@ -14,7 +15,7 @@ Item {
         return heading + (item.tooltipDescription ? "\n" + item.tooltipDescription : "");
     }
 
-    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? "#45475a" : "transparent" }
+    Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     IconImage {
         anchors.centerIn: parent
         width: 18
@@ -25,7 +26,7 @@ Item {
     Rectangle {
         visible: entry.item.status === Status.NeedsAttention
         width: 4; height: 4; radius: 2
-        color: "#cba6f7"
+        color: Theme.accent
         anchors.right: parent.right
         anchors.top: parent.top
     }

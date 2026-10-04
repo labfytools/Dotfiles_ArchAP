@@ -5,6 +5,7 @@ import Quickshell.I3
 import Quickshell.Networking
 import Quickshell.Bluetooth
 import "../components"
+import "../theme"
 
 PopupWindow {
     id: popup
@@ -15,19 +16,19 @@ PopupWindow {
     property var pendingAction: null
     // Une seule table associe les libellés, confirmations et commandes de session.
     readonly property var sessionActions: [
-        { id: "lock", label: "Verrouiller", icon: "", accent: "#b4befe", command: ["swaylock"] },
-        { id: "suspend", label: "Veille", icon: "", accent: "#b4befe",
+        { id: "lock", label: "Verrouiller", icon: "", accent: Theme.accent, command: ["swaylock"] },
+        { id: "suspend", label: "Veille", icon: "", accent: Theme.accent,
             confirmTitle: "Mettre l'ordinateur en veille ?",
             description: "La session sera verrouillée avant la veille.",
             command: ["systemctl", "suspend"] },
-        { id: "logout", label: "Déconnexion", icon: "", accent: "#fab387",
+        { id: "logout", label: "Déconnexion", icon: "", accent: Theme.urgent,
             confirmTitle: "Se déconnecter ?",
             description: "La session SwayFX en cours sera fermée.", command: null },
-        { id: "reboot", label: "Redémarrer", icon: "", accent: "#f9e2af",
+        { id: "reboot", label: "Redémarrer", icon: "", accent: Theme.warning,
             confirmTitle: "Redémarrer l'ordinateur ?",
             description: "La session en cours sera fermée.",
             command: ["systemctl", "reboot"] },
-        { id: "poweroff", label: "Éteindre", icon: "", accent: "#f38ba8",
+        { id: "poweroff", label: "Éteindre", icon: "", accent: Theme.danger,
             confirmTitle: "Éteindre l'ordinateur ?",
             description: "La session en cours sera fermée.",
             command: ["systemctl", "poweroff"] }
@@ -82,8 +83,8 @@ PopupWindow {
     Rectangle {
         anchors.fill: parent
         radius: 4
-        color: "#1e1e2e"
-        border.color: "#45475a"
+        color: Theme.popupBackground
+        border.color: Theme.border
 
         StackLayout {
             anchors.fill: parent
@@ -96,7 +97,7 @@ PopupWindow {
 
                 Text {
                     text: "Réglages rapides"
-                    color: "#cdd6f4"
+                    color: Theme.foreground
                     font.pixelSize: 16
                     font.bold: true
                 }
@@ -130,7 +131,7 @@ PopupWindow {
                         width: 40
                         height: 30
                         radius: 4
-                        color: powerPointer.containsMouse ? "#45475a" : "#313244"
+                        color: powerPointer.containsMouse ? Theme.border : Theme.buttonBackground
 
                         NerdIcon {
                             anchors.centerIn: parent
@@ -171,7 +172,7 @@ PopupWindow {
             ConfirmAction {
                 id: confirmationPage
                 actionInfo: popup.pendingAction || ({ id: "", label: "", confirmTitle: "",
-                    description: "", accent: "#cdd6f4" })
+                    description: "", accent: Theme.foreground })
                 onCancelled: {
                     popup.pendingAction = null;
                     popup.currentPage = 3;

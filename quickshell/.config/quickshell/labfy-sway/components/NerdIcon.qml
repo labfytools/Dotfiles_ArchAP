@@ -1,4 +1,5 @@
 import QtQuick
+import "../theme"
 
 Text {
     font.family: "JetBrainsMono Nerd Font Mono"
@@ -6,5 +7,5 @@ Text {
     font.pixelSize: 18
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
-    color: "#cdd6f4"
+    color: Theme.foreground
 }
