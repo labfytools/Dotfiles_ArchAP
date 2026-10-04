@@ -1,6 +1,7 @@
 arch-sentinel-sample.timer
 battery-low-notify.timer
 gnome-keyring-daemon.socket
+labfy-quickshell-updates.timer
 p11-kit-server.socket
 pipewire-pulse.socket
 pipewire.socket

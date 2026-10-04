@@ -13,5 +13,6 @@ meshlab-bin
 mozjpeg-debug
 proton-pass-bin
 spicetify-marketplace-bin
+swayfx
 vmware-workstation
 yay

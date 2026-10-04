@@ -8,32 +8,51 @@ readonly CAPACITY_FILE="/sys/class/power_supply/${BATTERY}/capacity"
 readonly STATUS_FILE="/sys/class/power_supply/${BATTERY}/status"
 readonly HELPER="/usr/local/sbin/batlimit-set"
 
+if (( $# > 1 )); then
+    echo "Usage : batlimit [SEUIL]" >&2
+    exit 2
+fi
+
 if [[ ! -e "$THRESHOLD_FILE" ]]; then
     echo "Erreur : aucun seuil de charge disponible pour ${BATTERY}."
     exit 1
 fi
 
-read -rp "Niveau max de charge voulu [%] : " STOP
+if (( $# == 1 )); then
+    STOP="$1"
+else
+    read -rp "Niveau max de charge voulu [%] : " STOP
+fi
 
-if [[ ! "$STOP" =~ ^[0-9]+$ ]]; then
-    echo "Erreur : entre un nombre entier."
-    exit 1
+if [[ ! "$STOP" =~ ^[1-9][0-9]{1,2}$ ]]; then
+    echo "Erreur : entre un nombre entier entre 40 et 100." >&2
+    exit 2
 fi
 
 if (( STOP < 40 || STOP > 100 )); then
-    echo "Erreur : choisis une valeur entre 40 et 100."
-    exit 1
+    echo "Erreur : choisis une valeur entre 40 et 100." >&2
+    exit 2
 fi
 
-if ! sudo -n "$HELPER" "$STOP"; then
-    echo "Erreur : impossible d’appliquer le seuil."
-    exit 1
+if RESULT=$(sudo -n "$HELPER" "$STOP"); then
+    if [[ -n "$RESULT" && "$RESULT" != "SUCCESS $STOP" ]]; then
+        echo "Erreur : réponse inattendue du service de charge." >&2
+        exit 1
+    fi
+else
+    result_code=$?
+    echo "Erreur : impossible d’appliquer le seuil." >&2
+    exit "$result_code"
 fi
 
 CURRENT_THRESHOLD=$(<"$THRESHOLD_FILE")
+if [[ "$CURRENT_THRESHOLD" != "$STOP" ]]; then
+    echo "Erreur : seuil demandé ${STOP} %, valeur rapportée ${CURRENT_THRESHOLD} %." >&2
+    exit 1
+fi
 
 echo
 echo "Batterie : ${BATTERY}"
-echo "Seuil appliqué : ${CURRENT_THRESHOLD}%"
+echo "Seuil rapporté : ${CURRENT_THRESHOLD}%"
 echo "Charge actuelle : $(<"$CAPACITY_FILE")%"
 echo "État : $(<"$STATUS_FILE")"

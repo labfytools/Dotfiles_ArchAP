@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Apply one validated BAT1 charge limit and persist it through TLP.
+
+Protocol marker: LABFY_TLP_PERSISTENT_V1. QuickShell checks the installed
+root-owned helper for this marker before allowing a write.
+
+Deployment: install this source as root:root, mode 0755, at
+/usr/local/sbin/batlimit-set. The sudoers rule grants only that installed path.
+
+Exit codes: 0 success, 2 invalid argument, 1 unavailable/apply/readback error,
+3 rollback failure. stdout is exactly ``SUCCESS <value>`` on success; stderr
+is exactly ``ERROR <reason>`` on failure.
+"""
+
+import fcntl
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+CONFIG = Path("/etc/tlp.d/90-labfy-charge-limit.conf")
+SYSFS = Path("/sys/class/power_supply/BAT1/charge_control_end_threshold")
+LOCK = Path("/run/lock/labfy-batlimit-set.lock")
+TLP = "/usr/bin/tlp"
+
+
+def fail(reason: str, code: int = 1) -> int:
+    print(f"ERROR {reason}", file=sys.stderr)
+    return code
+
+
+def read_threshold() -> int:
+    raw = SYSFS.read_text(encoding="ascii").strip()
+    if not re.fullmatch(r"[0-9]{1,3}", raw, re.ASCII):
+        raise ValueError("invalid kernel threshold")
+    return int(raw)
+
+
+def prior_config() -> bytes | None:
+    try:
+        metadata = CONFIG.lstat()
+    except FileNotFoundError:
+        return None
+    # CONTRACT: never follow or replace a link supplied at this privileged path.
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_size > 4096:
+        raise ValueError("unsafe TLP config")
+    return CONFIG.read_bytes()
+
+
+def sync_directory() -> None:
+    fd = os.open(CONFIG.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def replace_config(content: bytes) -> None:
+    # INVARIANT: TLP must see either the entire old file or the entire new file.
+    fd, temporary = tempfile.mkstemp(prefix=".90-labfy-charge-limit.", dir=CONFIG.parent)
+    try:
+        os.fchmod(fd, 0o644)
+        with os.fdopen(fd, "wb") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, CONFIG)
+        sync_directory()
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def restore_config(previous: bytes | None) -> None:
+    if previous is None:
+        try:
+            CONFIG.unlink()
+        except FileNotFoundError:
+            return
+        sync_directory()
+    else:
+        replace_config(previous)
+
+
+def apply_runtime(value: int) -> bool:
+    # TLP's setcharge command is temporary; the atomically replaced file owns boot persistence.
+    try:
+        result = subprocess.run(
+            [TLP, "setcharge", "0", str(value), "BAT1"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def locked_operation(value: int) -> int:
+    try:
+        old_value = read_threshold()
+        old_config = prior_config()
+    except (OSError, ValueError):
+        return fail("unavailable")
+
+    try:
+        replace_config(
+            f"START_CHARGE_THRESH_BAT1=0\nSTOP_CHARGE_THRESH_BAT1={value}\n".encode("ascii")
+        )
+    except OSError:
+        # Even a directory fsync failure can happen after rename; restore the old bytes.
+        try:
+            restore_config(old_config)
+        except OSError:
+            return fail("rollback_failed", 3)
+        return fail("unavailable")
+
+    try:
+        applied = apply_runtime(value)
+        if applied and read_threshold() == value:
+            print(f"SUCCESS {value}")
+            return 0
+    except (OSError, ValueError):
+        pass
+
+    # CONTRACT: a failed apply must not leave the new preference for the next boot.
+    try:
+        restore_config(old_config)
+        restored = apply_runtime(old_value) and read_threshold() == old_value
+    except (OSError, ValueError):
+        restored = False
+    return fail("apply_failed" if restored else "rollback_failed", 1 if restored else 3)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 1 or not re.fullmatch(r"[1-9][0-9]{1,2}", argv[0], re.ASCII):
+        return fail("invalid_value", 2)
+    value = int(argv[0])
+    if not 40 <= value <= 100:
+        return fail("invalid_value", 2)
+    if os.geteuid() != 0:
+        return fail("root_required")
+
+    # One fixed root-owned lock serializes callers; QuickShell also limits itself to one Process.
+    try:
+        lock_fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            metadata = os.fstat(lock_fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0:
+                return fail("unavailable")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            return locked_operation(value)
+        finally:
+            os.close(lock_fd)
+    except OSError:
+        return fail("unavailable")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

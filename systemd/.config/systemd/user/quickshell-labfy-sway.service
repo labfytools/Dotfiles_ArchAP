@@ -1,0 +1,13 @@
+[Unit]
+Description=QuickShell labfy-sway et serveur de notifications
+PartOf=wayland-session@sway.desktop.target
+After=wayland-session@sway.desktop.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/qs -c labfy-sway --no-color
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=wayland-session@sway.desktop.target

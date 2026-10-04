@@ -1,170 +1,20 @@
-# sway-config
+# Configuration SwayFX
 
-![Screenshot](./assets/screen.jpg)
+Le compositeur actif est **SwayFX 0.6** avec `scenefx`. La session UWSM
+sélectionne `sway.desktop` et charge `config` : `bind`, `input`, `rules`,
+`style`, `swayfx` et `autostart`. `eDP-1` est l'unique écran configuré, à
+l'origine logique. La configuration de barre native a été archivée dans
+`docs/legacy/swaybar/` ; la barre et les notifications sont fournies par
+QuickShell, lancé par `quickshell-labfy-sway.service`.
 
-Personal SwayFX configuration, modular and lightweight, designed for everyday Wayland use.
+`autostart` lance une fois le listener IPC
+`scripts/inactive-windows-transparency.py`, `limusic-app` et `autotiling`.
+Cliphist, swayidle, wlsunset et QuickShell sont gérés par systemd user ;
+aucune commande `qs` n'est lancée par Sway. Le fichier `swayfx` fixe les
+animations à 0, les coins à 4, les ombres validées et le flou uniquement sur
+la couche QuickShell. Les profils TLP restent accessibles par les raccourcis
+`tlpctl`.
 
-## Layout
-
-```bash
-❯ tree .config/sway.config/sway
-├── README.md
-├── assets
-│   └── screen.jpg
-├── autostart.conf
-├── bar.conf
-├── bind.conf
-├── catppuccin-mocha
-├── config
-├── i3status.toml
-├── input.conf
-├── layout.conf
-├── rules.conf
-├── scripts
-│   └── inactive-windows-transparency.py
-└── swayfx.confbash
-```
-
-## Dependencies
-
-### Compositor and session
-- swayfx
-- swaylock
-- swayidle
-- tlp
-- tlp-pd
-
-### Bar and status
-- i3status-rs
-
-### Base tools
-- kitty
-- firefox
-- google-chrome-stable
-- wl-clipboard
-- grim
-- slurp
-- cliphist
-- wlsunset
-- brightnessctl
-- nm-connection-editor
-- playerctl
-
-### Audio / Bluetooth
-- pipewire
-- wireplumber
-- blueman
-
-### Launching / scripts
-- bash
-
-## Config structure
-
-The configuration is split into several included files to keep it readable and easy to maintain.
-
-- `input.conf`: keyboard, touchpad, French layout.
-- `layout.conf`: wallpaper, theme, borders, gaps.
-- `bind.conf`: keyboard shortcuts.
-- `bar.conf`: Sway bar and i3status-rs.
-- `autostart.conf`: services started on session launch.
-- `rules.conf`: window placement and floating rules.
-- `i3status.toml`: i3status-rs configuration.
-
-## Appearance
-
-The theme is based on Catppuccin Macchiato, with dark colors, a top bar, and thin borders.  
-The wallpaper is loaded with `output * bg ... fill`, and the main output is positioned with `position 1920,0` in the current config.
-
-## Keyboard
-
-The keyboard is configured for French with the `oss` variant.
-
-Example:
-- layout: `fr`
-- variant: `oss`
-
-## Status bar
-
-The Sway bar is placed at the top and uses `i3status-rs` as its backend.
-
-The i3status-rust configuration includes:
-- workspaces,
-- focused window,
-- music,
-- Bluetooth,
-- network,
-- sound,
-- brightness,
-- battery,
-- power profile,
-- notification,
-- power menu,
-- tray.
-
-## Autostart
-
-On startup, Sway launches the inactive-window transparency helper, LiMusic and
-`autotiling`. Wlsunset, Cliphist and swayidle are owned by user systemd units.
-
-## Keybinds
-
-Some important shortcuts:
-- `Mod + Return`: open the terminal.
-- `Mod + q`: close the focused window.
-- `Mod + Shift + e`: exit Sway via `swaynag`.
-- `Mod + r`: resize mode.
-- `Mod + Ctrl + r`: reload the config.
-- `Mod + Alt + o`: lock the screen.
-- `Print`: capture a selected area to the clipboard.
-- `Shift + Print`: capture the full screen to the clipboard.
-- `Mod + Alt + l`: launcher Wofi.
-- `Mod + Alt + v`: Cliphist via Wofi.
-- `Mod + F9`, `Mod + F10`, `Mod + F11`: TLP power profiles.
-
-## Power profiles
-
-The bar displays the current TLP and platform profiles. The related keybinds
-use the unprivileged `tlpctl` interface provided by `tlp-pd`:
-- `performance`,
-- `balanced`,
-- `power-saver`.
-
-The related keybinds are:
-- `Mod + F9`: `tlpctl power-saver`.
-- `Mod + F10`: `tlpctl balanced`.
-- `Mod + F11`: `tlpctl performance`.
-
-## Floating windows
-
-Some windows are forced into floating mode and centered:
-- `blueman-manager`
-- `pavucontrol`
-- `nm-connection-editor`
-
-## Audio
-
-Audio shortcuts use `pactl` on the default sink.  
-Volume is also handled in i3status-rs with a `sound` block.
-
-## Useful commands
-
-Reload Sway:
-```bash
-swaymsg reload
-```
-
-Exit Sway:
-```bash
-swaymsg exit
-```
-
-Restart the bar:
-```bash
-pkill swaybar
-swaymsg reload
-```
-
-## Notes
-
-This config is meant to stay simple, stable, and easy to modify.  
-The setup is clearly Wayland-native, with minimal unnecessary layers and a modular structure.
+Valider avec `sway --validate` puis recharger avec `swaymsg reload`.
+Le rollback manuel de la barre et des notifications est décrit dans
+`quickshell/.config/quickshell/labfy-sway/notifications/ROLLBACK.md`.

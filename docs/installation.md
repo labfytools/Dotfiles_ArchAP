@@ -70,15 +70,22 @@ Les commandes suivantes sont destinées à Bash :
 ```bash
 packages=(
   atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock
-  hyprwhspr i3status-rust icons kitty mako nvim opencode qt5ct qt6ct
-  starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi
+  hyprwhspr icons kitty mako nvim opencode qt5ct qt6ct
+  quickshell starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi
   ytmusic-tui zsh
 )
 
 printf '%s\n' "${packages[@]}"
 ```
 
-`docs/` et `.assets/` ne doivent pas être ajoutés à ce tableau.
+`docs/` et `.assets/` ne doivent pas être ajoutés à ce tableau. Le package
+`quickshell` déploie `~/.config/quickshell/labfy-sway/` ; une Nerd Font
+(`ttf-jetbrains-mono-nerd` sur cette machine) fournit les icônes.
+SwayFX 0.6 est un paquet foreign/local à reconstruire depuis sa source
+vérifiée ; `scenefx` et `quickshell` sont présents dans la liste Pacman
+officielle de cette machine. Voir les inventaires `.assets/`.
+Le backend batterie exige TLP et `/usr/local/sbin/batlimit-set`, déployé
+séparément avec les droits root selon `bin/root/README.md`.
 
 ## 6. Effectuer le dry-run
 
@@ -114,7 +121,16 @@ systemd-analyze --user verify \
   "$HOME"/.config/systemd/user/*.service \
   "$HOME"/.config/systemd/user/*.timer
 systemctl --user --failed
+systemctl --user is-enabled quickshell-labfy-sway.service labfy-quickshell-updates.timer
+systemctl --user is-active quickshell-labfy-sway.service labfy-quickshell-updates.timer
 ```
+
+Si les liens `*.wants/` ne sont pas déjà en place sur la machine cible,
+activer les unités avec `systemctl --user enable quickshell-labfy-sway.service
+labfy-quickshell-updates.timer`. Dans une session SwayFX déjà ouverte, les
+démarrer avec `systemctl --user start quickshell-labfy-sway.service
+labfy-quickshell-updates.timer`. Le démarrage suivant est assuré par
+`wayland-session@sway.desktop.target` et `timers.target`.
 
 Certaines unités dépendent de projets externes. Ne les démarrer que lorsque
 leurs chemins et configurations locales existent ; voir [`systemd.md`](systemd.md).

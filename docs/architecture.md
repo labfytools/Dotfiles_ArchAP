@@ -41,7 +41,7 @@ Exemples de correspondance :
 | Source versionnée | Cible utilisateur |
 | --- | --- |
 | `sway/.config/sway/` | `~/.config/sway/` |
-| `i3status-rust/.config/i3status-rust/` | `~/.config/i3status-rust/` |
+| `quickshell/.config/quickshell/labfy-sway/` | `~/.config/quickshell/labfy-sway/` |
 | `bin/.local/bin/` | `~/.local/bin/` |
 | `zsh/.zprofile` | `~/.zprofile` |
 | `wallpapers/.wallpapers/` | `~/.wallpapers/` |

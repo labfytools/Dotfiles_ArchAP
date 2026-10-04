@@ -33,24 +33,6 @@ widget = "."
 action = "toggle_format"
 
 [[block]]
-block = "bluetooth"
-mac = "E4:61:F4:F4:A1:F7"
-format = " 󰂯 JBL Tune "
-disconnected_format = " 󰂲 JBL Tune "
-[[block.click]]
-button = "left"
-action = "blueman-manager"
-
-[[block]]
-block = "bluetooth"
-mac = "1C:57:85:33:54:7F"
-format = " 󰂯 EDENWOOD "
-disconnected_format = " 󰂲 EDENWOOD "
-[[block.click]]
-button = "left"
-action = "blueman-manager"
-
-[[block]]
 block = "net"
 device = "wlp1s0"
 format = " $icon {$signal_strength $ssid} "

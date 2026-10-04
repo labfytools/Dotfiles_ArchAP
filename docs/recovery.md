@@ -94,8 +94,8 @@ systemctl --user --failed
 sway --validate --config "$HOME/.config/sway/config"
 ```
 
-Contrôler ensuite le login greetd/tuigreet, le démarrage UWSM/Sway, Swaybar,
-i3status-rs, les notifications, le verrouillage, le presse-papiers, Kitty et
+Contrôler ensuite le login greetd/tuigreet, le démarrage UWSM/SwayFX,
+QuickShell et ses notifications, le verrouillage, le presse-papiers, Kitty et
 un nouveau shell Zsh.
 
 ## Limites actuelles

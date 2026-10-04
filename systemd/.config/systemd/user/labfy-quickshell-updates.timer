@@ -1,0 +1,11 @@
+[Unit]
+Description=Vérification Arch et AUR toutes les dix minutes
+
+[Timer]
+OnActiveSec=10s
+OnUnitActiveSec=10min
+AccuracySec=5s
+Unit=labfy-quickshell-updates.service
+
+[Install]
+WantedBy=timers.target

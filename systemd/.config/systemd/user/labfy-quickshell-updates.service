@@ -1,0 +1,8 @@
+[Unit]
+Description=Vérification Arch et AUR pour la barre QuickShell
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.config/quickshell/labfy-sway/bin/check-updates.py
+TimeoutStartSec=270

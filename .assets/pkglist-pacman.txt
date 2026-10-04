@@ -75,7 +75,6 @@ gtklock-userinfo-module
 gvfs
 heimdall
 hplip
-i3status-rust
 ifuse
 imagemagick
 inotify-tools
@@ -150,6 +149,7 @@ qt5-wayland
 qt5ct
 qt6-wayland
 qt6ct
+quickshell
 radeontop
 rclone
 reflector
@@ -165,6 +165,7 @@ samba
 sane
 sane-airscan
 sbctl
+scenefx
 slurp
 smartmontools
 snap-pac
@@ -177,7 +178,6 @@ starship
 stow
 strace
 sudo
-sway
 swaybg
 swayidle
 swaylock

@@ -10,7 +10,7 @@
 
 <p align="center">
   <img alt="Arch Linux" src="https://img.shields.io/badge/Arch_Linux-user_environment-1793d1?style=flat-square&logo=archlinux&logoColor=white">
-  <img alt="Wayland avec Sway" src="https://img.shields.io/badge/Wayland-Sway-89b4fa?style=flat-square">
+  <img alt="Wayland avec SwayFX" src="https://img.shields.io/badge/Wayland-SwayFX-89b4fa?style=flat-square">
   <img alt="GNU Stow" src="https://img.shields.io/badge/deployment-GNU_Stow-cba6f7?style=flat-square">
   <img alt="Stable 0.1.0" src="https://img.shields.io/badge/stable-0.1.0-a6e3a1?style=flat-square">
 </p>
@@ -41,15 +41,14 @@ installateur automatique.
 
 | Desktop | Shell |
 | --- | --- |
-| `greetd → tuigreet → UWSM → Sway` | `Zsh → Starship → Atuin` |
-| `Swaybar → i3status-rs` | `FZF → Zoxide → Eza → Bat → Yazi` |
-| Mako · Wofi · Swaylock · Cliphist · Kitty | plugins Zsh et Tmux épinglés par sous-modules |
+| `greetd → tuigreet → UWSM → SwayFX` | `Zsh → Starship → Atuin` |
+| `QuickShell → barre et notifications` | `FZF → Zoxide → Eza → Bat → Yazi` |
+| Wofi · Swaylock · Cliphist · Kitty | plugins Zsh et Tmux épinglés par sous-modules |
 
 ```mermaid
 flowchart LR
-    G[greetd] --> T[tuigreet] --> U[UWSM] --> S[Sway]
-    S --> B[Swaybar] --> I[i3status-rs]
-    S --> M[Mako]
+    G[greetd] --> T[tuigreet] --> U[UWSM] --> S[SwayFX]
+    S --> B[QuickShell : barre et notifications]
     S --> W[Wofi]
     S --> L[Swaylock]
     S --> C[Cliphist]
@@ -62,10 +61,10 @@ Les responsabilités et dépendances sont détaillées dans
 ## ✦ Preview
 
 <p align="center">
-  <img src="docs/assets/screenshots/archasp.png" alt="Environnement ArchASP réel sous Sway" width="100%">
+  <img src="docs/assets/screenshots/archasp.png" alt="Capture historique de l'environnement ArchASP sous Sway" width="100%">
 </p>
 
-<p align="center"><sub>Environnement ArchASP réel — Sway, applications terminal et palette Catppuccin.</sub></p>
+<p align="center"><sub>Capture historique avant la migration SwayFX et QuickShell.</sub></p>
 
 ## ✦ Repository
 
@@ -91,8 +90,8 @@ git clone --recurse-submodules \
 cd "$HOME/.dotfiles"
 
 packages=(atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock \
-  hyprwhspr i3status-rust icons kitty mako nvim opencode qt5ct qt6ct \
-  starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi \
+  hyprwhspr icons kitty mako nvim opencode qt5ct qt6ct \
+  quickshell starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi \
   ytmusic-tui zsh)
 
 stow --no --verbose=2 --target="$HOME" "${packages[@]}"

@@ -17,6 +17,7 @@ mais il ne l'active pas. Les unités effectivement versionnées sous
 | Domaine | Unités | Fonction |
 | --- | --- | --- |
 | session | `gnome-keyring-daemon.service`, `ssh-agent.service`, `wlsunset.service` | agents et services de session |
+| desktop | `quickshell-labfy-sway.service`, `labfy-quickshell-updates.service/.timer` | barre, notifications et vérification des mises à jour |
 | clipboard | `cliphist-text.service`, `cliphist-image.service` | collecte texte et images Wayland |
 | idle | `swayidle.service` | verrouillage, alimentation des sorties et pause média |
 | batterie | `battery-low-notify.service/.timer` | contrôle et notification périodiques |
@@ -27,7 +28,8 @@ mais il ne l'active pas. Les unités effectivement versionnées sous
 | autres | `hyprwhspr.service`, `protonmail-bridge.service` | intégrations déclenchées selon l'usage |
 
 Les liens versionnés dans `default.target.wants/`,
-`graphical-session.target.wants/` et `timers.target.wants/` expriment les
+`graphical-session.target.wants/`, `wayland-session@sway.desktop.target.wants/`
+et `timers.target.wants/` expriment les
 activations utilisateur retenues. `.assets/enabled-user-aux-units.txt` capture
 en complément les timers et sockets activés observés sur la machine.
 

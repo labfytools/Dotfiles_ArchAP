@@ -6,6 +6,7 @@
 # Transparence
 # =================================================
 
+# Listener IPC démarré une fois par session ; exec ne se rejoue pas au reload.
 exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py
 
 # =================================================
