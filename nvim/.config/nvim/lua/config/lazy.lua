@@ -52,15 +52,5 @@ vim.api.nvim_create_autocmd("User", {
     end,
 })
 
--- Lancer la mise à jour à l'ouverture de Neovim
-vim.api.nvim_create_autocmd("VimEnter", {
-    group = lazy_update_group,
-    once = true,
-    callback = function()
-        vim.schedule(function()
-            require("lazy").update({
-                show = true,
-            })
-        end)
-    end,
-})
+-- CONTRACT: le démarrage ordinaire ne met pas les plugins à jour et ne
+-- réécrit pas lazy-lock.json ; les mises à jour restent une action explicite.
