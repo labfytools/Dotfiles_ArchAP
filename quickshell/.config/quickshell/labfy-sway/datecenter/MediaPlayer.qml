@@ -93,7 +93,7 @@ Rectangle {
                         width: 32
                         height: 27
                         radius: 4
-                        color: controlPointer.containsMouse && available ? Theme.strongBorder : Theme.border
+                        color: controlPointer.containsMouse && available ? Theme.emphasisBackground : Theme.border
 
                         NerdIcon {
                             anchors.centerIn: parent

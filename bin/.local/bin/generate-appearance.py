@@ -27,23 +27,32 @@ def palette_data():
     return data
 
 
-def render(flavor, accent, profile='default'):
+def render(flavor, accent, profile='normal'):
     data = palette_data()
     if flavor not in data:
         raise ValueError('flavor invalide: ' + flavor)
     if accent not in ACCENTS:
         raise ValueError('accent invalide: ' + accent)
-    if profile != 'default':
+    if profile not in ('normal', 'sun-light', 'sun-dark', 'default'):
         raise ValueError('profile invalide: ' + profile)
+    if profile == 'sun-light' and flavor != 'latte' or profile == 'sun-dark' and flavor == 'latte':
+        raise ValueError('flavor incompatible avec le profil Soleil')
     p = data[flavor]
     # CONTRACT: toutes les valeurs interpolées proviennent de clés bornées ou
     # de chaînes hex validées ; aucune entrée utilisateur ne devient une commande.
     lines = ['# Généré depuis theme/catppuccin.json ; ne pas éditer.']
     lines += [f'set ${name} {value}' for name, value in p.items()]
+    sun = profile.startswith('sun-')
+    # CONTRACT: variables SwayFX consommées dans swayfx ; le bloc layer_effects
+    # reste unique et le profil normal retrouve exactement les valeurs 17E.
     lines += [f'set $accent {p[accent]}',
-              'set $shadow_active #00000055',
-              'set $shadow_inactive #00000035',
-              'set $inactive_opacity 0.85']
+              f'set $shadow_active {"#00000077" if sun else "#00000055"}',
+              f'set $shadow_inactive {"#00000055" if sun else "#00000035"}',
+              f'set $shadow_blur_radius {4 if sun else 10}',
+              f'set $bar_blur {"disable" if sun else "enable"}',
+              f'set $inactive_opacity {"1.0" if sun else "0.85"}',
+              f'set $focused_border {p["text"] if sun else p[accent]}',
+              f'set $unfocused_border {p["overlay1"] if sun else p["overlay0"]}']
     return '\n'.join(lines) + '\n'
 
 
@@ -74,7 +83,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('flavor', choices=('latte', 'frappe', 'macchiato', 'mocha'))
     parser.add_argument('--accent', default='lavender', choices=ACCENTS)
-    parser.add_argument('--profile', default='default')
+    parser.add_argument('--profile', default='normal')
     parser.add_argument('--output', type=Path, default=SWAY / 'generated/theme.conf')
     parser.add_argument('--apply', action='store_true', help='valider puis recharger Sway et QuickShell')
     args = parser.parse_args()
@@ -84,8 +93,8 @@ def main():
         # CONTRACT: les applications 17D empruntent le verrou et la publication
         # uniques du gestionnaire Appearance ; ce CLI garde le rendu hors ligne.
         if args.apply:
-            if args.accent != 'lavender' or args.profile != 'default':
-                raise ValueError('17D applique uniquement Lavender avec le profil default')
+            if args.accent != 'lavender' or args.profile not in ('normal', 'default'):
+                raise ValueError('Application directe limitée au profil normal Lavender')
             checked([sys.executable, str(Path(__file__).with_name('wallpaper-manager.py')),
                      'set-manual-flavor', args.flavor])
             print(f'{args.flavor}/lavender: {args.output}')

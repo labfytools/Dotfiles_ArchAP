@@ -9,7 +9,7 @@ Rectangle {
     implicitWidth: caption.implicitWidth + 20
     implicitHeight: 30
     radius: 4
-    color: !enabled ? Theme.buttonBackground : pointer.containsMouse ? Theme.strongBorder : Theme.border
+    color: !enabled ? Theme.buttonBackground : pointer.containsMouse ? Theme.emphasisBackground : Theme.border
     opacity: enabled ? 1 : 0.55
     Text {
         id: caption

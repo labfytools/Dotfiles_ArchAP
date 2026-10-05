@@ -14,7 +14,7 @@ PopupWindow {
     // CONTRACT: indices externes historiques conservés ; tout nouveau routage
     // passe par ces noms afin de ne pas multiplier les indices StackLayout.
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
-        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8, nightLight: 9 })
+        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8, nightLight: 9, sunMode: 10, locationTime: 11 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -78,7 +78,9 @@ PopupWindow {
         : currentPage === 3 ? sessionPage.implicitHeight + 32
         : currentPage === 4 ? confirmationPage.implicitHeight + 32
         : currentPage === 5 ? batteryPage.implicitHeight + 32
-        : currentPage === pages.wallpaper ? 550 : 440
+        : currentPage === pages.wallpaper ? 550
+        : currentPage === pages.appearance ? 520
+        : currentPage === pages.locationTime ? 650 : 440
     visible: false
     // CONTRACT: PopupWindow n'applique un changement de grabFocus qu'après
     // fermeture/réouverture ; le prendre dès MAIN garde le clavier disponible
@@ -90,7 +92,7 @@ PopupWindow {
         anchors.fill: parent
         radius: 4
         color: Theme.popupBackground
-        border.color: Theme.border
+        border.color: Theme.outline
 
         StackLayout {
             anchors.fill: parent
@@ -209,6 +211,8 @@ PopupWindow {
                 onWallpaperRequested: popup.openPage("wallpaper")
                 onThemeRequested: popup.openPage("theme")
                 onNightLightRequested: popup.openPage("nightLight")
+                onSunModeRequested: popup.openPage("sunMode")
+                onLocationTimeRequested: popup.openPage("locationTime")
             }
 
             WallpaperPage {
@@ -220,6 +224,12 @@ PopupWindow {
                 onBackRequested: popup.openPage("appearance")
             }
             NightLightPage {
+                onBackRequested: popup.openPage("appearance")
+            }
+            SunModePage {
+                onBackRequested: popup.openPage("appearance")
+            }
+            LocationTimePage {
                 onBackRequested: popup.openPage("appearance")
             }
         }

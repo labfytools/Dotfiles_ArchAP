@@ -18,9 +18,9 @@
     output * bg $wallpaper fill
 
 # target                 title     bg    text   indicator  border
-    client.focused           $accent $base $text  $rosewater $accent
-    client.focused_inactive  $overlay0 $base $text  $rosewater $overlay0
-    client.unfocused         $overlay0 $base $text  $rosewater $overlay0
+    client.focused           $focused_border $base $text  $rosewater $focused_border
+    client.focused_inactive  $unfocused_border $base $text  $rosewater $unfocused_border
+    client.unfocused         $unfocused_border $base $text  $rosewater $unfocused_border
     client.urgent            $peach    $base $peach $overlay0  $peach
     client.placeholder       $overlay0 $base $text  $overlay0  $overlay0
     client.background        $base

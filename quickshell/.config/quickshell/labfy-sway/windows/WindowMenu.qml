@@ -32,7 +32,7 @@ PopupWindow {
         anchors.fill: parent
         radius: 4
         color: Theme.popupBackground
-        border.color: Theme.border
+        border.color: Theme.outline
 
         Column {
             id: content

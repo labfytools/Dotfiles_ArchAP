@@ -30,13 +30,21 @@ class WallpaperManagerTest(unittest.TestCase):
             mock.patch.object(manager, 'GENERATED', self.root / 'sway/generated/wallpaper.conf'),
             mock.patch.object(manager, 'GENERATED_THEME', self.root / 'sway/generated/theme.conf'),
             mock.patch.object(manager, 'SWAY', self.root / 'sway'),
+            mock.patch.object(manager, 'refresh_opacity'),
         ]
         for patcher in self.patchers:
             patcher.start()
+        # Les tests de transaction utilisent un service simulé : aucune unité
+        # systemd réelle ne doit être touchée depuis des fixtures temporaires.
+        self.night = mock.Mock()
+        self.night.normalized.side_effect = lambda pref: pref
+        self.night_patch = mock.patch.object(manager, 'night_module', return_value=self.night)
+        self.night_patch.start()
         self.image = self.root / "fond d'écran (été).png"
         Image.new('RGB', (640, 360), 'blue').save(self.image)
 
     def tearDown(self):
+        self.night_patch.stop()
         for patcher in reversed(self.patchers):
             patcher.stop()
         self.temp.cleanup()
@@ -65,7 +73,7 @@ class WallpaperManagerTest(unittest.TestCase):
                 manager.validate_image(path)
         chosen = manager.set_directory(self.root.as_uri())
         self.assertEqual(chosen['wallpaperDirectory'], str(self.root))
-        self.assertEqual(json.loads(manager.PREFERENCES.read_text())['version'], 3)
+        self.assertEqual(json.loads(manager.PREFERENCES.read_text())['version'], 4)
 
     def test_atomic_replace_keeps_old_file_on_write_failure(self):
         target = self.root / 'atomic.txt'
@@ -132,7 +140,7 @@ class WallpaperManagerTest(unittest.TestCase):
         state = manager.read_json(manager.STATE)
         self.assertEqual(state['effectiveFlavor'], 'mocha')
         self.assertEqual(state['effectiveAccent'], 'lavender')
-        self.assertEqual(state['version'], 3)
+        self.assertEqual(state['version'], 4)
         self.assertIn(b'set $wallpaper ', manager.GENERATED.read_bytes())
         self.assertEqual(command.call_count, 2)
         newer = self.root / 'autre.png'
@@ -203,7 +211,7 @@ class WallpaperManagerTest(unittest.TestCase):
             'wallpaperDirectory': str(self.root), 'wallpaperMode': 'fill'})
         with mock.patch.object(manager, 'command') as command:
             result = manager.reconcile_state()
-        self.assertEqual(result['version'], 3)
+        self.assertEqual(result['version'], 4)
         self.assertEqual(result['revision'], 47)
         self.assertEqual(result['customFutureField'], 'conservé')
         self.assertEqual(result['effectiveFlavor'], 'macchiato')
@@ -252,6 +260,69 @@ class WallpaperManagerTest(unittest.TestCase):
         self.assertEqual(result['effectiveFlavor'], 'mocha')
         self.assertEqual(result['manualFlavor'], 'latte')
         self.assertEqual(result['wallpaperAnalysis']['algorithmVersion'], 1)
+
+    def test_sun_priority_and_exact_manual_restoration(self):
+        manager.write_json(manager.STATE, {'version': 4, 'effectiveFlavor': 'frappe',
+            'effectiveMode': 'normal', 'effectiveWallpaper': str(self.image),
+            'themeMode': 'manual', 'manualFlavor': 'frappe', 'revision': 9})
+        manager.write_json(manager.PREFERENCES, {'version': 4, 'themeMode': 'manual',
+            'manualFlavor': 'frappe', 'nightLightMode': 'off'})
+        with mock.patch.object(manager, 'command'), mock.patch.object(manager, 'publish_live'), \
+             mock.patch.object(manager, 'refresh_opacity') as opacity:
+            light = manager.transaction(sun_mode='on')
+            self.assertEqual((light['effectiveFlavor'], light['effectiveMode'], light['revision']),
+                             ('latte', 'sun-light', 10))
+            self.assertTrue(light['effectiveHighContrast'])
+            self.assertFalse(light['effectiveDark'])
+            self.assertEqual(light['manualFlavor'], 'frappe')
+            dark = manager.transaction(sun_variant='dark')
+            self.assertEqual((dark['effectiveFlavor'], dark['effectiveMode']), ('mocha', 'sun-dark'))
+            for flavor in ('frappe', 'macchiato', 'mocha'):
+                dark = manager.transaction(sun_dark_flavor=flavor)
+                self.assertEqual(dark['effectiveFlavor'], flavor)
+                self.assertTrue(dark['effectiveDark'])
+                self.assertTrue(dark['effectiveHighContrast'])
+            normal = manager.transaction(sun_mode='off')
+            self.assertEqual((normal['effectiveFlavor'], normal['effectiveMode']), ('frappe', 'normal'))
+            self.assertEqual(normal['manualFlavor'], 'frappe')
+            self.assertEqual(normal['themeMode'], 'manual')
+            self.assertFalse(normal['effectiveHighContrast'])
+            self.assertGreaterEqual(opacity.call_count, 3)
+        self.night.apply_service.assert_any_call(mock.ANY, True)
+        self.night.apply_service.assert_any_call(mock.ANY, False)
+
+    def test_inactive_sun_flavor_preference_does_not_advance_revision(self):
+        manager.write_json(manager.STATE, {'version': 4, 'effectiveFlavor': 'mocha',
+            'effectiveMode': 'normal', 'effectiveWallpaper': str(self.image),
+            'themeMode': 'manual', 'manualFlavor': 'mocha', 'revision': 8})
+        with mock.patch.object(manager, 'publish_live'):
+            result = manager.transaction(sun_dark_flavor='frappe')
+        self.assertEqual(result['revision'], 8)
+        self.assertEqual(result['effectiveFlavor'], 'mocha')
+        self.assertEqual(result['sunDarkFlavor'], 'frappe')
+
+    def test_sun_rollback_restores_state_files_and_night_service(self):
+        manager.write_json(manager.STATE, {'version': 4, 'effectiveFlavor': 'mocha',
+            'effectiveMode': 'normal', 'effectiveWallpaper': str(self.image),
+            'themeMode': 'manual', 'manualFlavor': 'mocha', 'revision': 4})
+        manager.write_json(manager.PREFERENCES, {'version': 4, 'themeMode': 'manual',
+            'manualFlavor': 'mocha', 'nightLightMode': 'off'})
+        before = (manager.STATE.read_bytes(), manager.PREFERENCES.read_bytes())
+        with mock.patch.object(manager, 'command'), mock.patch.object(manager, 'refresh_opacity'), \
+             mock.patch.object(manager, 'publish_live', side_effect=RuntimeError('IPC')):
+            with self.assertRaisesRegex(RuntimeError, 'IPC'):
+                manager.transaction(sun_mode='on')
+        self.assertEqual((manager.STATE.read_bytes(), manager.PREFERENCES.read_bytes()), before)
+        self.assertEqual(self.night.apply_service.call_count, 2)
+
+    def test_no_location_fresh_preferences_enable_and_disable_sun(self):
+        manager.write_json(manager.STATE, {'version': 4, 'effectiveFlavor': 'mocha',
+            'effectiveMode': 'normal', 'effectiveWallpaper': str(self.image),
+            'themeMode': 'manual', 'manualFlavor': 'mocha', 'revision': 0})
+        with mock.patch.object(manager, 'command'), mock.patch.object(manager, 'publish_live'), \
+             mock.patch.object(manager, 'refresh_opacity'):
+            self.assertEqual(manager.transaction(sun_mode='on')['effectiveNightLightMode'], 'off')
+            self.assertEqual(manager.transaction(sun_mode='off')['effectiveFlavor'], 'mocha')
 
 
 if __name__ == '__main__':

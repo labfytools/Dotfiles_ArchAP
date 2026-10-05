@@ -30,11 +30,15 @@ PopupWindow {
     function requestClose() { opening = false; visible = false; }
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
+    Connections {
+        target: AppearanceController
+        function onTimezoneRevisionChanged() { clock.enabled = false; clock.enabled = true; }
+    }
     Rectangle {
         anchors.fill: parent
         radius: 4
         color: Theme.popupBackground
-        border.color: Theme.border
+        border.color: Theme.outline
         Column {
             id: content
             anchors.left: parent.left

@@ -106,9 +106,16 @@ def effective(mode, suspended=False):
     return 'off' if suspended else mode
 
 
-def argv(pref):
+def suspended_state(state=None):
+    # CONTRACT: effective.json est la source persistante commune ; launch et
+    # reconcile respectent Sun dès le boot, même sans QuickShell actif.
+    state = read_json(STATE) if state is None else state
+    return state.get('effectiveMode') in ('sun-light', 'sun-dark')
+
+
+def argv(pref, suspended=False):
     pref = normalized(pref)
-    mode = effective(pref['nightLightMode'])
+    mode = effective(pref['nightLightMode'], suspended)
     if mode == 'off':
         return None
     temperatures = ['-t', str(pref['nightTemperature']), '-T', str(pref['dayTemperature'])]
@@ -148,10 +155,10 @@ def wlsunset_pids():
     return found
 
 
-def verify(pref):
+def verify(pref, suspended=False):
     active, main_pid = unit_state()
     pids = wlsunset_pids()
-    mode = effective(pref['nightLightMode'])
+    mode = effective(pref['nightLightMode'], suspended)
     if mode == 'off':
         if active or pids:
             raise RuntimeError('Night Light Off : wlsunset encore actif')
@@ -159,14 +166,14 @@ def verify(pref):
         raise RuntimeError('wlsunset absent, dupliqué ou hors unité systemd')
     else:
         actual = (Path('/proc') / str(main_pid) / 'cmdline').read_bytes().split(b'\0')[:-1]
-        if actual != [part.encode() for part in argv(pref)]:
+        if actual != [part.encode() for part in argv(pref, suspended)]:
             raise RuntimeError('Arguments wlsunset incohérents')
 
 
-def apply_service(pref):
-    mode = effective(pref['nightLightMode'])
+def apply_service(pref, suspended=False):
+    mode = effective(pref['nightLightMode'], suspended)
     systemctl('stop' if mode == 'off' else 'restart', UNIT)
-    verify(pref)
+    verify(pref, suspended)
 
 
 def snapshot(pref, state):
@@ -205,16 +212,16 @@ def change(mode=None, night=None):
             pref['nightTemperature'] = temperature(night)
         pref = normalized(pref)
         state = read_json(STATE)
-        previous_mode = old_pref['nightLightMode']
+        suspended = suspended_state(state)
         if pref == old_pref:
-            verify(pref)
+            verify(pref, suspended)
             return snapshot(pref, state)
         new_state = dict(state)
-        new_state.update(effectiveNightLightMode=effective(pref['nightLightMode']),
-                         nightLightSuspended=False)
+        new_state.update(effectiveNightLightMode=effective(pref['nightLightMode'], suspended),
+                         nightLightSuspended=suspended)
         try:
             atomic_json(CONFIG, pref)
-            apply_service(pref)
+            apply_service(pref, suspended)
             atomic_json(STATE, new_state)
             result = snapshot(pref, new_state)
             publish(result)
@@ -223,7 +230,7 @@ def change(mode=None, night=None):
             restore(CONFIG, old_pref_bytes)
             restore(STATE, old_state_bytes)
             try:
-                apply_service(old_pref)
+                apply_service(old_pref, suspended)
             except Exception as rollback_error:
                 raise RuntimeError('Échec Night Light et rollback du service') from rollback_error
             raise
@@ -235,16 +242,17 @@ def reconcile():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         pref = normalized(read_json(CONFIG))
         state = read_json(STATE)
+        suspended = suspended_state(state)
         try:
-            verify(pref)
+            verify(pref, suspended)
         except RuntimeError:
             # Une instance étrangère ne peut être supprimée par cette unité.
             active, main_pid = unit_state()
             if any(pid != main_pid for pid in wlsunset_pids()):
                 raise RuntimeError('wlsunset externe détecté ; réconciliation refusée')
-            apply_service(pref)
-        state.update(effectiveNightLightMode=effective(pref['nightLightMode']),
-                     nightLightSuspended=False)
+            apply_service(pref, suspended)
+        state.update(effectiveNightLightMode=effective(pref['nightLightMode'], suspended),
+                     nightLightSuspended=suspended)
         if read_json(CONFIG) != pref:
             atomic_json(CONFIG, pref)
         if read_json(STATE) != state:
@@ -254,7 +262,7 @@ def reconcile():
 
 def launch():
     pref = normalized(read_json(CONFIG))
-    command = argv(pref)
+    command = argv(pref, suspended_state())
     if command is None:
         return 0
     os.execv(command[0], command)
@@ -262,7 +270,7 @@ def launch():
 
 def post_start():
     pref = normalized(read_json(CONFIG))
-    if pref['nightLightMode'] != 'on':
+    if pref['nightLightMode'] != 'on' or suspended_state():
         return 0
     # systemd ne fournit pas MAINPID dans cet ExecStartPost sur cette version.
     # Interroger le PID de l'unité et attendre la fin de l'exec Python -> wlsunset.
@@ -312,7 +320,7 @@ def main():
             pref = normalized(read_json(CONFIG))
             result = snapshot(pref, read_json(STATE))
             if args.action == 'current':
-                verify(pref)
+                verify(pref, suspended_state())
         print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
         return 0
     except (OSError, ValueError, RuntimeError, BlockingIOError) as exc:

@@ -224,7 +224,7 @@ Item {
             ActionButton { label: "Suivant"; enabled: page.items.length > 0; onClicked: page.move(1) }
             ActionButton {
                 label: AppearanceController.wallpaperApplying ? "Application…" : "Appliquer"
-                enabled: !!page.selected && page.selectionValid && !AppearanceController.appearanceBusy
+                enabled: !!page.selected && page.selectionValid && !AppearanceController.appearanceBusy && !AppearanceController.nightLightBusy
                     && page.selected.path !== AppearanceController.effectiveWallpaper
                 onClicked: { page.feedback = ""; AppearanceController.applyWallpaper(page.selected.path); }
             }

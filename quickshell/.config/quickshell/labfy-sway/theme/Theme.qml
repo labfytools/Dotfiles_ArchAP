@@ -54,18 +54,28 @@ Singleton {
     readonly property color crust: palette.crust
 
     // CONTRACT: l'alpha de la barre est un profil UI, jamais une entrée Catppuccin.
-    property real panelOpacity: 235 / 255
+    // CONTRACT: les composants lisent des rôles ; seul l'état effectif choisit
+    // les surfaces et limites du profil haute visibilité.
+    readonly property bool highContrast: AppearanceController.effectiveHighContrast
+    readonly property real panelOpacity: highContrast ? 1.0 : 235 / 255
+    readonly property real popupOpacity: 1.0
     readonly property color panelBackground: Qt.rgba(base.r, base.g, base.b, panelOpacity)
     readonly property color popupBackground: base
-    readonly property color buttonBackground: surface0
-    readonly property color buttonHover: surface1
-    readonly property color buttonPressed: surface2
+    // INVARIANT: même sur hover/pressed, le texte garde au moins 4,5:1 ;
+    // surface1/surface2 Latte et surface2 Frappé sont trop proches du texte.
+    readonly property color buttonBackground: highContrast && flavor === "latte" ? mantle : surface0
+    readonly property color buttonHover: highContrast && flavor === "latte" ? surface0 : surface1
+    readonly property color buttonPressed: highContrast ? (flavor === "latte" ? surface0 : surface1) : surface2
     readonly property color foreground: text
     // Latte sur surface0 a besoin d'un texte plus sombre que subtext0.
-    readonly property color secondaryForeground: flavor === "latte" ? text : subtext0
+    readonly property color secondaryForeground: highContrast ? text : flavor === "latte" ? text : subtext0
     readonly property color disabledForeground: flavor === "latte" ? subtext1 : overlay0
-    readonly property color border: surface1
-    readonly property color strongBorder: surface2
+    // Plusieurs contrôles historiques utilisent border comme fond de hover :
+    // ce rôle doit donc rester compatible avec le contraste du texte.
+    readonly property color border: highContrast && flavor === "latte" ? surface0 : surface1
+    readonly property color strongBorder: highContrast ? overlay2 : surface2
+    readonly property color outline: highContrast ? overlay2 : border
+    readonly property color emphasisBackground: highContrast ? buttonHover : strongBorder
     readonly property color accent: palette[accentName]
     // WHY: Lavender Latte n'offre aucun texte Catppuccin à contraste 4.5:1.
     // Choisir le noir ou le blanc technique par contraste WCAG pour chaque accent.
@@ -87,10 +97,10 @@ Singleton {
     readonly property color danger: red
     readonly property color urgentForeground: flavor === "latte" ? text : peach
     readonly property color successForeground: flavor === "latte" ? text : green
-    readonly property color shadow: "#00000055"
-    readonly property color separator: surface1
-    readonly property color inputBackground: surface0
-    readonly property color inputBorder: surface2
+    readonly property color shadow: highContrast ? "#00000077" : "#00000055"
+    readonly property color separator: highContrast ? overlay1 : surface1
+    readonly property color inputBackground: highContrast ? surface0 : surface0
+    readonly property color inputBorder: highContrast ? overlay2 : surface2
     readonly property color selectedBackground: accent
     readonly property color selectedForeground: onAccent
 }

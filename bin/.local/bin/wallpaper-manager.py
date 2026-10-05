@@ -36,8 +36,10 @@ GENERATED = SWAY / 'generated/wallpaper.conf'
 GENERATED_THEME = SWAY / 'generated/theme.conf'
 ALIASES = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'labfy-appearance/wallpapers'
 FLAVORS = ('latte', 'frappe', 'macchiato', 'mocha')
-STATE_VERSION = 3
-PREF_VERSION = 3
+STATE_VERSION = 4
+PREF_VERSION = 4
+SUN_VARIANTS = ('light', 'dark')
+SUN_DARK_FLAVORS = ('frappe', 'macchiato', 'mocha')
 
 
 def atomic_write(path, data):
@@ -259,16 +261,47 @@ def preferences(state=None):
         manual = 'mocha'
     return {**value, 'version': PREF_VERSION, 'themeMode': mode,
             'manualFlavor': manual, 'accent': 'lavender', 'wallpaperMode': 'fill',
+            'sunMode': value.get('sunMode', False) is True,
+            'sunVariant': value.get('sunVariant') if value.get('sunVariant') in SUN_VARIANTS else 'light',
+            'sunDarkFlavor': value.get('sunDarkFlavor') if value.get('sunDarkFlavor') in SUN_DARK_FLAVORS else 'mocha',
             'wallpaperDirectory': initial_directory()}
 
 
-def rendered_theme(flavor):
+def rendered_theme(flavor, profile='normal'):
     """Réutilise le générateur 17B : aucune seconde palette ni formule Sway."""
     source = Path(__file__).with_name('generate-appearance.py')
     spec = importlib.util.spec_from_file_location('generate_appearance', source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.render(flavor, 'lavender').encode('utf-8')
+    return module.render(flavor, 'lavender', profile).encode('utf-8')
+
+
+def resolve(pref, normal_flavor):
+    # INVARIANT: Sun ne mute jamais la préférence normale ni l'analyse Auto.
+    if not pref['sunMode']:
+        return normal_flavor, 'normal'
+    if pref['sunVariant'] == 'light':
+        return 'latte', 'sun-light'
+    return pref['sunDarkFlavor'], 'sun-dark'
+
+
+def night_module():
+    spec = importlib.util.spec_from_file_location('night_light_manager', Path(__file__).with_name('night-light-manager.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.STATE = STATE
+    module.CONFIG = PREFERENCES
+    return module
+
+
+def refresh_opacity():
+    # CONTRACT: commande ponctuelle et vérifiable pour les fenêtres présentes ;
+    # le listener historique traite ensuite les événements focus sans polling.
+    script = SWAY / 'scripts/inactive-windows-transparency.py'
+    result = subprocess.run([sys.executable, str(script), '--refresh'],
+                            capture_output=True, text=True, timeout=5)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or 'Opacité des fenêtres non appliquée')
 
 
 def publish_live(state, pref):
@@ -291,13 +324,16 @@ def restore_file(path, previous):
 def state_response(state, pref, analysis=None):
     result = dict(state)
     result.update(themeMode=pref['themeMode'], manualFlavor=pref['manualFlavor'],
+                  sunMode=pref['sunMode'], sunVariant=pref['sunVariant'],
+                  sunDarkFlavor=pref['sunDarkFlavor'],
                   wallpaperDirectory=pref['wallpaperDirectory'])
     if analysis is not None:
         result['analysis'] = analysis
     return result
 
 
-def transaction(wallpaper=None, mode=None, manual_flavor=None):
+def transaction(wallpaper=None, mode=None, manual_flavor=None, sun_mode=None,
+                sun_variant=None, sun_dark_flavor=None):
     """Applique un état compensable sous un verrou commun thème/wallpaper."""
     STATE.parent.mkdir(parents=True, exist_ok=True)
     with open(STATE.parent / 'wallpaper.lock', 'a+b') as lock:
@@ -319,6 +355,18 @@ def transaction(wallpaper=None, mode=None, manual_flavor=None):
             if pref['themeMode'] != 'manual':
                 raise ValueError('Revenir en mode Manuel avant de choisir un flavor')
             pref['manualFlavor'] = manual_flavor
+        if sun_mode is not None:
+            if sun_mode not in ('on', 'off'):
+                raise ValueError('Mode Soleil invalide')
+            pref['sunMode'] = sun_mode == 'on'
+        if sun_variant is not None:
+            if sun_variant not in SUN_VARIANTS:
+                raise ValueError('Variante Soleil invalide')
+            pref['sunVariant'] = sun_variant
+        if sun_dark_flavor is not None:
+            if sun_dark_flavor not in SUN_DARK_FLAVORS:
+                raise ValueError('Flavor Soleil sombre invalide')
+            pref['sunDarkFlavor'] = sun_dark_flavor
         meta = validate_image(wallpaper) if wallpaper is not None else None
         target = meta['path'] if meta else old.get('effectiveWallpaper') or active_wallpaper()
         if not Path(target).is_file():
@@ -326,15 +374,22 @@ def transaction(wallpaper=None, mode=None, manual_flavor=None):
         analysis = None
         if pref['themeMode'] == 'wallpaper':
             try:
-                analysis = analyze_wallpaper(meta or validate_image(target))
+                cached = old.get('wallpaperAnalysis')
+                if (meta is None and isinstance(cached, dict)
+                        and cached.get('path') == target
+                        and cached.get('algorithmVersion') == ALGORITHM_VERSION
+                        and old.get('wallpaperMtime') == Path(target).stat().st_mtime_ns):
+                    analysis = cached
+                else:
+                    analysis = analyze_wallpaper(meta or validate_image(target))
             except Exception as exc:
                 # L'analyse précède toute écriture ; un échec ne laisse aucun
                 # état hybride et ne retire jamais un wallpaper déjà appliqué.
                 raise ValueError('Analyse Auto Theme : ' + str(exc)) from exc
-            flavor = analysis['flavor']
+            normal_flavor = analysis['flavor']
         else:
-            flavor = pref['manualFlavor'] if mode is not None or manual_flavor is not None \
-                else old.get('effectiveFlavor', pref['manualFlavor'])
+            normal_flavor = pref['manualFlavor']
+        flavor, profile = resolve(pref, normal_flavor)
         if flavor not in FLAVORS:
             raise ValueError('Flavor effectif invalide')
         previous_wallpaper = old.get('effectiveWallpaper') or active_wallpaper()
@@ -342,32 +397,42 @@ def transaction(wallpaper=None, mode=None, manual_flavor=None):
                              or old.get('wallpaperMtime') != meta['mtime'])
         flavor_changed = flavor != old.get('effectiveFlavor', 'mocha')
         mode_changed = pref['themeMode'] != previous_pref['themeMode']
+        profile_changed = profile != old.get('effectiveMode', 'normal')
+        visual_changed = wallpaper_changed or flavor_changed or profile_changed or mode_changed
         state = dict(old)
         state.update(version=STATE_VERSION, effectiveFlavor=flavor,
-                     effectiveMode='normal', effectiveDark=flavor != 'latte',
-                     effectiveHighContrast=False, effectiveAccent='lavender',
+                     effectiveMode=profile, effectiveDark=flavor != 'latte',
+                     effectiveHighContrast=pref['sunMode'], effectiveAccent='lavender',
+                     sunMode=pref['sunMode'], sunVariant=pref['sunVariant'],
+                     sunDarkFlavor=pref['sunDarkFlavor'],
+                     nightLightSuspended=pref['sunMode'],
+                     effectiveNightLightMode='off' if pref['sunMode'] else pref.get('nightLightMode', 'off'),
                      effectiveWallpaper=target, wallpaperMode='fill',
                      themeMode=pref['themeMode'], manualFlavor=pref['manualFlavor'],
                      revision=max(0, int(old.get('revision', 0)))
-                     + int(wallpaper_changed or flavor_changed or mode_changed))
+                     + int(visual_changed))
         if meta is not None:
             state['wallpaperMtime'] = meta['mtime']
         if analysis is not None:
             state['wallpaperAnalysis'] = analysis
         elif pref['themeMode'] == 'manual':
             state.pop('wallpaperAnalysis', None)
-        if not (wallpaper_changed or flavor_changed or mode_changed
+        if not (visual_changed
                 or pref != previous_pref or old.get('version') != STATE_VERSION):
             return state_response(state, pref, analysis)
         alias = None
         wrote_config = False
+        night = night_module()
+        night_pref = night.normalized(pref)
+        old_suspended = old.get('effectiveMode') in ('sun-light', 'sun-dark')
+        night_transition = old_suspended != pref['sunMode']
         try:
             if wallpaper_changed:
                 alias = safe_alias(meta)
                 atomic_write(GENERATED, render_wallpaper(alias))
                 wrote_config = True
-            if flavor_changed:
-                atomic_write(GENERATED_THEME, rendered_theme(flavor))
+            if flavor_changed or profile_changed:
+                atomic_write(GENERATED_THEME, rendered_theme(flavor, profile))
                 wrote_config = True
             if wrote_config:
                 command('sway', '--validate', '-c', str(SWAY / 'config'))
@@ -378,7 +443,13 @@ def transaction(wallpaper=None, mode=None, manual_flavor=None):
                     time.sleep(0.1)
                 if not swaybg_matches(alias):
                     raise RuntimeError('Sway n’a pas appliqué le fond demandé')
+            # CONTRACT: publication durable précède le service ; ExecStart lit
+            # le profil voulu. En erreur, restaurer les octets puis réconcilier.
             write_json(STATE, state)
+            if night_transition:
+                night.apply_service(night_pref, pref['sunMode'])
+            if profile_changed:
+                refresh_opacity()
             write_json(PREFERENCES, pref)
             publish_live(state, pref)
             # Seul l'alias actif est requis au prochain login ; les anciens
@@ -398,6 +469,10 @@ def transaction(wallpaper=None, mode=None, manual_flavor=None):
             restore_file(PREFERENCES, old_preferences)
             if wrote_config:
                 command('swaymsg', 'reload')
+            if night_transition:
+                night.apply_service(night_pref, old_suspended)
+            if profile_changed:
+                refresh_opacity()
             raise
 
 
@@ -450,13 +525,17 @@ def reconcile_state():
     with open(STATE.parent / 'wallpaper.lock', 'a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = read_json(STATE)
+        original_version = state.get('version')
         pref = preferences(state)
-        if state.get('version') == STATE_VERSION:
+        if state.get('version') in (3, STATE_VERSION):
             # Une préférence écrite avant un crash n'est pas une application.
             applied_mode = state.get('themeMode')
             applied_manual = state.get('manualFlavor')
             pref['themeMode'] = applied_mode if applied_mode in ('manual', 'wallpaper') else pref['themeMode']
             pref['manualFlavor'] = applied_manual if applied_manual in FLAVORS else pref['manualFlavor']
+            pref['sunMode'] = state.get('sunMode') is True
+            pref['sunVariant'] = state.get('sunVariant') if state.get('sunVariant') in SUN_VARIANTS else pref['sunVariant']
+            pref['sunDarkFlavor'] = state.get('sunDarkFlavor') if state.get('sunDarkFlavor') in SUN_DARK_FLAVORS else pref['sunDarkFlavor']
             state.update(themeMode=pref['themeMode'], manualFlavor=pref['manualFlavor'])
         else:
             state.update(version=STATE_VERSION, themeMode=pref['themeMode'],
@@ -464,16 +543,37 @@ def reconcile_state():
         flavor = state.get('effectiveFlavor', 'mocha')
         if flavor not in FLAVORS:
             raise ValueError('État effectif invalide')
+        if pref['themeMode'] == 'wallpaper':
+            previous_analysis = state.get('wallpaperAnalysis') or {}
+            normal_flavor = previous_analysis.get('flavor')
+            if (normal_flavor not in FLAVORS and original_version == STATE_VERSION
+                    and Path(state.get('effectiveWallpaper', '')).is_file()):
+                # WHY: sous Soleil, effectiveFlavor ne révèle plus le flavor Auto.
+                # Une analyse manquante doit être reconstruite avant résolution.
+                previous_analysis = analyze_wallpaper(validate_image(state['effectiveWallpaper']))
+                state['wallpaperAnalysis'] = previous_analysis
+                normal_flavor = previous_analysis['flavor']
+            if normal_flavor not in FLAVORS and original_version == 3:
+                normal_flavor = state.get('effectiveFlavor')
+        else:
+            normal_flavor = pref['manualFlavor']
+        if normal_flavor not in FLAVORS:
+            normal_flavor = pref['manualFlavor']
+        flavor, profile = resolve(pref, normal_flavor)
         state.update(effectiveFlavor=flavor, effectiveAccent='lavender',
-                     effectiveDark=flavor != 'latte', effectiveHighContrast=False,
-                     effectiveMode='normal', wallpaperMode='fill',
+                     effectiveDark=flavor != 'latte', effectiveHighContrast=pref['sunMode'],
+                     effectiveMode=profile, sunMode=pref['sunMode'],
+                     sunVariant=pref['sunVariant'], sunDarkFlavor=pref['sunDarkFlavor'],
+                     nightLightSuspended=pref['sunMode'],
+                     effectiveNightLightMode='off' if pref['sunMode'] else pref.get('nightLightMode', 'off'),
+                     wallpaperMode='fill',
                      effectiveWallpaper=state.get('effectiveWallpaper') or active_wallpaper(),
                      revision=max(0, int(state.get('revision', 0))))
         if not Path(state['effectiveWallpaper']).is_file():
             # Le fond déjà rendu peut survivre à la suppression ; l'UI reçoit
             # le signal de manque et un futur apply/reconcile utilise le repli.
             return state_response(state, pref)
-        expected_theme = rendered_theme(flavor)
+        expected_theme = rendered_theme(flavor, profile)
         meta = validate_image(state['effectiveWallpaper'])
         if pref['themeMode'] == 'wallpaper':
             previous_analysis = state.get('wallpaperAnalysis')
@@ -503,6 +603,13 @@ def reconcile_state():
             if repair_theme or repair_wallpaper:
                 command('sway', '--validate', '-c', str(SWAY / 'config'))
                 command('swaymsg', 'reload')
+            night = night_module()
+            night_pref = night.normalized(pref)
+            try:
+                night.verify(night_pref, pref['sunMode'])
+            except RuntimeError:
+                night.apply_service(night_pref, pref['sunMode'])
+            refresh_opacity()
             if STATE.exists():
                 if read_json(STATE) != state:
                     write_json(STATE, state)
@@ -530,7 +637,8 @@ def main():
     scan_parser.add_argument('directory')
     scan_parser.add_argument('--page', type=int, default=0)
     for action in ('validate', 'thumbnail', 'analyze', 'apply', 'set-directory',
-                   'set-theme-mode', 'set-manual-flavor'):
+                   'set-theme-mode', 'set-manual-flavor', 'set-sun-mode',
+                   'set-sun-variant', 'set-sun-dark-flavor'):
         sub.add_parser(action).add_argument('path')
     args = parser.parse_args()
     try:
@@ -549,6 +657,9 @@ def main():
         elif args.action == 'apply': result = apply(args.path)
         elif args.action == 'set-theme-mode': result = set_theme_mode(args.path)
         elif args.action == 'set-manual-flavor': result = set_manual_flavor(args.path)
+        elif args.action == 'set-sun-mode': result = transaction(sun_mode=args.path)
+        elif args.action == 'set-sun-variant': result = transaction(sun_variant=args.path)
+        elif args.action == 'set-sun-dark-flavor': result = transaction(sun_dark_flavor=args.path)
         else: result = set_directory(args.path)
         print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
         return 0

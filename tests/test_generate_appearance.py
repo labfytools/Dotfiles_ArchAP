@@ -29,6 +29,18 @@ class AppearanceGeneratorTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     module.render(flavor, accent, profile)
 
+    def test_sun_profiles_change_only_effects_and_use_official_palette(self):
+        normal = module.render('mocha', 'lavender', 'normal')
+        sun = module.render('mocha', 'lavender', 'sun-dark')
+        self.assertIn('set $bar_blur enable', normal)
+        self.assertIn('set $inactive_opacity 0.85', normal)
+        self.assertIn('set $bar_blur disable', sun)
+        self.assertIn('set $inactive_opacity 1.0', sun)
+        self.assertIn('set $base #1e1e2e', sun)
+        self.assertIn('set $base #eff1f5', module.render('latte', 'lavender', 'sun-light'))
+        with self.assertRaises(ValueError):
+            module.render('latte', 'lavender', 'sun-dark')
+
     def test_atomic_replace_and_failed_replace(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / 'theme.conf'

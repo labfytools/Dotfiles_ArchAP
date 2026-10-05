@@ -23,6 +23,12 @@ Rectangle {
         id: clock
         precision: SystemClock.Minutes
     }
+    // WHY: SystemClock ne garantit qu'un tick par minute ; une publication de
+    // fuseau force immédiatement la relecture sans boucle de polling.
+    Connections {
+        target: AppearanceController
+        function onTimezoneRevisionChanged() { clock.enabled = false; clock.enabled = true; }
+    }
 
     Text {
         id: clockText

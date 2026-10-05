@@ -370,7 +370,7 @@ Item {
                 delegate: Rectangle {
                     required property int modelData
                     width: 60; height: 32; radius: 4
-                    color: page.reportedThreshold === modelData ? Theme.strongBorder : Theme.buttonBackground
+                    color: page.reportedThreshold === modelData ? Theme.emphasisBackground : Theme.buttonBackground
                     border.color: page.validProposed && Number(valueField.text) === modelData
                         ? Theme.accent : "transparent"
                     Text {

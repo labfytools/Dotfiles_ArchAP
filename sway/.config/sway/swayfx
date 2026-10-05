@@ -4,7 +4,7 @@ animation_duration_ms 0
 corner_radius 4
 shadows enable
 shadows_on_csd disable
-shadow_blur_radius 10
+shadow_blur_radius $shadow_blur_radius
 shadow_color $shadow_active
 shadow_inactive_color $shadow_inactive
 shadow_offset 0 2
@@ -20,7 +20,7 @@ blur_radius 2
 
 # Namespace observé dans get_outputs ; les autres couches restent intactes.
 layer_effects "labfy-sway-bar" {
-    blur enable
+    blur $bar_blur
     blur_xray disable
     blur_ignore_transparent enable
     shadows enable

@@ -27,7 +27,7 @@ PopupWindow {
         anchors.fill: parent
         radius: 4
         color: Theme.buttonBackground
-        border.color: Theme.border
+        border.color: Theme.outline
         Text {
             id: content
             anchors.centerIn: parent

@@ -11,7 +11,7 @@ Item {
         { key: "mocha", name: "Mocha", description: "Sombre profond" }
     ]
     readonly property var names: ({ latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" })
-    readonly property bool busy: AppearanceController.appearanceBusy
+    readonly property bool busy: AppearanceController.appearanceBusy || AppearanceController.nightLightBusy
 
     Column {
         anchors.fill: parent
@@ -45,13 +45,16 @@ Item {
         Text {
             width: parent.width
             text: "Thème effectif : " + (page.names[AppearanceController.effectiveFlavor] || "Mocha")
+                  + (AppearanceController.sunMode ? " · Mode Soleil" : "")
             color: Theme.foreground; font.pixelSize: 12
         }
         Text {
-            visible: AppearanceController.themeMode === "wallpaper"
+            visible: AppearanceController.themeMode === "wallpaper" || AppearanceController.sunMode
             width: parent.width; wrapMode: Text.Wrap
-            text: "Le thème suit le fond appliqué. Choix manuel conservé : "
-                  + (page.names[AppearanceController.manualFlavor] || "Mocha") + "."
+            text: (AppearanceController.themeMode === "wallpaper" ? "Préférence normale : Selon le fond → "
+                + (page.names[AppearanceController.wallpaperAnalysis ? AppearanceController.wallpaperAnalysis.flavor : "mocha"] || "Mocha") : "Préférence normale : Manuel → "
+                + (page.names[AppearanceController.manualFlavor] || "Mocha"))
+                + ". Choix manuel conservé : " + (page.names[AppearanceController.manualFlavor] || "Mocha") + "."
             color: Theme.secondaryForeground; font.pixelSize: 11
         }
         Text {

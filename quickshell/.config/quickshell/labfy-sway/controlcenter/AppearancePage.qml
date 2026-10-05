@@ -8,6 +8,8 @@ Item {
     signal wallpaperRequested()
     signal themeRequested()
     signal nightLightRequested()
+    signal sunModeRequested()
+    signal locationTimeRequested()
     readonly property var flavorNames: ({ latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" })
 
     Column {
@@ -39,7 +41,7 @@ Item {
                 Text { text: "Thème"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
                 Text {
                     text: (page.flavorNames[AppearanceController.effectiveFlavor] || "Mocha")
-                          + " · " + (AppearanceController.themeMode === "wallpaper" ? "Selon le fond" : "Manuel")
+                          + " · " + (AppearanceController.sunMode ? "Soleil" : AppearanceController.themeMode === "wallpaper" ? "Selon le fond" : "Manuel")
                     color: Theme.secondaryForeground; font.pixelSize: 11
                 }
             }
@@ -53,13 +55,36 @@ Item {
                 anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter; spacing: 4
                 Text { text: "Lumière nocturne"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
                 Text {
-                    text: AppearanceController.nightLightMode === "auto" ? "Auto · " + AppearanceController.nightTemperature + " K"
+                    text: AppearanceController.nightLightSuspended ? (AppearanceController.nightLightMode === "auto" ? "Auto" : AppearanceController.nightLightMode === "on" ? "Activée" : "Désactivée") + " · Suspendue"
+                        : AppearanceController.nightLightMode === "auto" ? "Auto · " + AppearanceController.nightTemperature + " K"
                         : AppearanceController.nightLightMode === "on" ? "Activée · " + AppearanceController.nightTemperature + " K"
                         : "Désactivée"
                     color: Theme.secondaryForeground; font.pixelSize: 11
                 }
             }
             MouseArea { id: nightPointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.nightLightRequested() }
+        }
+        Rectangle {
+            width: parent.width; height: 72; radius: 4
+            color: sunPointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+            NerdIcon { anchors.left: parent.left; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "󰖙"; color: Theme.accent; font.pixelSize: 22 }
+            Column {
+                anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                Text { text: "Mode Soleil"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
+                Text { text: !AppearanceController.sunMode ? "Désactivé" : AppearanceController.sunVariant === "light" ? "Clair · Haute visibilité" : "Sombre · Haute visibilité"; color: Theme.secondaryForeground; font.pixelSize: 11 }
+            }
+            MouseArea { id: sunPointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.sunModeRequested() }
+        }
+        Rectangle {
+            width: parent.width; height: 72; radius: 4
+            color: locationPointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+            NerdIcon { anchors.left: parent.left; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "󰗊"; color: Theme.accent; font.pixelSize: 22 }
+            Column {
+                anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                Text { text: "Localisation & heure"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
+                Text { text: AppearanceController.effectiveTimezone || "Fuseau système"; color: Theme.secondaryForeground; font.pixelSize: 11 }
+            }
+            MouseArea { id: locationPointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.locationTimeRequested() }
         }
     }
 }

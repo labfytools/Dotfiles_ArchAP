@@ -25,7 +25,7 @@ Rectangle {
     implicitHeight: content.implicitHeight + 20
     radius: 4
     color: Theme.popupBackground
-    border.color: notification.urgency === NotificationUrgency.Critical ? Theme.danger : Theme.border
+    border.color: notification.urgency === NotificationUrgency.Critical ? Theme.danger : Theme.outline
     // CONTRACT: 0 interdit l'expiration automatique. Les durées sont en ms.
     Timer {
         interval: Math.max(1, card.timeout)

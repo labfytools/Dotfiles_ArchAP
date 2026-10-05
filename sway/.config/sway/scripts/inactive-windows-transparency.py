@@ -6,11 +6,33 @@
 # transparency strength in range of 0…1 or use the command line argument -o.
 
 import argparse
+import json
+import os
 import signal
 import sys
 from functools import partial
+from pathlib import Path
 
 import i3ipc
+
+STATE = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'labfy-appearance/effective.json'
+
+
+def inactive_opacity():
+    # CONTRACT: lecture uniquement sur événement IPC ou SIGUSR1 de la
+    # transaction ; aucune boucle de sondage ni valeur Sun mémorisée.
+    try:
+        state = json.loads(STATE.read_text(encoding='utf-8'))
+        return '1.0' if state.get('effectiveMode') in ('sun-light', 'sun-dark') else '0.85'
+    except (OSError, ValueError):
+        return '0.85'
+
+
+def apply_all(ipc):
+    tree = ipc.get_tree()
+    opacity = inactive_opacity()
+    for window in tree.leaves():
+        window.command('opacity ' + ('1.0' if window.focused else opacity))
 
 
 def on_window(args, ipc, event):
@@ -20,6 +42,7 @@ def on_window(args, ipc, event):
     # parents, so fetch the whole tree
     tree = ipc.get_tree()
 
+    args.opacity = inactive_opacity()
     focused = tree.find_focused()
     if focused is None:
         return
@@ -54,6 +77,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="This script allows you to set the transparency of unfocused windows in sway."
     )
+    parser.add_argument('--refresh', action='store_true',
+                        help='réappliquer immédiatement toutes les fenêtres puis quitter')
     parser.add_argument(
         "--opacity",
         "-o",
@@ -77,14 +102,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     ipc = i3ipc.Connection()
+    if args.refresh:
+        apply_all(ipc)
+        sys.exit(0)
     focused_set = set()
 
-    for window in ipc.get_tree():
-        if window.focused:
-            focused_set.add(window.id)
-            window.command("opacity " + args.focused)
-        else:
-            window.command("opacity " + args.opacity)
+    args.opacity = inactive_opacity()
+    apply_all(ipc)
+    focused = ipc.get_tree().find_focused()
+    if focused:
+        focused_set.add(focused.id)
     for sig in [signal.SIGINT, signal.SIGTERM]:
         signal.signal(sig, lambda signal, frame: remove_opacity(ipc, args.focused))
     ipc.on("window", partial(on_window, args))

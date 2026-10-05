@@ -6,7 +6,7 @@ Item {
     id: page
     signal backRequested()
     property int draftTemperature: AppearanceController.nightTemperature
-    readonly property bool busy: AppearanceController.nightLightBusy
+    readonly property bool busy: AppearanceController.nightLightBusy || AppearanceController.appearanceBusy
     Connections {
         target: AppearanceController
         function onNightTemperatureChanged() { page.draftTemperature = AppearanceController.nightTemperature; }
@@ -47,6 +47,12 @@ Item {
                 : AppearanceController.nightLightMode === "on" ? AppearanceController.nightTemperature + " K en permanence"
                 : "Couleurs neutres"
             color: Theme.secondaryForeground; font.pixelSize: 12
+        }
+        Text {
+            visible: AppearanceController.nightLightSuspended
+            width: parent.width; wrapMode: Text.Wrap
+            text: "Préférence : " + (AppearanceController.nightLightMode === "auto" ? "Auto" : AppearanceController.nightLightMode === "on" ? "Activée" : "Désactivée") + " · État : temporairement suspendue par le Mode Soleil"
+            color: Theme.foreground; font.pixelSize: 12
         }
         Text { text: "TEMPÉRATURE DE NUIT"; color: Theme.accentForeground; font.pixelSize: 11; font.bold: true }
         Row {
