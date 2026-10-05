@@ -41,8 +41,7 @@ n'atteint pas 4,5:1 avec une couleur Catppuccin ; le noir atteint environ
 
 Les 34 usages historiques de Mauve ont été classés par rôle : sélection,
 focus, indicateur ou contrôle utilisent maintenant l'accent principal
-Lavender. Les séries CPU/RAM du System Monitor restent intentionnellement
-Mauve. Ce choix rend les contrôles historiques Mauve légèrement plus bleus
+Lavender. Ce choix rend les contrôles historiques Mauve légèrement plus bleus
 qu'avant. Les trois anciens Lavender restent l'accent principal.
 
 L'API de thème est `AppearanceController.setManualFlavor(flavor)` et

@@ -7,7 +7,6 @@ import "windows"
 import "datecenter"
 import "notifications"
 import "status"
-import "systemmonitor"
 import "theme"
 
 PanelWindow {
@@ -44,7 +43,6 @@ PanelWindow {
     function toggleDateCenter() {
         const opening = !dateCenter.visible && !dateCenter.opening;
         controlCenter.visible = false;
-        systemMonitor.visible = false;
         windowStrip.closeMenu();
         if (opening) dateCenter.requestOpen();
         else dateCenter.requestClose();
@@ -76,7 +74,6 @@ PanelWindow {
             maxWidth: Math.max(0, leftArea.width - x - 8)
             onMenuOpened: {
                 controlCenter.visible = false;
-                systemMonitor.visible = false;
                 dateCenter.requestClose();
             }
         }
@@ -110,28 +107,18 @@ PanelWindow {
             wifiDevice: controlCenter.wifiDevice
             adapter: controlCenter.adapter
             controlCenterOpen: controlCenter.visible
-            systemMonitorOpen: systemMonitor.visible
             onOpenPageRequested: page => {
-                systemMonitor.visible = false;
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 controlCenter.currentPage = page;
                 controlCenter.visible = true;
             }
             onToggleControlCenterRequested: {
-                systemMonitor.visible = false;
                 const opening = !controlCenter.visible;
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 controlCenter.currentPage = 0;
                 controlCenter.visible = opening;
-            }
-            onToggleSystemMonitorRequested: {
-                const opening = !systemMonitor.visible;
-                controlCenter.visible = false;
-                dateCenter.requestClose();
-                windowStrip.closeMenu();
-                systemMonitor.visible = opening;
             }
         }
     }
@@ -140,11 +127,6 @@ PanelWindow {
         id: controlCenter
         barWindow: bar
         onThresholdApplied: rightStatusArea.refreshBatteryThreshold()
-    }
-
-    SystemMonitor {
-        id: systemMonitor
-        barWindow: bar
     }
 
     DateCenter {
@@ -156,7 +138,5 @@ PanelWindow {
     NotificationToastArea {
         barWindow: bar
         service: bar.notificationService
-        monitorOpen: systemMonitor.visible
-        monitorWidth: systemMonitor.implicitWidth
     }
 }

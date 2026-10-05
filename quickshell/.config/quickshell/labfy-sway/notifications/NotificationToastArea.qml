@@ -5,12 +5,8 @@ PopupWindow {
     id: area
     required property var barWindow
     required property var service
-    property bool monitorOpen: false
-    property int monitorWidth: 400
     anchor.window: barWindow
-    // Laisser les notifications visibles sans recouvrir le moniteur ouvert.
-    anchor.rect.x: monitorOpen ? barWindow.width - monitorWidth - implicitWidth - 16
-        : barWindow.width - implicitWidth - 8
+    anchor.rect.x: barWindow.width - implicitWidth - 8
     anchor.rect.y: barWindow.height + 8
     anchor.edges: Edges.Top | Edges.Left
     anchor.gravity: Edges.Bottom | Edges.Right
