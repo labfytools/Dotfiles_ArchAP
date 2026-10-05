@@ -4,17 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import configparser
 import datetime as dt
+import errno
+import fcntl
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shlex
+import stat
 import subprocess
 import sys
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 
 SCHEMA = "labfy.sway.session-snapshot"
@@ -27,6 +32,12 @@ LAYOUT_ENGINE = "sway-native"
 LAYOUTS = {"none", "splith", "splitv", "stacked", "tabbed", "output", "dockarea"}
 CONFIDENCE = {"exact", "heuristic", "unresolved"}
 RECT_KEYS = ("x", "y", "width", "height")
+SESSION_NAME = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
+SNAPSHOT_SUFFIX = ".json"
+LOCK_FILENAME = ".sessions.lock"
+MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
+SAVE_ATTEMPTS = 3
+SAVE_RETRY_DELAY_SECONDS = 0.05
 DAEMON_NAMES = {
     "autotiling",
     "inactive-windows-transparency.py",
@@ -41,6 +52,118 @@ INFRASTRUCTURE_NAMES = {
 
 class SnapshotError(RuntimeError):
     """Erreur de collecte ou violation du contrat V1."""
+
+
+def utc_now() -> str:
+    """Retourner un instant UTC stable et sérialisable à la milliseconde."""
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def normalize_session_name(name: str) -> str:
+    """Valider la clé logique V1 sans jamais la transformer en chemin libre."""
+    if not isinstance(name, str) or SESSION_NAME.fullmatch(name) is None:
+        raise SnapshotError(
+            "nom de session invalide: utiliser 1 à 64 caractères parmi A-Z, a-z, 0-9, - et _"
+        )
+    return name
+
+
+def _snapshot_filename(name: str) -> str:
+    return f"{normalize_session_name(name)}{SNAPSHOT_SUFFIX}"
+
+
+def _ensure_child_directory(parent_fd: int, name: str) -> int:
+    """Créer puis ouvrir un répertoire géré sans suivre de lien symbolique."""
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+    except FileExistsError:
+        pass
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(name, flags, dir_fd=parent_fd)
+    except OSError as exc:
+        raise SnapshotError(f"répertoire géré non sûr: {name}: {exc}") from exc
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISDIR(info.st_mode):
+            raise SnapshotError(f"répertoire géré non sûr: {name}")
+        # CONTRACT: une umask permissive ou un ancien mode ne doit jamais
+        # exposer les titres privés contenus dans les snapshots.
+        os.fchmod(fd, 0o700)
+        if stat.S_IMODE(os.fstat(fd).st_mode) != 0o700:
+            raise SnapshotError(f"permissions répertoire invalides: {name}")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def sessions_directory(
+    environment: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> Path:
+    """Résoudre et créer la cible XDG privée des sessions persistantes."""
+    env = os.environ if environment is None else environment
+    home_path = Path.home() if home is None else home
+    configured = env.get("XDG_STATE_HOME")
+    root = Path(configured) if configured else home_path / ".local/state"
+    if not root.is_absolute():
+        raise SnapshotError("XDG_STATE_HOME doit être un chemin absolu")
+    try:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    except OSError as exc:
+        raise SnapshotError(f"impossible d'ouvrir XDG state: {exc}") from exc
+    try:
+        app_fd = _ensure_child_directory(root_fd, "labfy-sway")
+        try:
+            sessions_fd = _ensure_child_directory(app_fd, "sessions")
+            os.close(sessions_fd)
+        finally:
+            os.close(app_fd)
+    finally:
+        os.close(root_fd)
+    return root / "labfy-sway/sessions"
+
+
+def _open_sessions_directory(path: Path) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise SnapshotError(f"répertoire sessions non sûr: {exc}") from exc
+    if stat.S_IMODE(os.fstat(fd).st_mode) != 0o700:
+        os.close(fd)
+        raise SnapshotError("permissions du répertoire sessions différentes de 0700")
+    return fd
+
+
+@contextlib.contextmanager
+def _sessions_lock(directory_fd: int, *, exclusive: bool) -> Iterator[None]:
+    """Sérialiser publications/suppressions et stabiliser lectures multi-fichiers."""
+    flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        lock_fd = os.open(LOCK_FILENAME, flags, 0o600, dir_fd=directory_fd)
+    except OSError as exc:
+        raise SnapshotError(f"verrou sessions non sûr: {exc}") from exc
+    try:
+        info = os.fstat(lock_fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise SnapshotError("verrou sessions non régulier")
+        os.fchmod(lock_fd, 0o600)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
 
 
 def _ipc(message_type: str) -> Any:
@@ -429,7 +552,7 @@ def build_snapshot(
                 scratch_roots.append(normalizer.visit(node, None, None, None, "scratchpad", index, True))
 
     env = environment or {}
-    captured = captured_at or dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    captured = captured_at or utc_now()
     identity_counts = {key: 0 for key in CONFIDENCE}
     for window in normalizer.windows:
         identity_counts[window["restore_identity"]["confidence"]] += 1
@@ -647,7 +770,8 @@ def validate_snapshot(snapshot: Mapping[str, Any]) -> None:
 def structural_projection(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     """Projection déterministe : les indices purement volatils n'y participent pas."""
     projected = json.loads(json.dumps(snapshot))
-    projected["metadata"].pop("captured_at", None)
+    for field in ("captured_at", "created_at", "updated_at"):
+        projected["metadata"].pop(field, None)
     projected["diagnostics"].pop("collection_duration_ms", None)
     for window in projected["windows"]:
         window.pop("title_hint", None)
@@ -672,31 +796,377 @@ def collect(autostart_path: Path | None = None) -> dict[str, Any]:
     )
 
 
+def collect_consistent(
+    autostart_path: Path | None = None,
+    *,
+    attempts: int = SAVE_ATTEMPTS,
+    retry_delay: float = SAVE_RETRY_DELAY_SECONDS,
+    collector: Callable[[Path | None], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Réessayer uniquement les graphes IPC relationnellement incohérents."""
+    if attempts < 1:
+        raise ValueError("attempts doit être positif")
+    operation = collect if collector is None else collector
+    last_error: SnapshotError | None = None
+    for attempt in range(attempts):
+        try:
+            snapshot = operation(autostart_path)
+            validate_snapshot(snapshot)
+            return snapshot
+        except SnapshotError as exc:
+            if not str(exc).startswith("snapshot V1 invalide:"):
+                raise
+            last_error = exc
+            if attempt + 1 < attempts and retry_delay > 0:
+                time.sleep(retry_delay)
+    raise SnapshotError(f"SAVE_FAILED_INCONSISTENT_STATE: {last_error}") from last_error
+
+
+def _validate_persistent_snapshot(snapshot: Mapping[str, Any], expected_name: str | None = None) -> None:
+    """Valider l'extension compatible de métadonnées propre à STEP18B."""
+    validate_snapshot(snapshot)
+    metadata = snapshot["metadata"]
+    for key in ("session_name", "created_at", "updated_at"):
+        _require(isinstance(metadata.get(key), str) and bool(metadata[key]), f"metadata.{key}")
+    normalized = normalize_session_name(metadata["session_name"])
+    _require(normalized == metadata["session_name"], "metadata.session_name")
+    parsed: dict[str, dt.datetime] = {}
+    for key in ("created_at", "updated_at"):
+        try:
+            parsed[key] = dt.datetime.fromisoformat(metadata[key].replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise SnapshotError(f"snapshot V1 invalide: metadata.{key} UTC") from exc
+        _require(
+            parsed[key].tzinfo is not None and parsed[key].utcoffset() == dt.timedelta(0),
+            f"metadata.{key} UTC",
+        )
+    _require(parsed["updated_at"] >= parsed["created_at"], "metadata.updated_at antérieur à created_at")
+    if expected_name is not None:
+        _require(normalized == expected_name, "nom fichier/session")
+
+
+def _read_all_bounded(fd: int, size: int) -> bytes:
+    if size > MAX_SNAPSHOT_BYTES:
+        raise SnapshotError(f"snapshot trop volumineux (limite {MAX_SNAPSHOT_BYTES} octets)")
+    chunks: list[bytes] = []
+    remaining = MAX_SNAPSHOT_BYTES + 1
+    while remaining > 0:
+        chunk = os.read(fd, min(65536, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    payload = b"".join(chunks)
+    if len(payload) > MAX_SNAPSHOT_BYTES:
+        raise SnapshotError(f"snapshot trop volumineux (limite {MAX_SNAPSHOT_BYTES} octets)")
+    return payload
+
+
+def _load_snapshot_at(directory_fd: int, filename: str, expected_name: str) -> dict[str, Any]:
+    """Lire un fichier régulier borné sans suivre de lien symbolique."""
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(filename, flags, dir_fd=directory_fd)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise SnapshotError(f"snapshot refusé (lien symbolique): {expected_name}") from exc
+        raise SnapshotError(f"lecture snapshot impossible: {expected_name}: {exc}") from exc
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise SnapshotError(f"snapshot refusé (type non régulier): {expected_name}")
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            raise SnapshotError(f"permissions snapshot différentes de 0600: {expected_name}")
+        payload = _read_all_bounded(fd, info.st_size)
+    finally:
+        os.close(fd)
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SnapshotError(f"JSON snapshot invalide: {expected_name}: {exc}") from exc
+    if not isinstance(value, Mapping):
+        raise SnapshotError(f"snapshot invalide: racine JSON non objet: {expected_name}")
+    if value.get("schema") != SCHEMA:
+        raise SnapshotError(f"unsupported snapshot schema: {value.get('schema')!r}")
+    if value.get("version") != VERSION:
+        raise SnapshotError(f"unsupported snapshot version: {value.get('version')!r}")
+    snapshot = dict(value)
+    _validate_persistent_snapshot(snapshot, expected_name)
+    return snapshot
+
+
+def _serialize_snapshot(snapshot: Mapping[str, Any]) -> bytes:
+    payload = (json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    if len(payload) > MAX_SNAPSHOT_BYTES:
+        raise SnapshotError(f"snapshot trop volumineux (limite {MAX_SNAPSHOT_BYTES} octets)")
+    return payload
+
+
+def _write_all(fd: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise SnapshotError("écriture temporaire incomplète")
+        view = view[written:]
+
+
+def _target_is_safe(directory_fd: int, filename: str) -> None:
+    try:
+        info = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode):
+        raise SnapshotError("cible snapshot refusée: lien symbolique")
+    if not stat.S_ISREG(info.st_mode):
+        raise SnapshotError("cible snapshot refusée: type non régulier")
+
+
+def _atomic_publish(
+    directory_fd: int,
+    filename: str,
+    snapshot: Mapping[str, Any],
+    *,
+    before_replace: Callable[[str], None] | None = None,
+) -> None:
+    """Publier un snapshot complet sans exposer d'état intermédiaire."""
+    payload = _serialize_snapshot(snapshot)
+    temporary = f".{filename}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = -1
+    try:
+        fd = os.open(temporary, flags, 0o600, dir_fd=directory_fd)
+        os.fchmod(fd, 0o600)
+        _write_all(fd, payload)
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+
+        # CONTRACT: relire le fichier réellement écrit avant publication ; une
+        # corruption locale ou un test d'interruption ne touche jamais l'ancien.
+        check_flags = os.O_RDONLY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            check_flags |= os.O_NOFOLLOW
+        check_fd = os.open(temporary, check_flags, dir_fd=directory_fd)
+        try:
+            written = _read_all_bounded(check_fd, os.fstat(check_fd).st_size)
+        finally:
+            os.close(check_fd)
+        if written != payload:
+            raise SnapshotError("validation du temporaire échouée")
+        decoded = json.loads(written)
+        _validate_persistent_snapshot(decoded, snapshot["metadata"]["session_name"])
+        _target_is_safe(directory_fd, filename)
+        if before_replace is not None:
+            before_replace(temporary)
+        os.replace(temporary, filename, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SnapshotError(f"publication atomique échouée: {exc}") from exc
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+
+
+def _next_updated_at(previous: str | None) -> str:
+    current = utc_now()
+    if previous is None or current > previous:
+        return current
+    try:
+        parsed = dt.datetime.fromisoformat(previous.replace("Z", "+00:00"))
+    except ValueError:
+        return current
+    return (parsed + dt.timedelta(milliseconds=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def save_session(
+    name: str,
+    autostart_path: Path | None = None,
+    *,
+    environment: Mapping[str, str] | None = None,
+    home: Path | None = None,
+    collector: Callable[[Path | None], dict[str, Any]] | None = None,
+    retry_delay: float = SAVE_RETRY_DELAY_SECONDS,
+    before_replace: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Collecter, valider et remplacer atomiquement une session nommée."""
+    normalized = normalize_session_name(name)
+    started = time.monotonic()
+    snapshot = collect_consistent(
+        autostart_path,
+        retry_delay=retry_delay,
+        collector=collector,
+    )
+    snapshot["diagnostics"]["collection_duration_ms"] = round((time.monotonic() - started) * 1000, 3)
+    validate_snapshot(snapshot)
+    directory = sessions_directory(environment, home)
+    directory_fd = _open_sessions_directory(directory)
+    filename = _snapshot_filename(normalized)
+    try:
+        with _sessions_lock(directory_fd, exclusive=True):
+            _target_is_safe(directory_fd, filename)
+            existing: dict[str, Any] | None = None
+            try:
+                existing = _load_snapshot_at(directory_fd, filename, normalized)
+            except FileNotFoundError:
+                pass
+            except SnapshotError:
+                # CONTRACT: un save explicitement ciblé peut réparer un JSON
+                # corrompu, mais jamais contourner un lien ou type de fichier.
+                existing = None
+            updated_at = _next_updated_at(existing["metadata"]["updated_at"] if existing else None)
+            snapshot["metadata"].update({
+                "session_name": normalized,
+                "created_at": existing["metadata"]["created_at"] if existing else updated_at,
+                "updated_at": updated_at,
+            })
+            _validate_persistent_snapshot(snapshot, normalized)
+            _atomic_publish(
+                directory_fd,
+                filename,
+                snapshot,
+                before_replace=before_replace,
+            )
+    finally:
+        os.close(directory_fd)
+    return snapshot
+
+
+def show_session(
+    name: str,
+    *,
+    environment: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> dict[str, Any]:
+    normalized = normalize_session_name(name)
+    directory = sessions_directory(environment, home)
+    directory_fd = _open_sessions_directory(directory)
+    try:
+        with _sessions_lock(directory_fd, exclusive=False):
+            try:
+                return _load_snapshot_at(directory_fd, _snapshot_filename(normalized), normalized)
+            except FileNotFoundError as exc:
+                raise SnapshotError(f"session introuvable: {normalized}") from exc
+    finally:
+        os.close(directory_fd)
+
+
+def list_sessions(
+    *,
+    environment: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    directory = sessions_directory(environment, home)
+    directory_fd = _open_sessions_directory(directory)
+    sessions: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    try:
+        with _sessions_lock(directory_fd, exclusive=False):
+            for filename in sorted(os.listdir(directory_fd)):
+                if not filename.endswith(SNAPSHOT_SUFFIX):
+                    continue
+                name = filename[: -len(SNAPSHOT_SUFFIX)]
+                try:
+                    normalized = normalize_session_name(name)
+                    snapshot = _load_snapshot_at(directory_fd, filename, normalized)
+                except (SnapshotError, FileNotFoundError) as exc:
+                    warnings.append(f"snapshot ignoré {filename}: {exc}")
+                    continue
+                sessions.append({
+                    "name": normalized,
+                    "updated_at": snapshot["metadata"]["updated_at"],
+                    "windows": len(snapshot["windows"]),
+                    "workspaces": len(snapshot["workspaces"]),
+                })
+    finally:
+        os.close(directory_fd)
+    return sessions, warnings
+
+
+def delete_session(
+    name: str,
+    *,
+    environment: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> None:
+    normalized = normalize_session_name(name)
+    directory = sessions_directory(environment, home)
+    directory_fd = _open_sessions_directory(directory)
+    filename = _snapshot_filename(normalized)
+    try:
+        with _sessions_lock(directory_fd, exclusive=True):
+            _target_is_safe(directory_fd, filename)
+            try:
+                os.unlink(filename, dir_fd=directory_fd)
+            except FileNotFoundError as exc:
+                raise SnapshotError(f"session introuvable: {normalized}") from exc
+            os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Capture read-only d'un Session Snapshot V1 Sway")
+    parser = argparse.ArgumentParser(description="Sauvegarde persistante read-only d'une session Sway")
     parser.add_argument("--stdout", action="store_true", help="émettre le JSON validé sur stdout")
-    parser.add_argument("--compact", action="store_true", help="JSON compact (avec --stdout)")
+    parser.add_argument("--compact", action="store_true", help="émettre un JSON compact")
     parser.add_argument(
         "--autostart",
         type=Path,
         default=Path.home() / ".config/sway/autostart",
         help="fichier Sway autostart utilisé seulement pour la classification",
     )
+    parser.add_argument("command", nargs="?", choices=("save", "list", "show", "delete"))
+    parser.add_argument("name", nargs="?")
     args = parser.parse_args(argv)
-    if not args.stdout:
-        parser.error("STEP18A autorise uniquement --stdout")
-    started = time.monotonic()
+    if args.stdout and args.command is not None:
+        parser.error("--stdout ne peut pas être combiné avec une commande persistante")
+    if not args.stdout and args.command is None:
+        parser.error("utiliser --stdout ou une commande save/list/show/delete")
+    if args.command in {"save", "show", "delete"} and args.name is None:
+        parser.error(f"{args.command} requiert un nom de session")
+    if (args.stdout or args.command == "list") and args.name is not None:
+        parser.error("nom de session inattendu")
     try:
-        snapshot = collect(args.autostart)
+        if args.stdout:
+            started = time.monotonic()
+            result: Any = collect(args.autostart)
+            result["diagnostics"]["collection_duration_ms"] = round((time.monotonic() - started) * 1000, 3)
+            validate_snapshot(result)
+        elif args.command == "save":
+            snapshot = save_session(args.name, args.autostart)
+            result = {
+                "name": snapshot["metadata"]["session_name"],
+                "created_at": snapshot["metadata"]["created_at"],
+                "updated_at": snapshot["metadata"]["updated_at"],
+                "windows": len(snapshot["windows"]),
+                "workspaces": len(snapshot["workspaces"]),
+            }
+        elif args.command == "list":
+            result, warnings = list_sessions()
+            for warning in warnings:
+                print(warning, file=sys.stderr)
+        elif args.command == "show":
+            result = show_session(args.name)
+        else:
+            delete_session(args.name)
+            result = {"deleted": args.name}
     except SnapshotError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    snapshot["diagnostics"]["collection_duration_ms"] = round((time.monotonic() - started) * 1000, 3)
-    validate_snapshot(snapshot)
     if args.compact:
-        json.dump(snapshot, sys.stdout, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        json.dump(result, sys.stdout, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     else:
-        json.dump(snapshot, sys.stdout, ensure_ascii=False, sort_keys=True, indent=2)
+        json.dump(result, sys.stdout, ensure_ascii=False, sort_keys=True, indent=2)
     sys.stdout.write("\n")
     return 0
 

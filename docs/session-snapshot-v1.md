@@ -1,12 +1,12 @@
-# Session Snapshot V1 — STEP18A
+# Session Snapshot V1 — STEP18A / STEP18B
 
 ## Objet et périmètre
 
 STEP18A capture et valide en lecture seule l'état de session observable par
-Sway. **Aucune restauration n'est implémentée.** Le collecteur ne déplace pas
-de conteneur, ne change pas le focus, ne lance ni ne tue de processus et
-n'écrit aucun snapshot persistant. STEP18B possédera la persistance ; STEP19,
-la restauration et son interface ; STEP20, le layout spatial 2D.
+Sway. STEP18B sauvegarde cet état de façon persistante. **Aucune restauration
+n'est implémentée.** Le collecteur ne déplace pas de conteneur, ne change pas
+le focus, ne lance ni ne tue de processus. STEP19 possédera la restauration et
+son interface ; STEP20, le layout spatial 2D.
 
 Le collecteur autonome se trouve dans
 `quickshell/.config/quickshell/labfy-sway/session/session_snapshot.py`. Il est
@@ -16,8 +16,8 @@ séparé de QML :
 python ~/.config/quickshell/labfy-sway/session/session_snapshot.py --stdout
 ```
 
-Sans `--stdout`, il refuse d'agir. Pour STEP18A, une redirection explicite vers
-`/tmp` est réservée au diagnostic.
+`--stdout` reste la capture non persistante de STEP18A. Les commandes
+persistantes explicites de STEP18B sont documentées plus bas.
 
 ## Sources et audit de disponibilité
 
@@ -270,40 +270,126 @@ une page Web ou un document différent ne change pas l'identité structurelle.
 Les champs runtime restent inclus dans cette comparaison : à état réellement
 inchangé ils doivent rester identiques.
 
-## Sécurité et future persistance STEP18B
+## Persistance STEP18B
 
-Un titre peut révéler un document ou un site. Les snapshots futurs sont de
-l'état utilisateur et devront aller dans :
+### Emplacement, nom et métadonnées
+
+Un titre peut révéler un document ou un site. Les snapshots sont donc de
+l'état utilisateur et vont exclusivement dans :
 
 ```text
 ${XDG_STATE_HOME:-$HOME/.local/state}/labfy-sway/sessions/
 ```
 
-Le répertoire devra être créé en `0700` et chaque snapshot en `0600`. Rien ne
-doit être installé dans `~/.config`, le dépôt Git, `Documents` ou `/tmp` pour
-le fonctionnement normal.
+Lorsque `XDG_STATE_HOME` est défini et non vide, la cible est
+`$XDG_STATE_HOME/labfy-sway/sessions/`. Sinon elle est
+`$HOME/.local/state/labfy-sway/sessions/`. Une valeur relative de
+`XDG_STATE_HOME` est refusée. Les répertoires gérés `labfy-sway/` et
+`sessions/` sont forcés à `0700`; les snapshots et le verrou sont forcés à
+`0600`, indépendamment de l'umask. Rien n'est écrit dans `~/.config`, le dépôt
+Git, `Documents` ou `/tmp` pour le fonctionnement normal.
 
-STEP18B devra écrire un fichier temporaire dans le même répertoire, appliquer
-les permissions, écrire et valider le document complet, effectuer `fsync` du
-fichier si la politique de durabilité le requiert, puis publier par `rename`
-atomique et synchroniser le répertoire si nécessaire. Une capture interrompue
-ne devra jamais remplacer le dernier snapshot valide.
+Le nom logique est la clé persistante V1. Il contient de 1 à 64 caractères
+ASCII parmi `A-Z`, `a-z`, `0-9`, `-` et `_`. Il n'existe pas de `session_id`
+distinct en V1 : en ajouter un serait redondant tant que le renommage n'est pas
+contracté. Le nom ne devient jamais un chemin libre ; l'implémentation dérive
+elle-même le seul fichier `<name>.json`. Les séparateurs, points, espaces,
+NUL, chaînes vides et traversées sont refusés.
+
+Un document persistant conserve l'enveloppe
+`labfy.sway.session-snapshot`/version `1` et ajoute à `metadata` :
+
+- `session_name`, la clé logique validée ;
+- `created_at`, fixé lors de la première sauvegarde valide ;
+- `updated_at`, avancé à chaque publication ;
+- `captured_at`, l'instant de la nouvelle capture Sway.
+
+Une mise à jour réutilise exactement le même fichier. Elle ne crée aucune
+rotation ou copie suffixée. Si la cible régulière est corrompue, un `save`
+explicitement adressé peut la remplacer par un nouveau snapshot valide ; il
+ne prétend alors pas récupérer son ancien `created_at`.
+
+### CLI
+
+```bash
+session_snapshot.py --stdout
+session_snapshot.py save <name>
+session_snapshot.py list
+session_snapshot.py show <name>
+session_snapshot.py delete <name>
+```
+
+`--compact` produit du JSON compact. `save` collecte et publie ; `list` émet un
+tableau d'objets `{name, updated_at, windows, workspaces}` ; `show` retourne le
+document strictement validé ; `delete` supprime uniquement le fichier régulier
+dérivé du nom validé. Ces commandes ne contiennent et n'appellent aucune
+opération `restore`, `launch` ou `apply`.
+
+### Cohérence IPC, verrouillage et publication atomique
+
+Les quatre requêtes IPC ne sont pas transactionnelles. Pour `save`, une
+violation relationnelle produite par cet intervalle est retentée au plus trois
+fois, avec 50 ms entre tentatives. Les erreurs IPC ordinaires ne sont pas
+masquées par ces retries. Après trois graphes incohérents, la commande retourne
+`SAVE_FAILED_INCONSISTENT_STATE` et ne touche pas au snapshot précédent.
+
+Un verrou global persistant `.sessions.lock`, fichier régulier privé ouvert
+avec `O_NOFOLLOW`, est pris par `flock`: exclusif pour `save`/`delete`, partagé
+pour `list`/`show`. Il sérialise deux mises à jour simultanées sans daemon ni
+nouvelle file de travaux.
+
+La publication suit ce contrat :
+
+```text
+snapshot validé en mémoire
+→ temporaire aléatoire dans sessions/ en 0600 et O_EXCL/O_NOFOLLOW
+→ écriture complète
+→ fsync du fichier
+→ relecture bornée, comparaison des octets, parsing et validation
+→ nouvelle vérification de la cible
+→ os.replace atomique dans le même répertoire
+→ fsync du répertoire
+```
+
+Le temporaire propre à l'opération est supprimé en cas d'échec normal. Une
+interruption avant `os.replace` laisse l'ancien fichier inchangé. Les chemins
+de cible, temporaire, verrou et suppression sont utilisés relativement au
+descripteur ouvert du répertoire. Les répertoires gérés et fichiers cibles ne
+peuvent pas être des symlinks ; une cible symlink ou non régulière est refusée,
+donc elle ne peut rediriger ni écriture ni suppression vers un autre chemin.
+
+### Chargement, corruption, version et limite
+
+Chaque lecture ouvre un fichier régulier avec `O_NOFOLLOW`, contrôle son mode
+`0600`, sa taille, son JSON, son schema, sa version, ses métadonnées
+persistantes et toutes les relations V1. La limite est de 8 MiB
+(`8388608` octets), très supérieure aux captures usuelles d'environ 10 KiB.
+Elle est appliquée avant parsing et pendant la lecture afin de borner également
+un fichier qui grandit.
+
+`show` échoue explicitement sur corruption. `list` ignore chaque fichier
+invalide indépendamment et signale un avertissement sur stderr sans perdre les
+autres sauvegardes valides. Un schema inconnu retourne
+`unsupported snapshot schema`; une version autre que `1` retourne
+`unsupported snapshot version` et n'est jamais interprétée comme V1.
+
+### Confidentialité
 
 Sont explicitement exclus : username, HOME absolu, hostname par défaut,
 IP/MAC, make/model/serial des écrans, contenu d'environnement, lignes de
 commande, arguments, tokens, mots de passe, cookies, URL privées, valeur
 `Exec` des DesktopEntry, arbres IPC bruts et chemins complets d'exécutables.
+`title_hint` demeure potentiellement privé et justifie à lui seul les modes
+`0700`/`0600`.
 
 ## Limites V1
 
-V1 ne sait pas relancer une application, retrouver le contenu d'un terminal,
+V1 ne sait pas restaurer ou relancer une application, retrouver le contenu d'un terminal,
 regrouper sûrement des processus en application, redistribuer un workspace si
 un écran manque, restaurer le focus, interpréter un titre, faire une rotation
 de snapshots ni représenter le Spatial Canvas. Ces limites sont explicites et
 n'affaiblissent pas la capture normalisée de STEP18A.
 
-Les quatre requêtes IPC ne constituent pas une transaction atomique offerte
-par Sway. Si la topologie change pendant ces quelques dizaines de
-millisecondes, la validation relationnelle fait échouer la capture plutôt que
-de publier un graphe incohérent. STEP18B pourra effectuer une nouvelle capture
-bornée ; il ne devra jamais persister le résultat invalide.
+Il n'existe ni sauvegarde automatique à la fermeture, ni hook logout, ni
+autostart de gestionnaire de session, ni UI QuickShell dans STEP18B. Ces
+politiques et toute mutation Sway restent hors périmètre.

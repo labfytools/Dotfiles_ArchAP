@@ -17,7 +17,7 @@ limites détaillées.
 | Document | Responsabilité |
 | --- | --- |
 | [Desktop](desktop.md) | Session greetd/UWSM/Sway et composants Wayland canoniques |
-| [Session Snapshot V1](session-snapshot-v1.md) | Contrat de capture Sway STEP18A, sécurité et limites de restauration |
+| [Session Snapshot V1](session-snapshot-v1.md) | Capture Sway STEP18A et sauvegardes persistantes STEP18B, sans restauration |
 | [Shell](shell.md) | Zsh, outils interactifs, plugins et scripts utilisateur |
 | [systemd](systemd.md) | Limite système/user, unités et activations utilisateur |
 
