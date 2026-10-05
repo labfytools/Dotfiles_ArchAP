@@ -4,7 +4,13 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/wlsunset -l 48.85 -L 2.35 -t 3000 -T 6500
+Type=exec
+# CONTRACT: le launcher lit les préférences locales puis exec wlsunset ;
+# systemd garde ainsi le PID et le contrôle exclusif de la correction gamma.
+ExecStart=/usr/bin/python /home/fy59/.local/bin/night-light-manager.py launch
+# WHY: wlsunset 0.4.0 refuse -T == -t ; son SIGUSR1 documenté permet
+# AUTO -> FORCE_HIGH -> FORCE_LOW lorsque le mode ON est demandé.
+ExecStartPost=/usr/bin/python /home/fy59/.local/bin/night-light-manager.py post-start
 Restart=on-failure
 
 [Install]

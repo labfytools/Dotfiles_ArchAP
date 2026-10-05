@@ -14,7 +14,7 @@ PopupWindow {
     // CONTRACT: indices externes historiques conservés ; tout nouveau routage
     // passe par ces noms afin de ne pas multiplier les indices StackLayout.
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
-        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8 })
+        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8, nightLight: 9 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -208,6 +208,7 @@ PopupWindow {
                 onBackRequested: popup.openPage("main")
                 onWallpaperRequested: popup.openPage("wallpaper")
                 onThemeRequested: popup.openPage("theme")
+                onNightLightRequested: popup.openPage("nightLight")
             }
 
             WallpaperPage {
@@ -216,6 +217,9 @@ PopupWindow {
             }
 
             ThemePage {
+                onBackRequested: popup.openPage("appearance")
+            }
+            NightLightPage {
                 onBackRequested: popup.openPage("appearance")
             }
         }

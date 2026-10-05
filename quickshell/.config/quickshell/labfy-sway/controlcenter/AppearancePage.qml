@@ -7,6 +7,7 @@ Item {
     signal backRequested()
     signal wallpaperRequested()
     signal themeRequested()
+    signal nightLightRequested()
     readonly property var flavorNames: ({ latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" })
 
     Column {
@@ -43,6 +44,22 @@ Item {
                 }
             }
             MouseArea { id: themePointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.themeRequested() }
+        }
+        Rectangle {
+            width: parent.width; height: 72; radius: 4
+            color: nightPointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+            NerdIcon { anchors.left: parent.left; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "󰖔"; color: Theme.accent; font.pixelSize: 22 }
+            Column {
+                anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                Text { text: "Lumière nocturne"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
+                Text {
+                    text: AppearanceController.nightLightMode === "auto" ? "Auto · " + AppearanceController.nightTemperature + " K"
+                        : AppearanceController.nightLightMode === "on" ? "Activée · " + AppearanceController.nightTemperature + " K"
+                        : "Désactivée"
+                    color: Theme.secondaryForeground; font.pixelSize: 11
+                }
+            }
+            MouseArea { id: nightPointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.nightLightRequested() }
         }
     }
 }

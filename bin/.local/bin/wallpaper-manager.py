@@ -37,7 +37,7 @@ GENERATED_THEME = SWAY / 'generated/theme.conf'
 ALIASES = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'labfy-appearance/wallpapers'
 FLAVORS = ('latte', 'frappe', 'macchiato', 'mocha')
 STATE_VERSION = 3
-PREF_VERSION = 2
+PREF_VERSION = 3
 
 
 def atomic_write(path, data):

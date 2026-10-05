@@ -65,7 +65,7 @@ class WallpaperManagerTest(unittest.TestCase):
                 manager.validate_image(path)
         chosen = manager.set_directory(self.root.as_uri())
         self.assertEqual(chosen['wallpaperDirectory'], str(self.root))
-        self.assertEqual(json.loads(manager.PREFERENCES.read_text())['version'], 2)
+        self.assertEqual(json.loads(manager.PREFERENCES.read_text())['version'], 3)
 
     def test_atomic_replace_keeps_old_file_on_write_failure(self):
         target = self.root / 'atomic.txt'

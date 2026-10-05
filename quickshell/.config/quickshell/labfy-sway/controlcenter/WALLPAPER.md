@@ -39,7 +39,7 @@ alias. Le chemin de l'utilisateur n'est jamais une commande shell.
 L'application tient un verrou non bloquant, vérifie le décodage, écrit
 `wallpaper.conf` par temp/flush/fsync/replace, lance `sway --validate`,
 `swaymsg reload`, puis vérifie le `swaybg` effectif avant de publier
-`$XDG_STATE_HOME/labfy-appearance/effective.json` en schéma 2. En cas d'échec,
+`$XDG_STATE_HOME/labfy-appearance/effective.json` en schéma 3. En cas d'échec,
 elle restaure la configuration et l'état précédents puis recharge Sway.
 Les champs 17B de thème restent intacts ; la révision augmente une fois par
 application réussie et jamais par sélection. Les états 17B sans wallpaper

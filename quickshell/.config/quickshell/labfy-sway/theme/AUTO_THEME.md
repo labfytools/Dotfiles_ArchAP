@@ -73,7 +73,7 @@ non cachées observées ont duré environ 0,03 à 0,10 s pour 1080p/4K et
 En Auto, l'image est décodée et analysée avant toute écriture. Le backend
 prépare `generated/wallpaper.conf` et `generated/theme.conf` si nécessaires,
 valide Sway, recharge Sway, confirme `swaybg`, puis écrit `effective.json`
-schéma 3 et les préférences schéma 2 avant publication IPC QuickShell. Un
+schéma 3 et les préférences schéma 3 (depuis 17E) avant publication IPC QuickShell. Un
 verrou non bloquant commun empêche deux applications simultanées. Si une
 étape échoue, les anciens fichiers générés et JSON sont restaurés et Sway
 est rechargé. Un échec d'analyse est signalé distinctement avant écriture ;

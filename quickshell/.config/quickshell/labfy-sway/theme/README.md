@@ -65,6 +65,8 @@ reste séparé dans `generated/wallpaper.conf` ; voir
 préserve les champs wallpaper du schéma effectif 3 lors d'un changement de
 thème. L'algorithme Auto, ses seuils et la migration sont documentés dans
 [AUTO_THEME.md](AUTO_THEME.md).
+La lumière nocturne 17E est indépendante du flavor et du fond ; son service,
+ses modes et ses préférences sont décrits dans [NIGHT_LIGHT.md](NIGHT_LIGHT.md).
 Le repli versionné `sway/theme-default.conf` fournit Mocha même avant toute
 génération. Ses quelques variables sont un artefact dérivé, pas une palette
 complète indépendante. `sway/style` inclut le repli, puis un glob de fichier
