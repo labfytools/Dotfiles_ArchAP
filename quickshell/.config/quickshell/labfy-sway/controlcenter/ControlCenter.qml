@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.I3
 import Quickshell.Networking
 import Quickshell.Bluetooth
 import "../components"
@@ -28,7 +27,8 @@ PopupWindow {
             command: ["systemctl", "suspend"] },
         { id: "logout", label: "Déconnexion", icon: "", accent: Theme.urgent,
             confirmTitle: "Se déconnecter ?",
-            description: "La session SwayFX en cours sera fermée.", command: null },
+            description: "La session SwayFX en cours sera fermée.",
+            command: ["uwsm", "stop"] },
         { id: "reboot", label: "Redémarrer", icon: "", accent: Theme.warning,
             confirmTitle: "Redémarrer l'ordinateur ?",
             description: "La session en cours sera fermée.",
@@ -63,8 +63,9 @@ PopupWindow {
         if (!selected) return;
         // Fermer le popup avant toute commande qui peut verrouiller ou terminer la session.
         visible = false;
-        if (id === "logout") I3.dispatch("exit");
-        else Quickshell.execDetached(selected.command);
+        // CONTRACT: UWSM possède le cycle de vie de Sway ; son arrêt doit donc
+        // passer par la commande déclarée, comme les autres actions de session.
+        if (selected.command) Quickshell.execDetached(selected.command);
     }
 
     anchor.window: barWindow
