@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Galerie locale et publication transactionnelle du wallpaper Sway (schéma 2)."""
+"""Galerie locale et publication compensable wallpaper/thème Sway (schéma 3)."""
 import argparse
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import warnings
 from urllib.parse import unquote, urlsplit
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from wallpaper_analysis import ALGORITHM_VERSION, analyze as analyze_wallpaper
 
 # WHY: une image piégée ne doit pas faire exploser la mémoire du processus
 # de scan ; la limite s'applique à un fichier, pas à la taille du dossier.
@@ -31,7 +33,11 @@ PREFERENCES = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) /
 STATE = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'labfy-appearance/effective.json'
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'labfy-appearance/wallpapers'
 GENERATED = SWAY / 'generated/wallpaper.conf'
+GENERATED_THEME = SWAY / 'generated/theme.conf'
 ALIASES = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'labfy-appearance/wallpapers'
+FLAVORS = ('latte', 'frappe', 'macchiato', 'mocha')
+STATE_VERSION = 3
+PREF_VERSION = 2
 
 
 def atomic_write(path, data):
@@ -241,59 +247,170 @@ def current():
             'revision': state.get('revision', 0)}
 
 
-def apply(path):
-    # INVARIANT: lock couvre config, reload et état ; deux appels ne s'entremêlent pas.
+def preferences(state=None):
+    """Migration non destructive des préférences 17C et de l'état 17B/17C."""
+    state = state if state is not None else read_json(STATE)
+    value = read_json(PREFERENCES)
+    mode = value.get('themeMode', state.get('themeMode', 'manual'))
+    manual = value.get('manualFlavor', state.get('manualFlavor', state.get('effectiveFlavor', 'mocha')))
+    if mode not in ('manual', 'wallpaper'):
+        mode = 'manual'
+    if manual not in FLAVORS:
+        manual = 'mocha'
+    return {**value, 'version': PREF_VERSION, 'themeMode': mode,
+            'manualFlavor': manual, 'accent': 'lavender', 'wallpaperMode': 'fill',
+            'wallpaperDirectory': initial_directory()}
+
+
+def rendered_theme(flavor):
+    """Réutilise le générateur 17B : aucune seconde palette ni formule Sway."""
+    source = Path(__file__).with_name('generate-appearance.py')
+    spec = importlib.util.spec_from_file_location('generate_appearance', source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.render(flavor, 'lavender').encode('utf-8')
+
+
+def publish_live(state, pref):
+    # CONTRACT: IPC seulement après Sway et les écritures durables ; le QML
+    # reprend exactement la révision persistée, sans incrément local supplémentaire.
+    payload = json.dumps({'state': state, 'preferences': pref}, ensure_ascii=False,
+                         separators=(',', ':'))
+    result = command('qs', '-c', 'labfy-sway', 'ipc', 'call', 'appearance', 'publishState', payload)
+    if result.stdout.strip() != 'true':
+        raise RuntimeError('QuickShell a refusé le nouvel état Appearance')
+
+
+def restore_file(path, previous):
+    if previous is None:
+        path.unlink(missing_ok=True)
+    else:
+        atomic_write(path, previous)
+
+
+def state_response(state, pref, analysis=None):
+    result = dict(state)
+    result.update(themeMode=pref['themeMode'], manualFlavor=pref['manualFlavor'],
+                  wallpaperDirectory=pref['wallpaperDirectory'])
+    if analysis is not None:
+        result['analysis'] = analysis
+    return result
+
+
+def transaction(wallpaper=None, mode=None, manual_flavor=None):
+    """Applique un état compensable sous un verrou commun thème/wallpaper."""
     STATE.parent.mkdir(parents=True, exist_ok=True)
     with open(STATE.parent / 'wallpaper.lock', 'a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        meta = validate_image(path)
-        target = meta['path']
-        old_config = GENERATED.read_bytes() if GENERATED.exists() else None
+        old_wallpaper = GENERATED.read_bytes() if GENERATED.exists() else None
+        old_theme = GENERATED_THEME.read_bytes() if GENERATED_THEME.exists() else None
         old_state = STATE.read_bytes() if STATE.exists() else None
+        old_preferences = PREFERENCES.read_bytes() if PREFERENCES.exists() else None
         old = read_json(STATE)
+        previous_pref = preferences(old)
+        pref = dict(previous_pref)
+        if mode is not None:
+            if mode not in ('manual', 'wallpaper'):
+                raise ValueError('Mode de thème invalide')
+            pref['themeMode'] = mode
+        if manual_flavor is not None:
+            if manual_flavor not in FLAVORS:
+                raise ValueError('Flavor manuel invalide')
+            if pref['themeMode'] != 'manual':
+                raise ValueError('Revenir en mode Manuel avant de choisir un flavor')
+            pref['manualFlavor'] = manual_flavor
+        meta = validate_image(wallpaper) if wallpaper is not None else None
+        target = meta['path'] if meta else old.get('effectiveWallpaper') or active_wallpaper()
+        if not Path(target).is_file():
+            raise ValueError('Wallpaper courant introuvable')
+        analysis = None
+        if pref['themeMode'] == 'wallpaper':
+            try:
+                analysis = analyze_wallpaper(meta or validate_image(target))
+            except Exception as exc:
+                # L'analyse précède toute écriture ; un échec ne laisse aucun
+                # état hybride et ne retire jamais un wallpaper déjà appliqué.
+                raise ValueError('Analyse Auto Theme : ' + str(exc)) from exc
+            flavor = analysis['flavor']
+        else:
+            flavor = pref['manualFlavor'] if mode is not None or manual_flavor is not None \
+                else old.get('effectiveFlavor', pref['manualFlavor'])
+        if flavor not in FLAVORS:
+            raise ValueError('Flavor effectif invalide')
+        previous_wallpaper = old.get('effectiveWallpaper') or active_wallpaper()
+        wallpaper_changed = meta is not None and (target != previous_wallpaper
+                             or old.get('wallpaperMtime') != meta['mtime'])
+        flavor_changed = flavor != old.get('effectiveFlavor', 'mocha')
+        mode_changed = pref['themeMode'] != previous_pref['themeMode']
+        state = dict(old)
+        state.update(version=STATE_VERSION, effectiveFlavor=flavor,
+                     effectiveMode='normal', effectiveDark=flavor != 'latte',
+                     effectiveHighContrast=False, effectiveAccent='lavender',
+                     effectiveWallpaper=target, wallpaperMode='fill',
+                     themeMode=pref['themeMode'], manualFlavor=pref['manualFlavor'],
+                     revision=max(0, int(old.get('revision', 0)))
+                     + int(wallpaper_changed or flavor_changed or mode_changed))
+        if meta is not None:
+            state['wallpaperMtime'] = meta['mtime']
+        if analysis is not None:
+            state['wallpaperAnalysis'] = analysis
+        elif pref['themeMode'] == 'manual':
+            state.pop('wallpaperAnalysis', None)
+        if not (wallpaper_changed or flavor_changed or mode_changed
+                or pref != previous_pref or old.get('version') != STATE_VERSION):
+            return state_response(state, pref, analysis)
+        alias = None
+        wrote_config = False
         try:
-            alias = safe_alias(meta)
-            if old.get('effectiveWallpaper', active_wallpaper()) == target and swaybg_matches(alias):
-                return current()
-            atomic_write(GENERATED, render_wallpaper(alias))
-            command('sway', '--validate', '-c', str(SWAY / 'config'))
-            command('swaymsg', 'reload')
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline and not swaybg_matches(alias):
-                time.sleep(0.1)
-            if not swaybg_matches(alias):
-                raise RuntimeError('Sway n’a pas appliqué le fond demandé')
-            # WHY: préserver tous les champs 17B et inconnus pour la migration
-            # et les futurs consommateurs ; seul le wallpaper et sa révision changent.
-            new_state = dict(old)
-            new_state.setdefault('effectiveFlavor', 'mocha')
-            new_state.setdefault('effectiveAccent', 'lavender')
-            new_state.setdefault('effectiveMode', 'normal')
-            new_state.setdefault('effectiveDark', new_state['effectiveFlavor'] != 'latte')
-            new_state.setdefault('effectiveHighContrast', False)
-            new_state.update(version=2, effectiveWallpaper=target, wallpaperMode='fill',
-                             revision=max(0, int(old.get('revision', 0))) + 1)
-            write_json(STATE, new_state)
+            if wallpaper_changed:
+                alias = safe_alias(meta)
+                atomic_write(GENERATED, render_wallpaper(alias))
+                wrote_config = True
+            if flavor_changed:
+                atomic_write(GENERATED_THEME, rendered_theme(flavor))
+                wrote_config = True
+            if wrote_config:
+                command('sway', '--validate', '-c', str(SWAY / 'config'))
+                command('swaymsg', 'reload')
+            if wallpaper_changed:
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline and not swaybg_matches(alias):
+                    time.sleep(0.1)
+                if not swaybg_matches(alias):
+                    raise RuntimeError('Sway n’a pas appliqué le fond demandé')
+            write_json(STATE, state)
+            write_json(PREFERENCES, pref)
+            publish_live(state, pref)
             # Seul l'alias actif est requis au prochain login ; les anciens
             # liens créés par ce backend ne doivent pas s'accumuler.
-            for previous_alias in ALIASES.glob('image-*'):
-                if str(previous_alias) != alias and previous_alias.is_symlink():
-                    try:
-                        previous_alias.unlink()
-                    except OSError:
-                        pass
-            return current()
+            if alias:
+                for previous_alias in ALIASES.glob('image-*'):
+                    if str(previous_alias) != alias and previous_alias.is_symlink():
+                        try:
+                            previous_alias.unlink()
+                        except OSError:
+                            pass
+            return state_response(state, pref, analysis)
         except Exception:
-            if old_config is None:
-                GENERATED.unlink(missing_ok=True)
-            else:
-                atomic_write(GENERATED, old_config)
-            if old_state is None:
-                STATE.unlink(missing_ok=True)
-            else:
-                atomic_write(STATE, old_state)
-            command('swaymsg', 'reload')
+            restore_file(GENERATED, old_wallpaper)
+            restore_file(GENERATED_THEME, old_theme)
+            restore_file(STATE, old_state)
+            restore_file(PREFERENCES, old_preferences)
+            if wrote_config:
+                command('swaymsg', 'reload')
             raise
+
+
+def apply(path):
+    return transaction(wallpaper=path)
+
+
+def set_theme_mode(mode):
+    return transaction(mode=mode)
+
+
+def set_manual_flavor(flavor):
+    return transaction(manual_flavor=flavor)
 
 
 def set_directory(path):
@@ -305,10 +422,15 @@ def set_directory(path):
     directory = Path(path).expanduser().resolve(strict=True)
     if not directory.is_dir():
         raise ValueError('Dossier introuvable')
-    pref = read_json(PREFERENCES)
-    pref.update(version=1, wallpaperDirectory=str(directory), wallpaperMode='fill')
-    write_json(PREFERENCES, pref)
-    return {'version': 1, 'wallpaperDirectory': str(directory), 'wallpaperMode': 'fill'}
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    # INVARIANT: le picker ne doit pas perdre un changement de dossier si une
+    # application thème/wallpaper publie simultanément les préférences.
+    with open(STATE.parent / 'wallpaper.lock', 'a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        pref = preferences()
+        pref.update(wallpaperDirectory=str(directory))
+        write_json(PREFERENCES, pref)
+    return {'version': PREF_VERSION, 'wallpaperDirectory': str(directory), 'wallpaperMode': 'fill'}
 
 
 def reconcile():
@@ -322,20 +444,100 @@ def reconcile():
     return result
 
 
+def reconcile_state():
+    """Au restart, effective.json tranche toute publication interrompue."""
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE.parent / 'wallpaper.lock', 'a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        state = read_json(STATE)
+        pref = preferences(state)
+        if state.get('version') == STATE_VERSION:
+            # Une préférence écrite avant un crash n'est pas une application.
+            applied_mode = state.get('themeMode')
+            applied_manual = state.get('manualFlavor')
+            pref['themeMode'] = applied_mode if applied_mode in ('manual', 'wallpaper') else pref['themeMode']
+            pref['manualFlavor'] = applied_manual if applied_manual in FLAVORS else pref['manualFlavor']
+            state.update(themeMode=pref['themeMode'], manualFlavor=pref['manualFlavor'])
+        else:
+            state.update(version=STATE_VERSION, themeMode=pref['themeMode'],
+                         manualFlavor=pref['manualFlavor'])
+        flavor = state.get('effectiveFlavor', 'mocha')
+        if flavor not in FLAVORS:
+            raise ValueError('État effectif invalide')
+        state.update(effectiveFlavor=flavor, effectiveAccent='lavender',
+                     effectiveDark=flavor != 'latte', effectiveHighContrast=False,
+                     effectiveMode='normal', wallpaperMode='fill',
+                     effectiveWallpaper=state.get('effectiveWallpaper') or active_wallpaper(),
+                     revision=max(0, int(state.get('revision', 0))))
+        if not Path(state['effectiveWallpaper']).is_file():
+            # Le fond déjà rendu peut survivre à la suppression ; l'UI reçoit
+            # le signal de manque et un futur apply/reconcile utilise le repli.
+            return state_response(state, pref)
+        expected_theme = rendered_theme(flavor)
+        meta = validate_image(state['effectiveWallpaper'])
+        if pref['themeMode'] == 'wallpaper':
+            previous_analysis = state.get('wallpaperAnalysis')
+            stale = (not isinstance(previous_analysis, dict)
+                     or previous_analysis.get('algorithmVersion') != ALGORITHM_VERSION
+                     or previous_analysis.get('path') != state['effectiveWallpaper']
+                     or state.get('wallpaperMtime') != meta['mtime'])
+            if stale:
+                # CONTRACT: rétablir les mesures manquantes sans inventer une
+                # nouvelle application. Le flavor publié reste celui du dernier
+                # état validé ; un fichier modifié doit être appliqué explicitement.
+                refreshed = analyze_wallpaper(meta)
+                if (refreshed['flavor'] == flavor
+                        and state.get('wallpaperMtime') == meta['mtime']):
+                    state['wallpaperAnalysis'] = refreshed
+        alias = safe_alias(meta)
+        expected_wallpaper = render_wallpaper(alias)
+        previous_theme = GENERATED_THEME.read_bytes() if GENERATED_THEME.exists() else None
+        previous_wallpaper = GENERATED.read_bytes() if GENERATED.exists() else None
+        repair_theme = previous_theme != expected_theme
+        repair_wallpaper = previous_wallpaper != expected_wallpaper
+        try:
+            if repair_theme:
+                atomic_write(GENERATED_THEME, expected_theme)
+            if repair_wallpaper:
+                atomic_write(GENERATED, expected_wallpaper)
+            if repair_theme or repair_wallpaper:
+                command('sway', '--validate', '-c', str(SWAY / 'config'))
+                command('swaymsg', 'reload')
+            if STATE.exists():
+                if read_json(STATE) != state:
+                    write_json(STATE, state)
+            else:
+                write_json(STATE, state)
+            if read_json(PREFERENCES) != pref:
+                write_json(PREFERENCES, pref)
+            return state_response(state, pref)
+        except Exception:
+            restore_file(GENERATED_THEME, previous_theme)
+            restore_file(GENERATED, previous_wallpaper)
+            if repair_theme or repair_wallpaper:
+                command('swaymsg', 'reload')
+            raise
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
     sub.add_parser('current')
     sub.add_parser('reconcile')
+    sub.add_parser('status')
+    sub.add_parser('preferences')
     scan_parser = sub.add_parser('scan')
     scan_parser.add_argument('directory')
     scan_parser.add_argument('--page', type=int, default=0)
-    for action in ('validate', 'thumbnail', 'apply', 'set-directory'):
+    for action in ('validate', 'thumbnail', 'analyze', 'apply', 'set-directory',
+                   'set-theme-mode', 'set-manual-flavor'):
         sub.add_parser(action).add_argument('path')
     args = parser.parse_args()
     try:
         if args.action == 'current': result = current()
         elif args.action == 'reconcile': result = reconcile()
+        elif args.action == 'status': result = reconcile_state()
+        elif args.action == 'preferences': result = preferences()
         elif args.action == 'scan':
             if args.page < 0: raise ValueError('Page invalide')
             result = scan(args.directory, args.page)
@@ -343,7 +545,10 @@ def main():
         elif args.action == 'thumbnail':
             result = validate_image(args.path)
             result['thumbnail'] = thumbnail(result)
+        elif args.action == 'analyze': result = analyze_wallpaper(validate_image(args.path))
         elif args.action == 'apply': result = apply(args.path)
+        elif args.action == 'set-theme-mode': result = set_theme_mode(args.path)
+        elif args.action == 'set-manual-flavor': result = set_manual_flavor(args.path)
         else: result = set_directory(args.path)
         print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
         return 0

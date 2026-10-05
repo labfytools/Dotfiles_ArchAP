@@ -5,12 +5,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 from unittest import mock
 
 from PIL import Image
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'bin/.local/bin/wallpaper-manager.py'
+sys.path.insert(0, str(SOURCE.parent))
 SPEC = importlib.util.spec_from_file_location('wallpaper_manager', SOURCE)
 manager = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(manager)
@@ -26,6 +28,7 @@ class WallpaperManagerTest(unittest.TestCase):
             mock.patch.object(manager, 'PREFERENCES', self.root / 'config/preferences.json'),
             mock.patch.object(manager, 'STATE', self.root / 'state/effective.json'),
             mock.patch.object(manager, 'GENERATED', self.root / 'sway/generated/wallpaper.conf'),
+            mock.patch.object(manager, 'GENERATED_THEME', self.root / 'sway/generated/theme.conf'),
             mock.patch.object(manager, 'SWAY', self.root / 'sway'),
         ]
         for patcher in self.patchers:
@@ -62,7 +65,7 @@ class WallpaperManagerTest(unittest.TestCase):
                 manager.validate_image(path)
         chosen = manager.set_directory(self.root.as_uri())
         self.assertEqual(chosen['wallpaperDirectory'], str(self.root))
-        self.assertEqual(json.loads(manager.PREFERENCES.read_text())['version'], 1)
+        self.assertEqual(json.loads(manager.PREFERENCES.read_text())['version'], 2)
 
     def test_atomic_replace_keeps_old_file_on_write_failure(self):
         target = self.root / 'atomic.txt'
@@ -122,20 +125,133 @@ class WallpaperManagerTest(unittest.TestCase):
         manager.write_json(manager.STATE, old)
         manager.atomic_write(manager.GENERATED, b'ancien')
         with mock.patch.object(manager, 'command') as command, \
-             mock.patch.object(manager, 'swaybg_matches', return_value=True):
+             mock.patch.object(manager, 'swaybg_matches', return_value=True), \
+             mock.patch.object(manager, 'publish_live'):
             result = manager.apply(str(self.image))
         self.assertEqual(result['revision'], 9)
         state = manager.read_json(manager.STATE)
         self.assertEqual(state['effectiveFlavor'], 'mocha')
         self.assertEqual(state['effectiveAccent'], 'lavender')
-        self.assertEqual(state['version'], 2)
+        self.assertEqual(state['version'], 3)
         self.assertIn(b'set $wallpaper ', manager.GENERATED.read_bytes())
         self.assertEqual(command.call_count, 2)
+        newer = self.root / 'autre.png'
+        Image.new('RGB', (32, 32), 'black').save(newer)
         with mock.patch.object(manager, 'command', side_effect=[RuntimeError('validate'), None]):
             with self.assertRaises(RuntimeError):
-                manager.apply(str(self.image))
+                manager.apply(str(newer))
         self.assertEqual(manager.read_json(manager.STATE), state)
         self.assertIn(b'set $wallpaper ', manager.GENERATED.read_bytes())
+
+    def test_manual_wallpaper_does_not_change_theme(self):
+        manager.write_json(manager.STATE, {'version': 3, 'effectiveFlavor': 'mocha',
+            'effectiveWallpaper': str(self.image), 'wallpaperMtime': 0, 'revision': 3,
+            'themeMode': 'manual', 'manualFlavor': 'mocha'})
+        bright = self.root / 'clair.png'
+        Image.new('RGB', (48, 48), 'white').save(bright)
+        with mock.patch.object(manager, 'command'), mock.patch.object(manager, 'publish_live'), \
+                mock.patch.object(manager, 'swaybg_matches', return_value=True):
+            result = manager.apply(str(bright))
+        self.assertEqual(result['effectiveFlavor'], 'mocha')
+        self.assertFalse(manager.GENERATED_THEME.exists())
+        self.assertEqual(result['revision'], 4)
+
+    def test_auto_activation_and_manual_restoration(self):
+        manager.write_json(manager.STATE, {'version': 3, 'effectiveFlavor': 'mocha',
+            'effectiveWallpaper': str(self.image), 'revision': 3,
+            'themeMode': 'manual', 'manualFlavor': 'mocha'})
+        with mock.patch.object(manager, 'command'), mock.patch.object(manager, 'publish_live'):
+            automatic = manager.set_theme_mode('wallpaper')
+            self.assertEqual(automatic['manualFlavor'], 'mocha')
+            self.assertEqual(automatic['effectiveFlavor'], 'mocha')
+            restored = manager.set_theme_mode('manual')
+        self.assertEqual(restored['effectiveFlavor'], 'mocha')
+        self.assertEqual(restored['manualFlavor'], 'mocha')
+        self.assertEqual(restored['revision'], 5)
+
+    def test_auto_wallpaper_and_rollback(self):
+        manager.write_json(manager.STATE, {'version': 3, 'effectiveFlavor': 'mocha',
+            'effectiveWallpaper': str(self.image), 'revision': 5,
+            'themeMode': 'wallpaper', 'manualFlavor': 'mocha'})
+        bright = self.root / 'clair.png'
+        Image.new('RGB', (48, 48), 'white').save(bright)
+        with mock.patch.object(manager, 'command'), mock.patch.object(manager, 'publish_live'), \
+                mock.patch.object(manager, 'swaybg_matches', return_value=True):
+            result = manager.apply(str(bright))
+        self.assertEqual(result['effectiveFlavor'], 'latte')
+        self.assertFalse(result['effectiveDark'])
+        previous_theme = manager.GENERATED_THEME.read_bytes()
+        previous_wallpaper = manager.GENERATED.read_bytes()
+        previous_state = manager.STATE.read_bytes()
+        dark = self.root / 'sombre.png'
+        Image.new('RGB', (48, 48), 'black').save(dark)
+        with mock.patch.object(manager, 'command', side_effect=[None, RuntimeError('reload'), None]):
+            with self.assertRaises(RuntimeError):
+                manager.apply(str(dark))
+        self.assertEqual(manager.GENERATED_THEME.read_bytes(), previous_theme)
+        self.assertEqual(manager.GENERATED.read_bytes(), previous_wallpaper)
+        self.assertEqual(manager.STATE.read_bytes(), previous_state)
+
+    def test_schema_two_migration_keeps_previous_fields(self):
+        legacy = {'version': 2, 'effectiveFlavor': 'macchiato',
+                  'effectiveAccent': 'lavender', 'effectiveDark': True,
+                  'effectiveHighContrast': False, 'effectiveMode': 'normal',
+                  'effectiveWallpaper': str(self.image), 'revision': 47,
+                  'customFutureField': 'conservé'}
+        manager.write_json(manager.STATE, legacy)
+        manager.write_json(manager.PREFERENCES, {'version': 1,
+            'wallpaperDirectory': str(self.root), 'wallpaperMode': 'fill'})
+        with mock.patch.object(manager, 'command') as command:
+            result = manager.reconcile_state()
+        self.assertEqual(result['version'], 3)
+        self.assertEqual(result['revision'], 47)
+        self.assertEqual(result['customFutureField'], 'conservé')
+        self.assertEqual(result['effectiveFlavor'], 'macchiato')
+        self.assertEqual(result['themeMode'], 'manual')
+        self.assertEqual(result['manualFlavor'], 'macchiato')
+        self.assertEqual(result['wallpaperDirectory'], str(self.root))
+        self.assertEqual(command.call_count, 2)
+
+    def test_crash_like_reconciliation_uses_effective_state(self):
+        manager.write_json(manager.STATE, {'version': 3, 'effectiveFlavor': 'mocha',
+            'effectiveWallpaper': str(self.image), 'revision': 6,
+            'themeMode': 'manual', 'manualFlavor': 'mocha'})
+        manager.write_json(manager.PREFERENCES, {'version': 2,
+            'themeMode': 'wallpaper', 'manualFlavor': 'latte',
+            'wallpaperDirectory': str(self.root)})
+        manager.atomic_write(manager.GENERATED_THEME, b'interrompu')
+        manager.atomic_write(manager.GENERATED, b'interrompu')
+        with mock.patch.object(manager, 'command') as command:
+            result = manager.reconcile_state()
+        self.assertEqual(result['revision'], 6)
+        self.assertEqual(result['themeMode'], 'manual')
+        self.assertEqual(result['manualFlavor'], 'mocha')
+        self.assertIn(b'set $base ', manager.GENERATED_THEME.read_bytes())
+        self.assertIn(b'set $wallpaper ', manager.GENERATED.read_bytes())
+        self.assertEqual(command.call_count, 2)
+
+    def test_auto_analysis_failure_does_not_change_files(self):
+        old = {'version': 3, 'effectiveFlavor': 'mocha',
+               'effectiveWallpaper': str(self.image), 'revision': 6,
+               'themeMode': 'manual', 'manualFlavor': 'mocha'}
+        manager.write_json(manager.STATE, old)
+        with mock.patch.object(manager, 'analyze_wallpaper', side_effect=ValueError('décodeur')):
+            with self.assertRaisesRegex(ValueError, 'Analyse Auto Theme'):
+                manager.set_theme_mode('wallpaper')
+        self.assertEqual(manager.read_json(manager.STATE), old)
+        self.assertFalse(manager.GENERATED_THEME.exists())
+
+    def test_auto_reconcile_restores_missing_analysis_without_revision(self):
+        meta = manager.validate_image(self.image)
+        manager.write_json(manager.STATE, {'version': 3, 'effectiveFlavor': 'mocha',
+            'effectiveWallpaper': str(self.image), 'wallpaperMtime': meta['mtime'],
+            'revision': 12, 'themeMode': 'wallpaper', 'manualFlavor': 'latte'})
+        with mock.patch.object(manager, 'command'):
+            result = manager.reconcile_state()
+        self.assertEqual(result['revision'], 12)
+        self.assertEqual(result['effectiveFlavor'], 'mocha')
+        self.assertEqual(result['manualFlavor'], 'latte')
+        self.assertEqual(result['wallpaperAnalysis']['algorithmVersion'], 1)
 
 
 if __name__ == '__main__':

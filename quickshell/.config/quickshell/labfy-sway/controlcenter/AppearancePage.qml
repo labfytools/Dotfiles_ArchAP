@@ -6,6 +6,8 @@ Item {
     id: page
     signal backRequested()
     signal wallpaperRequested()
+    signal themeRequested()
+    readonly property var flavorNames: ({ latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" })
 
     Column {
         anchors.fill: parent
@@ -23,17 +25,24 @@ Item {
                 anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter
                 spacing: 4
                 Text { text: "Fond d'écran"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
-                Text { text: "Galerie locale et choix explicite"; color: Theme.secondaryForeground; font.pixelSize: 11 }
+                Text { text: AppearanceController.effectiveWallpaper.split("/").pop(); color: Theme.secondaryForeground; font.pixelSize: 11; width: 290; elide: Text.ElideMiddle }
             }
             MouseArea { id: pointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.wallpaperRequested() }
         }
         Rectangle {
-            width: parent.width; height: 58; radius: 4; color: Theme.buttonBackground
-            Text {
-                anchors.left: parent.left; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter
-                text: "Thème  •  " + AppearanceController.effectiveFlavor + " / " + AppearanceController.effectiveAccent
-                color: Theme.foreground; font.pixelSize: 12
+            width: parent.width; height: 72; radius: 4
+            color: themePointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+            NerdIcon { anchors.left: parent.left; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "󰏘"; color: Theme.accent; font.pixelSize: 22 }
+            Column {
+                anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                Text { text: "Thème"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
+                Text {
+                    text: (page.flavorNames[AppearanceController.effectiveFlavor] || "Mocha")
+                          + " · " + (AppearanceController.themeMode === "wallpaper" ? "Selon le fond" : "Manuel")
+                    color: Theme.secondaryForeground; font.pixelSize: 11
+                }
             }
+            MouseArea { id: themePointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.themeRequested() }
         }
     }
 }

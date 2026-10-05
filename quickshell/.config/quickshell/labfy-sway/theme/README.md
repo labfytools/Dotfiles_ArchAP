@@ -9,12 +9,13 @@ RGB/HSL/OKLCH de l'amont.
 
 ```text
 catppuccin.json (versionné)
-  → AppearanceController.qml (API live, sans persistance)
+  → AppearanceController.qml (API live, état publié par le backend)
   → Theme.qml (singleton effectif, rôles UI)
   → composants QuickShell
 
 catppuccin.json (versionné)
-  → generate-appearance.py (versionné)
+  → generate-appearance.py (rendu versionné)
+  → wallpaper-manager.py (transaction 17D)
   → generated/theme.conf (runtime, ignoré par Git)
   → Sway/SwayFX
 ```
@@ -44,23 +45,26 @@ Lavender. Les séries CPU/RAM du System Monitor restent intentionnellement
 Mauve. Ce choix rend les contrôles historiques Mauve légèrement plus bleus
 qu'avant. Les trois anciens Lavender restent l'accent principal.
 
-L'API de thème est `AppearanceController.applyTheme(flavor, accent)` ; l'IPC
+L'API de thème est `AppearanceController.setManualFlavor(flavor)` et
+`AppearanceController.setThemeMode(mode)` ; l'IPC
 `qs -c labfy-sway ipc call appearance effectiveState` expose l'état complet
-et `qs -c labfy-sway ipc call appearance setTheme mocha lavender` change
-QuickShell en direct. La commande unifiée depuis le dépôt est :
+et `qs -c labfy-sway ipc call appearance setTheme mocha lavender` déclenche
+la même application persistante en mode Manuel. La commande unifiée depuis
+le dépôt est :
 
 ```sh
 python bin/.local/bin/generate-appearance.py latte --accent lavender --apply
 ```
 
-Elle écrit atomiquement le fichier runtime Sway, valide la configuration,
-recharge Sway, persiste l'état effectif, puis met à jour QuickShell. En cas
-d'échec elle restaure la dernière génération valide, l'état persistant et
-l'état QuickShell précédent. Aucune décision automatique de profil n'existe
-encore. Le wallpaper 17C est séparé dans `generated/wallpaper.conf` ; voir
+`--apply` délègue au gestionnaire d'apparence 17D et exige Manuel/Lavender ;
+le rendu hors ligne reste disponible pour les autres accents. Ce backend
+prépare les fichiers, valide Sway, recharge, persiste l'état effectif, puis
+publie dans QuickShell. En cas d'échec il compense l'application. Le wallpaper
+reste séparé dans `generated/wallpaper.conf` ; voir
 [WALLPAPER.md](../controlcenter/WALLPAPER.md). `generate-appearance.py`
-préserve les champs wallpaper du schéma effectif 2 lors d'un changement de
-thème.
+préserve les champs wallpaper du schéma effectif 3 lors d'un changement de
+thème. L'algorithme Auto, ses seuils et la migration sont documentés dans
+[AUTO_THEME.md](AUTO_THEME.md).
 Le repli versionné `sway/theme-default.conf` fournit Mocha même avant toute
 génération. Ses quelques variables sont un artefact dérivé, pas une palette
 complète indépendante. `sway/style` inclut le repli, puis un glob de fichier

@@ -24,7 +24,8 @@ Singleton {
     function initialState() {
         try {
             const value = JSON.parse(stateFile.text());
-            if ((value.version === 1 || value.version === 2) && flavors.includes(value.effectiveFlavor)
+            if ((value.version === 1 || value.version === 2 || value.version === 3)
+                    && flavors.includes(value.effectiveFlavor)
                     && accents.includes(value.effectiveAccent)
                     && value.effectiveMode === "normal") return value;
         } catch (_) {}
@@ -43,52 +44,123 @@ Singleton {
     property string effectiveWallpaper: initial.effectiveWallpaper || defaultWallpaper
     property string wallpaperMode: "fill"
     property string wallpaperDirectory: ""
+    property string themeMode: initial.themeMode === "wallpaper" ? "wallpaper" : "manual"
+    property string manualFlavor: flavors.includes(initial.manualFlavor) ? initial.manualFlavor : effectiveFlavor
+    property var wallpaperAnalysis: initial.wallpaperAnalysis || null
+    property bool appearanceBusy: false
+    property string appearanceError: ""
     property bool wallpaperApplying: false
     property string wallpaperError: ""
+    property string operationKind: ""
     signal wallpaperApplied()
+    signal appearanceApplied()
+
+    // CONTRACT: effective.json est le dernier état appliqué valide. Le
+    // backend réconcilie ses deux fichiers générés au démarrage, puis le QML
+    // adopte exactement la révision persistée sans décision locale de thème.
+    Process {
+        id: startupReader
+        command: ["python", appearance.wallpaperBackend, "status"]
+        running: true
+        stdout: StdioCollector { id: startupOutput; waitForEnd: true }
+        stderr: StdioCollector { id: startupError; waitForEnd: true }
+        onExited: (code, status) => {
+            if (code !== 0 || status !== 0) {
+                appearance.appearanceError = startupError.text.trim() || "Réconciliation Appearance impossible";
+                return;
+            }
+            try { appearance.acceptSnapshot(JSON.parse(startupOutput.text)); }
+            catch (_) { appearance.appearanceError = "État Appearance invalide"; }
+        }
+    }
+    function acceptSnapshot(value) {
+        if (!value || !flavors.includes(value.effectiveFlavor)
+                || value.effectiveAccent !== "lavender"
+                || !Number.isSafeInteger(value.revision) || value.revision < 0
+                || (value.themeMode !== "manual" && value.themeMode !== "wallpaper")
+                || !flavors.includes(value.manualFlavor)
+                || !value.effectiveWallpaper) return false;
+        // Un status démarré avant une application ne peut pas revenir en
+        // arrière après la publication IPC de la révision plus récente.
+        if (value.revision < revision) return false;
+        effectiveFlavor = value.effectiveFlavor;
+        effectiveAccent = value.effectiveAccent;
+        effectiveMode = "normal";
+        effectiveHighContrast = false;
+        effectiveWallpaper = value.effectiveWallpaper;
+        wallpaperMode = "fill";
+        themeMode = value.themeMode;
+        manualFlavor = value.manualFlavor;
+        wallpaperDirectory = value.wallpaperDirectory || wallpaperDirectory;
+        wallpaperAnalysis = value.wallpaperAnalysis || value.analysis || null;
+        revision = value.revision;
+        appearanceError = "";
+        wallpaperError = "";
+        return true;
+    }
+
+    function acceptPublished(payload) {
+        try {
+            const value = JSON.parse(payload);
+            return acceptSnapshot(Object.assign({}, value.state, value.preferences));
+        } catch (_) { return false; }
+    }
 
     Process {
         id: wallpaperWriter
         stdout: StdioCollector { id: wallpaperOutput; waitForEnd: true }
         stderr: StdioCollector { id: wallpaperErrors; waitForEnd: true }
         onExited: (code, status) => {
+            appearance.appearanceBusy = false;
             appearance.wallpaperApplying = false;
             if (code !== 0 || status !== 0) {
-                appearance.wallpaperError = wallpaperErrors.text.trim() || "Application impossible";
+                const message = wallpaperErrors.text.trim() || "Application impossible";
+                if (message.includes("Analyse Auto Theme")) appearance.appearanceError = message;
+                else appearance.wallpaperError = message;
                 return;
             }
             try {
                 const state = JSON.parse(wallpaperOutput.text);
-                if (!state.effectiveWallpaper || !Number.isSafeInteger(state.revision)) throw new Error("État invalide");
-                appearance.effectiveWallpaper = state.effectiveWallpaper;
-                appearance.wallpaperMode = state.wallpaperMode;
-                appearance.revision = state.revision;
-                appearance.wallpaperApplied();
-            } catch (_) { appearance.wallpaperError = "Réponse wallpaper invalide"; }
+                if (!appearance.acceptSnapshot(state)) throw new Error("État invalide");
+                if (appearance.operationKind === "wallpaper") appearance.wallpaperApplied();
+                appearance.appearanceApplied();
+            } catch (_) { appearance.appearanceError = "Réponse Appearance invalide"; }
         }
     }
 
-    function applyWallpaper(path) {
-        if (wallpaperApplying || !path || path === effectiveWallpaper) return false;
+    function runOperation(args, applyingWallpaper) {
+        if (appearanceBusy) return false;
         wallpaperError = "";
-        wallpaperApplying = true;
-        wallpaperWriter.command = ["python", wallpaperBackend, "apply", path];
+        appearanceError = "";
+        appearanceBusy = true;
+        wallpaperApplying = applyingWallpaper;
+        operationKind = applyingWallpaper ? "wallpaper" : "theme";
+        wallpaperWriter.command = ["python", wallpaperBackend].concat(args);
         wallpaperWriter.running = true;
         return true;
     }
 
-    // INVARIANT: une paire refusée ne change aucun champ ni la révision.
-    // La révision avance une seule fois après tout changement effectif.
+    function applyWallpaper(path) {
+        if (!path || path === effectiveWallpaper) return false;
+        return runOperation(["apply", path], true);
+    }
+    function setThemeMode(mode) {
+        if ((mode !== "manual" && mode !== "wallpaper") || mode === themeMode) return false;
+        return runOperation(["set-theme-mode", mode], false);
+    }
+    function setManualFlavor(flavor) {
+        if (!flavors.includes(flavor) || themeMode !== "manual"
+                || flavor === manualFlavor && flavor === effectiveFlavor) return false;
+        return runOperation(["set-manual-flavor", flavor], false);
+    }
+
+    // CONTRACT: l'ancien point d'entrée IPC délègue au backend persistant ;
+    // il ne doit jamais créer un état QuickShell isolé de Sway/effective.json.
     function applyTheme(flavor, accent) {
-        if (!flavors.includes(flavor) || !accents.includes(accent)) return false;
-        if (effectiveFlavor === flavor && effectiveAccent === accent
-                && effectiveMode === "normal" && !effectiveHighContrast) return true;
-        effectiveFlavor = flavor;
-        effectiveAccent = accent;
-        effectiveMode = "normal";
-        effectiveHighContrast = false;
-        revision++;
-        return true;
+        if (!flavors.includes(flavor) || accent !== "lavender"
+                || themeMode !== "manual") return false;
+        if (effectiveFlavor === flavor && manualFlavor === flavor) return true;
+        return setManualFlavor(flavor);
     }
 
     function effectiveState() {
@@ -97,6 +169,7 @@ Singleton {
             effectiveHighContrast: effectiveHighContrast,
             effectiveAccent: effectiveAccent, effectiveWallpaper: effectiveWallpaper,
             wallpaperMode: wallpaperMode, wallpaperDirectory: wallpaperDirectory,
+            themeMode: themeMode, manualFlavor: manualFlavor,
             revision: revision });
     }
 }

@@ -50,3 +50,9 @@ interrompre le rendu déjà présent. `reconcile` restaure le repli versionné a
 prochain appel explicite ; un nouvel `apply` valide peut aussi la remplacer.
 Le thème, Night Light et Sun Mode ne sont jamais calculés depuis l'image en
 17C. L'état final validé de ce lot reste Mocha/Lavender et le fond Sway bleu.
+
+Depuis 17D, l'application en mode `themeMode=wallpaper` calcule le flavor
+avant les écritures et publie thème et fond dans une transaction compensable.
+Le schéma effectif est 3 ; l'accent reste Lavender. Voir
+[`AUTO_THEME.md`](../theme/AUTO_THEME.md) pour l'algorithme et le comportement
+de reprise. Le mode Manuel conserve l'isolation du fond et du thème de 17C.

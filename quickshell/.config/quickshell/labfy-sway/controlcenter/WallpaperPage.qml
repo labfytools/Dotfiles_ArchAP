@@ -18,6 +18,7 @@ Item {
     property bool scanning: false
     property int nextPage: 0
     readonly property string backend: AppearanceController.wallpaperBackend
+    readonly property var flavorNames: ({ latte: "Latte", frappe: "Frappé", macchiato: "Macchiato", mocha: "Mocha" })
     readonly property var previewMeta: selected || currentMeta
     onSelectedChanged: {
         selectionValid = false;
@@ -155,6 +156,11 @@ Item {
             Text { text: "Fond d'écran"; height: 30; verticalAlignment: Text.AlignVCenter; color: Theme.foreground; font.pixelSize: 16; font.bold: true }
         }
         Text { text: page.selected ? "APERÇU DE LA SÉLECTION" : "APERÇU ACTUEL"; color: Theme.accentForeground; font.bold: true; font.pixelSize: 11 }
+        Text {
+            visible: AppearanceController.themeMode === "wallpaper"
+            text: "Thème selon le fond : " + page.flavorNames[AppearanceController.effectiveFlavor]
+            color: Theme.secondaryForeground; font.pixelSize: 10
+        }
         Rectangle {
             width: parent.width; height: 110; radius: 4; color: Theme.buttonBackground
             Image {
@@ -218,15 +224,15 @@ Item {
             ActionButton { label: "Suivant"; enabled: page.items.length > 0; onClicked: page.move(1) }
             ActionButton {
                 label: AppearanceController.wallpaperApplying ? "Application…" : "Appliquer"
-                enabled: !!page.selected && page.selectionValid && !AppearanceController.wallpaperApplying
+                enabled: !!page.selected && page.selectionValid && !AppearanceController.appearanceBusy
                     && page.selected.path !== AppearanceController.effectiveWallpaper
                 onClicked: { page.feedback = ""; AppearanceController.applyWallpaper(page.selected.path); }
             }
         }
         Text {
-            width: parent.width; visible: !!page.feedback || !!AppearanceController.wallpaperError
-            text: AppearanceController.wallpaperError || page.feedback
-            color: AppearanceController.wallpaperError ? Theme.warningForeground : Theme.successForeground
+            width: parent.width; visible: !!page.feedback || !!AppearanceController.wallpaperError || !!AppearanceController.appearanceError
+            text: AppearanceController.wallpaperError || AppearanceController.appearanceError || page.feedback
+            color: AppearanceController.wallpaperError || AppearanceController.appearanceError ? Theme.warningForeground : Theme.successForeground
             wrapMode: Text.Wrap; font.pixelSize: 11
         }
     }

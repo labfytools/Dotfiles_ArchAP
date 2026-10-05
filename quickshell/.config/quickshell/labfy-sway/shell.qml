@@ -18,6 +18,9 @@ ShellRoot {
         function effectiveState(): string {
             return AppearanceController.effectiveState();
         }
+        function publishState(payload: string): bool {
+            return AppearanceController.acceptPublished(payload);
+        }
     }
     // Une barre par écran, y compris si les sorties changent pendant la session.
     // CONTRACT: un seul serveur D-Bus pour toutes les sorties.
