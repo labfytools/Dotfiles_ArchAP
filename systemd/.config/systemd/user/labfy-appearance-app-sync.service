@@ -1,0 +1,12 @@
+[Unit]
+Description=Synchroniser les applications avec l'état Appearance effectif
+# WHY: plusieurs révisions légitimes peuvent arriver en une seconde ; le lock
+# applicatif sérialise les exécutions, la limite systemd ne doit pas tuer le path.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/appearance-app-sync.py reconcile
+
+[Install]
+WantedBy=wayland-session@sway.desktop.target

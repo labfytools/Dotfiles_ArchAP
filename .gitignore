@@ -10,6 +10,11 @@ sway/.config/sway/generated/theme.conf.tmp
 sway/.config/sway/generated/wallpaper.conf
 sway/.config/sway/generated/wallpaper.conf.tmp
 
+# 17G: palettes applicatives recréées depuis l'état Appearance effectif.
+kitty/.config/kitty/generated-appearance.conf
+qt5ct/.config/qt5ct/colors/labfy-appearance.conf
+qt6ct/.config/qt6ct/colors/labfy-appearance.conf
+
 # Local editor/application backups
 *.bak
 *.old

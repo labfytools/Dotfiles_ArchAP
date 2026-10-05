@@ -115,4 +115,5 @@ end, {
     desc = "Docker terminal",
 })
 
-vim.cmd.colorscheme "catppuccin-mocha"
+-- CONTRACT: démarrage et instances ouvertes consomment le même état effectif.
+require("config.appearance").start()

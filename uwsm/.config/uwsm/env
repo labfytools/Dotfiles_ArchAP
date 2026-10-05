@@ -1,0 +1,3 @@
+# CONTRACT: UWSM transmet ces variables au compositeur et aux applications
+# lancées dans la session au prochain login.
+export QT_QPA_PLATFORMTHEME=qt5ct

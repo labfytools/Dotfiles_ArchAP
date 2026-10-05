@@ -1,0 +1,10 @@
+[Unit]
+Description=Observer les changements Appearance effectifs
+StartLimitIntervalSec=0
+
+[Path]
+PathChanged=%h/.local/state/labfy-appearance/effective.json
+Unit=labfy-appearance-app-sync.service
+
+[Install]
+WantedBy=wayland-session@sway.desktop.target
