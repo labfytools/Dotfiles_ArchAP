@@ -1,4 +1,4 @@
-# Restore Plan et Executor V1 — STEP19A/STEP19B
+# Restore Plan et Executor V1 — STEP19A/STEP19B/STEP19C
 
 ## Statut et architecture
 
@@ -451,3 +451,214 @@ initial lorsqu'il existe encore.
 Les fenêtres non marquées `TEST_ONLY` sont comparées avant/après sur
 `con_id`, workspace, floating et fullscreen. L'arbre complet, le scratchpad
 avancé, le Spatial Canvas et toute UI QML restent hors STEP19B.
+
+## Tree Restore Compiler et scratchpad — STEP19C
+
+### Audit local Sway 1.12 / SwayFX 0.6
+
+L'implémentation STEP19C est fondée sur la documentation réellement installée
+et sur des expériences `get_tree` avec des Kitty `TEST_ONLY`, pas sur une
+supposition i3. La version validée est :
+
+```text
+swayfx version 0.6 (based on sway 1.12.0)
+swaymsg version 0.6 (based on sway 1.12.0)
+```
+
+`sway(5)` confirme localement :
+
+```text
+layout default|splith|splitv|stacking|tabbed
+split vertical|horizontal|none|toggle
+focus parent|child
+move left|right|up|down
+move container to mark <mark>
+mark --add|--replace [--toggle] <identifier>
+unmark [<identifier>]
+resize ... px|ppt
+move container to scratchpad
+scratchpad show
+```
+
+L'IPC expose le layout `stacked`, tandis que la commande correspondante est
+`layout stacking`. Cette conversion est une table locale fermée. `scratchpad
+show` sans critère est cyclique et n'est jamais utilisé ; STEP19C reconstruit
+toujours `[con_id=<id>] scratchpad show`.
+
+### Matrice de capacités
+
+| Élément | Niveau STEP19C | Contrat |
+|---|---|---|
+| Racine `splith` | `supported-subset` | Container racine homogène, fenêtres toutes matchées |
+| Racine `splitv` | `supported-subset` | Même contrat |
+| Racine `tabbed` | `supported-subset` | Même contrat, layout final relu |
+| Racine `stacked` | `supported-subset` | Commande locale `stacking`, layout IPC `stacked` |
+| Ordre des enfants | `supported-subset` | Insertion ciblée après une fenêtre de référence |
+| `H[A,V[B,C]]` et symétrique | `supported-subset` | Un seul container imbriqué, deux feuilles, splits orthogonaux |
+| Arbre imbriqué arbitraire | `unsupported` | Bloqué avant mutation, jamais aplati silencieusement |
+| Proportions `percent` | `unsupported` | Observées mais aucune promesse de restitution V1 |
+| Branche floating | `supported-subset` | Préservée, jamais compilée comme enfant tiling |
+| Scratchpad caché | `supported-subset` | `move scratchpad` ciblé + relecture V1 |
+| Scratchpad visible | `supported-subset` | Workspace cible numérique déjà focalisé + show ciblé |
+| Spatial Canvas | `unsupported/out-of-scope` | Aucun comportement `spatial-canvas-v1` |
+
+Cette matrice ne signifie pas « arbitrary Sway tree restore ». Un changement
+de style entre des fenêtres directement sous le workspace et un container
+racine explicite, plusieurs containers imbriqués, un nesting en tête, des
+splits imbriqués redondants ou un arbre live déjà imbriqué hors forme cible
+sont refusés.
+
+### Architecture et représentation normalisée
+
+```text
+Session Snapshot V1 target
+        +
+Session Snapshot V1 live frais
+        +
+matching source_window → runtime con_id
+        ↓
+session_tree_restore.py (pur)
+        ↓
+Tree Restore compilation
+        ↓
+operations[] typées
+        ↓
+session_executor.py (effets externes)
+```
+
+`TreeNode` ne conserve que `kind`, identité de fenêtre sauvegardée, layout,
+percent observé et enfants. Il ne prend jamais `container_id`, `con_id` ou PID
+sauvegardé comme identité persistante. Le lien live est reconstruit uniquement
+depuis le matching frais du planner et le `con_id` observé dans cette session.
+
+Le compilateur valide d'abord toutes les références V1, l'unicité des feuilles,
+la branche tiling/floating, les layouts et la forme. Il compare ensuite les
+arbres normalisés. Un arbre identique produit zéro opération. Pour le
+sous-ensemble supporté, il produit seulement :
+
+```text
+set-container-layout
+set-split-orientation
+move-relative(relation=after)
+```
+
+Les opérations scratchpad sont portées par les actions du plan :
+
+```text
+move-to-scratchpad
+show-scratchpad-window
+```
+
+Elles ne sont jamais des chaînes Sway provenant du snapshot. Les enums sont
+validés puis traduits par l'exécuteur en argv directs, sans shell.
+
+### Ordre et marks temporaires
+
+`move left/right` n'est pas une primitive d'ordre universelle : sur la version
+locale, elle peut extraire une vue d'un container `tabbed` ou `stacked`.
+STEP19C utilise donc un mark temporaire uniquement pour `move-relative` :
+
+```text
+[reference] mark --add __labfy_restore_<token_hex_aléatoire>
+[source]    move container to mark __labfy_restore_<token_hex_aléatoire>
+[reference] unmark __labfy_restore_<token_hex_aléatoire>
+```
+
+Le préfixe est réservé, le suffixe contient 64 bits aléatoires encodés en hex,
+et jusqu'à huit candidats sont comparés à tous les marks live avant création.
+Le mark est ajouté uniquement à une fenêtre cible déjà revalidée, n'utilise
+jamais `--replace`, et est supprimé dans un `finally`. Son apparition et sa
+disparition sont relues. Une fuite produit `RESTORE_TEMPORARY_MARK_LEAK`.
+
+L'ordre cible est construit en gardant le premier enfant comme ancre, puis en
+insérant chaque enfant suivant après son prédécesseur cible. Cette règle est
+déterministe et fonctionne indépendamment de la direction géométrique du
+layout.
+
+### Nesting supporté
+
+Le nesting V1 supporté contient exactement un container interne de deux
+fenêtres, précédé d'au moins une feuille, avec orientations orthogonales :
+
+```text
+H[A,V[B,C]]
+V[A,H[B,C]]
+```
+
+Le compilateur remet d'abord l'ordre plat, applique le layout racine, crée le
+split interne sur B, puis insère C après B via le mark temporaire. `get_tree`
+doit ensuite être exactement égal à la topologie cible normalisée. Un arbre
+plus profond ou une transition depuis un arbre live imbriqué non reconnu est
+`unsupported-live-nested-tree` et bloque le plan entier.
+
+### Proportions
+
+Sway 1.12 expose `resize ... ppt`, mais les ajustements sont relatifs aux
+frères, arrondis par la géométrie disponible et dépendants de l'ordre des
+redimensionnements. Les expériences STEP19C ne justifient donc pas une
+restitution générale déterministe des `percent`. Le compilateur conserve les
+valeurs pour le diagnostic mais publie :
+
+```text
+percent_capability = unsupported
+```
+
+Aucune commande `resize` n'est émise et le rapport ne prétend pas restaurer
+les proportions exactes ou approchées.
+
+### Preflight global et dérive
+
+Avant la première mutation, le capability gate vérifie toutes les actions,
+les identités de lancement, les workspaces/outputs, les modes fullscreen, les
+cibles scratchpad et la compilation complète d'arbre. Pour chaque workspace
+compilé :
+
+```text
+toutes les fenêtres target sont matchées
+aucune fenêtre tiling live inattendue n'existe
+aucune fenêtre floating ne devient tiling
+layout et forme sont dans le sous-ensemble
+toutes les opérations sont typées et validées
+aucune action manual-required ne subsiste
+```
+
+Une seule erreur rend le plan entier `RESTORE_BLOCKED_UNSUPPORTED_ACTION`
+avant lancement ou mutation.
+
+Entre deux mutations d'arbre, l'exécuteur recalcule une empreinte contenant le
+layout du workspace, les parents, les layouts et l'ordre des fenêtres ciblées.
+Elle doit être égale à la postcondition de l'opération précédente. Une action
+utilisateur concurrente produit `RESTORE_TREE_DRIFTED` et la commande suivante
+n'est pas lancée. Après chaque opération, une nouvelle empreinte doit devenir
+visible ; enfin le compilateur est relancé sur le live final et doit produire
+zéro opération avec une topologie target/live égale.
+
+### Scratchpad ciblé et isolation utilisateur
+
+Le snapshot V1 distingue :
+
+```text
+member=true, visibility=hidden, workspace=null, branch=scratchpad
+member=true, visibility=visible, workspace=<numérique>, branch=floating
+```
+
+Pour une cible cachée, STEP19C exécute `move scratchpad` si la fenêtre est
+hors scratchpad ou visible, puis exige la représentation cachée ci-dessus.
+Pour une cible visible, une fenêtre hors scratchpad est d'abord admise, puis
+`[con_id=<id>] scratchpad show` est envoyé uniquement à cette fenêtre. Le
+workspace numérique cible doit déjà être focalisé au preflight ; sinon le
+placement de la vue visible serait ambigu et tout le plan est bloqué.
+
+Les autres fenêtres scratchpad, y compris celles de l'utilisateur, ne sont ni
+cyclées ni marquées. Une cible disparue, une identité changée ou un matching
+multiple ambigu arrête l'exécution. Cette stratégie reste sûre même avec
+plusieurs membres scratchpad, car aucune commande `scratchpad show` globale
+n'existe dans l'exécuteur.
+
+### Limite non transactionnelle
+
+Les commandes Sway restent non transactionnelles. STEP19C maximise la sûreté
+par preflight intégral, revalidation avant chaque commande, postcondition après
+chaque mutation, marks nettoyés et arrêt au premier écart. Il ne promet ni
+rollback global, ni restauration d'un arbre arbitraire, ni reconstruction des
+proportions, ni UI. `spatial-canvas-v1` demeure entièrement hors périmètre.

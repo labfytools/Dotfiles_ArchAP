@@ -1,4 +1,4 @@
-"""STEP19B : exécuteur contrôlé, tous les effets externes sont simulés."""
+"""STEP19B/19C : exécuteur contrôlé, tous les effets externes sont simulés."""
 
 from __future__ import annotations
 
@@ -49,14 +49,25 @@ def kitty_saved(**kwargs):
 
 
 class FakeWorld:
-    def __init__(self, windows=(), *, launch_window=None):
+    def __init__(self, windows=(), *, launch_window=None, focused_workspace=None):
         self.windows = [copy.deepcopy(item) for item in windows]
         self.launch_window = copy.deepcopy(launch_window)
+        self.focused_workspace = focused_workspace
         self.commands = []
 
     def collect(self):
         focused = next((item["window_id"] for item in self.windows if item.get("focused")), None)
-        return session(self.windows, focused=focused)
+        value = session(self.windows, focused=focused)
+        if self.focused_workspace is not None:
+            if not any(item.get("name") == self.focused_workspace for item in value["workspaces"]):
+                value["workspaces"].append({
+                    "name": self.focused_workspace,
+                    "output": "eDP-1",
+                    "layout": "splith",
+                    "orientation": "horizontal",
+                })
+            value["focus"]["workspace"] = self.focused_workspace
+        return value
 
     def run(self, argv, timeout):
         self.commands.append(list(argv))
@@ -79,6 +90,14 @@ class FakeWorld:
             target["fullscreen_mode"] = 1
         elif operation == "fullscreen disable":
             target["fullscreen_mode"] = 0
+        elif operation == "move scratchpad":
+            target["scratchpad"] = {"member": True, "visibility": "hidden", "state": "fresh"}
+            target["workspace"] = None
+            target["output"] = None
+        elif operation == "scratchpad show":
+            target["scratchpad"] = {"member": True, "visibility": "visible", "state": "changed"}
+            target["workspace"] = self.focused_workspace or "3"
+            target["output"] = "eDP-1"
         elif operation == "focus":
             for item in self.windows:
                 item["focused"] = item is target
@@ -465,6 +484,112 @@ class SessionExecutorTest(unittest.TestCase):
         serialized = json.dumps(world.commands)
         self.assertNotIn("touch", serialized)
         self.assertNotIn("title", serialized)
+
+    def test_scratchpad_hidden_target_is_targeted_and_confirmed(self):
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace=None, output=None, scratchpad=hidden)
+        live = kitty_saved(workspace="3", con_id=81)
+        world = FakeWorld([live], focused_workspace="3")
+        result, plan = execute(session([saved], persistent=True), world)
+        self.assertEqual(result["status"], "success")
+        self.assertIn("restore-scratchpad-hidden", [item["action"] for item in plan["actions"]])
+        self.assertIn(["swaymsg", "-r", "[con_id=81] move scratchpad"], world.commands)
+
+    def test_scratchpad_visible_target_uses_targeted_show(self):
+        visible = {"member": True, "visibility": "visible", "state": "changed"}
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace="3", scratchpad=visible)
+        live = kitty_saved(workspace=None, output=None, con_id=82, scratchpad=hidden)
+        world = FakeWorld([live], focused_workspace="3")
+        result, plan = execute(session([saved], persistent=True), world)
+        self.assertEqual(result["status"], "success")
+        self.assertIn("restore-scratchpad-visible", [item["action"] for item in plan["actions"]])
+        self.assertEqual(world.commands, [["swaymsg", "-r", "[con_id=82] scratchpad show"]])
+
+    def test_scratchpad_already_hidden_is_noop(self):
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace=None, output=None, scratchpad=hidden)
+        live = kitty_saved(workspace=None, output=None, con_id=83, scratchpad=hidden)
+        world = FakeWorld([live], focused_workspace="3")
+        result, plan = execute(session([saved], persistent=True), world)
+        self.assertEqual(result["status"], "success")
+        self.assertNotIn("restore-scratchpad-hidden", [item["action"] for item in plan["actions"]])
+        self.assertEqual(world.commands, [])
+
+    def test_scratchpad_already_visible_is_noop(self):
+        visible = {"member": True, "visibility": "visible", "state": "changed"}
+        saved = kitty_saved(workspace="3", scratchpad=visible)
+        live = kitty_saved(workspace="3", con_id=84, scratchpad=visible)
+        world = FakeWorld([live], focused_workspace="3")
+        result, plan = execute(session([saved], persistent=True), world)
+        self.assertEqual(result["status"], "success")
+        self.assertNotIn("restore-scratchpad-visible", [item["action"] for item in plan["actions"]])
+        self.assertEqual(world.commands, [])
+
+    def test_unexpected_user_scratchpad_is_never_cycled(self):
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace=None, output=None, scratchpad=hidden)
+        target = kitty_saved(workspace="3", con_id=85)
+        user = window(
+            "w9", "firefox", desktop_entry="firefox.desktop", executable="firefox",
+            workspace=None, output=None, con_id=99, pid=9999, scratchpad=hidden,
+        )
+        world = FakeWorld([target, user], focused_workspace="3")
+        result, _plan = execute(session([saved], persistent=True), world)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(world.commands, [["swaymsg", "-r", "[con_id=85] move scratchpad"]])
+        self.assertEqual(world.windows[1]["scratchpad"], hidden)
+
+    def test_scratchpad_target_disappeared_stops(self):
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace=None, output=None, scratchpad=hidden)
+        live = kitty_saved(workspace="3", con_id=86)
+        world = FakeWorld([live], focused_workspace="3")
+        plan = planner.build_restore_plan(session([saved], persistent=True), world.collect())
+        world.windows.clear()
+        result = executor.execute_fresh_plan(
+            session([saved], persistent=True), plan, collector=world.collect,
+            planner_module=planner, desktop_entries=DESKTOP_ENTRIES,
+            resolve_desktop_entry=snapshot_backend.resolve_desktop_entry, runner=world.run,
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("con_id disparu", result["reason"])
+        self.assertEqual(world.commands, [])
+
+    def test_scratchpad_identity_changed_stops(self):
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace=None, output=None, scratchpad=hidden)
+        live = kitty_saved(workspace="3", con_id=87)
+        world = FakeWorld([live], focused_workspace="3")
+        plan = planner.build_restore_plan(session([saved], persistent=True), world.collect())
+        world.windows[0]["app_id"] = "firefox"
+        world.windows[0]["restore_identity"]["app_id"] = "firefox"
+        world.windows[0]["restore_identity"]["desktop_entry"] = "firefox.desktop"
+        world.windows[0]["executable_basename"] = "firefox"
+        result = executor.execute_fresh_plan(
+            session([saved], persistent=True), plan, collector=world.collect,
+            planner_module=planner, desktop_entries=DESKTOP_ENTRIES,
+            resolve_desktop_entry=snapshot_backend.resolve_desktop_entry, runner=world.run,
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("identité modifiée", result["reason"])
+        self.assertEqual(world.commands, [])
+
+    def test_multiple_scratchpad_identity_is_ambiguous(self):
+        visible = {"member": True, "visibility": "visible", "state": "changed"}
+        hidden = {"member": True, "visibility": "hidden", "state": "fresh"}
+        saved = kitty_saved(workspace="3", scratchpad=visible)
+        one = kitty_saved(workspace=None, output=None, con_id=88, pid=188, scratchpad=hidden)
+        two = kitty_saved(workspace=None, output=None, con_id=89, pid=189, scratchpad=hidden)
+        world = FakeWorld([one, two], focused_workspace="3")
+        plan = planner.build_restore_plan(session([saved], persistent=True), world.collect())
+        with self.assertRaisesRegex(executor.RestoreExecutionError, "ambiguous-runtime-match"):
+            executor.execute_fresh_plan(
+                session([saved], persistent=True), plan, collector=world.collect,
+                planner_module=planner, desktop_entries=DESKTOP_ENTRIES,
+                resolve_desktop_entry=snapshot_backend.resolve_desktop_entry, runner=world.run,
+            )
+        self.assertEqual(world.commands, [])
 
     def test_source_contains_no_shell_execution_primitive(self):
         source = (SESSION_DIR / "session_executor.py").read_text(encoding="utf-8")

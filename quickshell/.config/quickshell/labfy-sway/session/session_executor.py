@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exécuter le sous-ensemble contrôlé STEP19B d'un Restore Plan V1 frais."""
+"""Exécuter le sous-ensemble contrôlé STEP19B/STEP19C d'un plan V1 frais."""
 
 from __future__ import annotations
 
@@ -7,10 +7,12 @@ import contextlib
 import copy
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import stat
 import subprocess
 import time
@@ -31,12 +33,12 @@ SUPPORTED_ACTIONS = {
     "move-to-workspace",
     "restore-floating",
     "restore-fullscreen",
-    "restore-focus",
-}
-UNSUPPORTED_ACTIONS = {
     "restore-tree-position",
     "restore-scratchpad-hidden",
     "restore-scratchpad-visible",
+    "restore-focus",
+}
+UNSUPPORTED_ACTIONS = {
     "manual-required",
 }
 NUMERIC_WORKSPACE = re.compile(r"\A[1-9][0-9]*\Z")
@@ -94,6 +96,20 @@ def _direct_sway_command(con_id: int, operation: str) -> list[str]:
     return ["swaymsg", "-r", f"[con_id={con_id}] {operation}"]
 
 
+def _load_tree_compiler() -> Any:
+    """Charger le compilateur pur voisin sans lui donner d'effet externe."""
+    path = Path(__file__).with_name("session_tree_restore.py")
+    spec = importlib.util.spec_from_file_location("labfy_session_tree_restore", path)
+    if spec is None or spec.loader is None:
+        raise RestoreExecutionError("RESTORE_TREE_COMPILER_UNAVAILABLE", path.name)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, ImportError, SyntaxError) as exc:
+        raise RestoreExecutionError("RESTORE_TREE_COMPILER_UNAVAILABLE", str(exc)) from exc
+    return module
+
+
 def _source_windows(source: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     return {
         str(window.get("window_id")): window
@@ -137,6 +153,7 @@ def _revalidate_runtime(
     *,
     collector: Callable[[], dict[str, Any]],
     planner_module: Any,
+    allow_scratchpad: bool = False,
 ) -> tuple[Mapping[str, Any], dict[str, Any]]:
     """Refuser disparition, recyclage d'id, identité divergente ou workspace inconnu."""
     live = collector()
@@ -145,7 +162,12 @@ def _revalidate_runtime(
         raise RestoreExecutionError("RESTORE_RUNTIME_DIVERGED", f"con_id disparu: {con_id}")
     if not _compatible_match(planner_module, source_window, candidate):
         raise RestoreExecutionError("RESTORE_RUNTIME_DIVERGED", f"identité modifiée pour con_id={con_id}")
-    if not isinstance(candidate.get("workspace"), str) or not candidate.get("workspace"):
+    scratchpad = candidate.get("scratchpad")
+    scratch_member = isinstance(scratchpad, Mapping) and scratchpad.get("member") is True
+    if (
+        (not isinstance(candidate.get("workspace"), str) or not candidate.get("workspace"))
+        and not (allow_scratchpad and scratch_member)
+    ):
         raise RestoreExecutionError("RESTORE_RUNTIME_DIVERGED", f"workspace inconnu pour con_id={con_id}")
     return candidate, live
 
@@ -224,17 +246,29 @@ def _blocking_finding(action: Mapping[str, Any]) -> dict[str, Any] | None:
             "reason": "unsupported-fullscreen-mode",
             "desired_fullscreen_mode": action.get("desired_fullscreen_mode"),
         }
+    if action_type in {"restore-scratchpad-hidden", "restore-scratchpad-visible"}:
+        desired = action.get("desired")
+        visibility = desired.get("visibility") if isinstance(desired, Mapping) else None
+        expected = "hidden" if action_type.endswith("hidden") else "visible"
+        if not isinstance(desired, Mapping) or desired.get("member") is not True or visibility != expected:
+            return {
+                "action_id": action_id,
+                "action": action_type,
+                "reason": "invalid-scratchpad-target",
+            }
     return None
 
 
 def capability_gate(
     source: Mapping[str, Any],
     plan: Mapping[str, Any],
+    live: Mapping[str, Any],
     *,
     planner_module: Any,
+    tree_module: Any,
     desktop_entries: Sequence[Mapping[str, str | None]],
     resolve_desktop_entry: Callable[..., dict[str, Any]],
-) -> None:
+) -> Mapping[str, Any]:
     """Examiner tout le plan avant la première mutation, sans exception partielle."""
     windows = _source_windows(source)
     findings: list[dict[str, Any]] = []
@@ -276,15 +310,51 @@ def capability_gate(
                     "action": action.get("action"),
                     "reason": "missing-runtime-con-id",
                 })
+        if action.get("action") == "restore-scratchpad-visible":
+            desired_workspace = saved.get("workspace")
+            live_focus = live.get("focus")
+            focused_workspace = live_focus.get("workspace") if isinstance(live_focus, Mapping) else None
+            if (
+                not isinstance(desired_workspace, str)
+                or NUMERIC_WORKSPACE.fullmatch(desired_workspace) is None
+                or focused_workspace != desired_workspace
+            ):
+                findings.append({
+                    "action_id": action.get("action_id"),
+                    "action": action.get("action"),
+                    "reason": "scratchpad-visible-requires-focused-target-workspace",
+                })
     try:
         planner_module.validate_restore_plan(plan)
     except Exception as exc:
         findings.append({"action_id": None, "action": None, "reason": f"invalid-plan: {exc}"})
+    if any(
+        isinstance(action, Mapping) and action.get("action") == "restore-tree-position"
+        for action in plan.get("actions", [])
+    ):
+        try:
+            tree_compilation = tree_module.compile_tree_restore(source, live, plan)
+            tree_module.validate_compilation(tree_compilation)
+        except Exception as exc:
+            findings.append({
+                "action_id": None,
+                "action": "restore-tree-position",
+                "reason": f"tree-preflight: {exc}",
+            })
+            tree_compilation = {"capability": "unsupported", "operations": [], "workspaces": []}
+    else:
+        tree_compilation = {
+            "capability": "supported-subset",
+            "percent_capability": "unsupported",
+            "operations": [],
+            "workspaces": [],
+        }
     if findings:
         raise RestoreExecutionError(
             "RESTORE_BLOCKED_UNSUPPORTED_ACTION",
             json.dumps(findings, ensure_ascii=False, sort_keys=True),
         )
+    return tree_compilation
 
 
 @contextlib.contextmanager
@@ -402,6 +472,7 @@ def _wait_for_postcondition(
     planner_module: Any,
     monotonic: Callable[[], float],
     sleeper: Callable[[float], None],
+    allow_scratchpad: bool = False,
 ) -> Mapping[str, Any]:
     """Attendre brièvement la visibilité IPC d'une mutation déjà acceptée."""
     deadline = monotonic() + POSTCONDITION_TIMEOUT_SECONDS
@@ -411,12 +482,179 @@ def _wait_for_postcondition(
             con_id,
             collector=collector,
             planner_module=planner_module,
+            allow_scratchpad=allow_scratchpad,
         )
         if predicate(candidate):
             return candidate
         if monotonic() >= deadline:
             raise RestoreExecutionError("RESTORE_POSTCONDITION_FAILED", failure_reason)
         sleeper(POLL_INTERVAL_SECONDS)
+
+
+def _tree_argv(
+    operation: Mapping[str, Any],
+    runtime_by_source: Mapping[str, int],
+    tree_module: Any,
+) -> list[str]:
+    """Construire une commande fermée depuis une opération prévalidée."""
+    tree_module.validate_operation(operation)
+    source_id = str(operation["source_window"])
+    con_id = runtime_by_source.get(source_id)
+    if con_id is None:
+        raise RestoreExecutionError("RESTORE_RUNTIME_DIVERGED", f"fenêtre arbre absente: {source_id}")
+    kind = operation["operation"]
+    if kind == "set-container-layout":
+        command_layout = "stacking" if operation["layout"] == "stacked" else operation["layout"]
+        sway_operation = f"layout {command_layout}"
+    elif kind == "set-split-orientation":
+        sway_operation = "split horizontal" if operation["layout"] == "splith" else "split vertical"
+    else:
+        raise RestoreExecutionError("RESTORE_TREE_OPERATION_INVALID", "move-relative requiert un mark temporaire")
+    return _direct_sway_command(con_id, sway_operation)
+
+
+def _all_live_marks(live: Mapping[str, Any]) -> set[str]:
+    result: set[str] = set()
+    for collection in (live.get("containers", []), live.get("windows", [])):
+        for item in collection if isinstance(collection, list) else []:
+            if isinstance(item, Mapping):
+                result.update(mark for mark in item.get("marks", []) if isinstance(mark, str))
+    return result
+
+
+def _move_relative_with_mark(
+    operation: Mapping[str, Any],
+    runtime_by_source: Mapping[str, int],
+    *,
+    collector: Callable[[], dict[str, Any]],
+    runner: Callable[[Sequence[str], float], Any],
+    monotonic: Callable[[], float],
+    sleeper: Callable[[float], None],
+) -> int:
+    """Insérer une vue après une référence exacte sans direction géométrique."""
+    source_con = runtime_by_source.get(str(operation["source_window"]))
+    reference_con = runtime_by_source.get(str(operation["reference_window"]))
+    if source_con is None or reference_con is None or source_con == reference_con:
+        raise RestoreExecutionError("RESTORE_RUNTIME_DIVERGED", "référence move-relative invalide")
+    before = collector()
+    existing = _all_live_marks(before)
+    mark = ""
+    for _attempt in range(8):
+        candidate = f"__labfy_restore_{secrets.token_hex(8)}"
+        if candidate not in existing:
+            mark = candidate
+            break
+    if not mark:
+        raise RestoreExecutionError("RESTORE_TEMPORARY_MARK_COLLISION", "aucun mark unique disponible")
+
+    mark_created = False
+    commands = 0
+    try:
+        completed = runner(_direct_sway_command(reference_con, f"mark --add {mark}"), 5.0)
+        _parse_sway_success(completed)
+        commands += 1
+        mark_created = True
+        marked = collector()
+        reference = _find_con_id(marked, reference_con)
+        if reference is None or mark not in reference.get("marks", []):
+            raise RestoreExecutionError("RESTORE_POSTCONDITION_FAILED", "mark temporaire absent")
+        completed = runner(_direct_sway_command(source_con, f"move container to mark {mark}"), 5.0)
+        _parse_sway_success(completed)
+        commands += 1
+    finally:
+        if mark_created:
+            try:
+                completed = runner(_direct_sway_command(reference_con, f"unmark {mark}"), 5.0)
+                _parse_sway_success(completed)
+                commands += 1
+            except (OSError, subprocess.SubprocessError, RestoreExecutionError):
+                # Le caller vérifiera l'absence du mark ; l'erreur originale
+                # reste prioritaire si le move lui-même a échoué.
+                pass
+    deadline = monotonic() + POSTCONDITION_TIMEOUT_SECONDS
+    while True:
+        after = collector()
+        if mark not in _all_live_marks(after):
+            return commands
+        if monotonic() >= deadline:
+            raise RestoreExecutionError("RESTORE_TEMPORARY_MARK_LEAK", mark)
+        sleeper(POLL_INTERVAL_SECONDS)
+
+
+def _execute_tree_compilation(
+    source: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    compilation: Mapping[str, Any],
+    runtime_by_source: Mapping[str, int],
+    *,
+    collector: Callable[[], dict[str, Any]],
+    planner_module: Any,
+    tree_module: Any,
+    runner: Callable[[Sequence[str], float], Any],
+    monotonic: Callable[[], float],
+    sleeper: Callable[[float], None],
+) -> int:
+    """Exécuter le bytecode typé avec détection de dérive entre mutations."""
+    source_windows = _source_windows(source)
+    last_fingerprint: dict[str, Any] = {}
+    commands = 0
+    for operation in compilation.get("operations", []):
+        workspace = str(operation["workspace"])
+        before = collector()
+        for source_id, con_id in runtime_by_source.items():
+            saved = source_windows.get(source_id)
+            if saved is not None and saved.get("workspace") == workspace:
+                candidate = _find_con_id(before, con_id)
+                if candidate is None or not _compatible_match(planner_module, saved, candidate):
+                    raise RestoreExecutionError(
+                        "RESTORE_RUNTIME_DIVERGED",
+                        f"inventaire arbre modifié: {source_id}",
+                    )
+        fingerprint = tree_module.tree_fingerprint(before, workspace, runtime_by_source)
+        if workspace in last_fingerprint and fingerprint != last_fingerprint[workspace]:
+            raise RestoreExecutionError(
+                "RESTORE_TREE_DRIFTED",
+                f"arbre modifié entre deux opérations: workspace {workspace}",
+            )
+        if operation["operation"] == "move-relative":
+            commands += _move_relative_with_mark(
+                operation,
+                runtime_by_source,
+                collector=collector,
+                runner=runner,
+                monotonic=monotonic,
+                sleeper=sleeper,
+            )
+        else:
+            completed = runner(_tree_argv(operation, runtime_by_source, tree_module), 5.0)
+            _parse_sway_success(completed)
+            commands += 1
+        deadline = monotonic() + POSTCONDITION_TIMEOUT_SECONDS
+        while True:
+            after = collector()
+            changed = tree_module.tree_fingerprint(after, workspace, runtime_by_source)
+            if changed != fingerprint:
+                last_fingerprint[workspace] = changed
+                break
+            if monotonic() >= deadline:
+                raise RestoreExecutionError(
+                    "RESTORE_POSTCONDITION_FAILED",
+                    f"opération arbre sans effet observable: {operation['operation']}",
+                )
+            sleeper(POLL_INTERVAL_SECONDS)
+
+    final_live = collector()
+    try:
+        remaining = tree_module.compile_tree_restore(source, final_live, plan)
+        tree_module.validate_compilation(remaining)
+    except Exception as exc:
+        raise RestoreExecutionError("RESTORE_POSTCONDITION_FAILED", f"arbre final invalide: {exc}") from exc
+    if remaining.get("operations"):
+        raise RestoreExecutionError("RESTORE_POSTCONDITION_FAILED", "arbre cible non atteint")
+    for workspace in remaining.get("workspaces", []):
+        if workspace.get("target_tree") != workspace.get("live_tree"):
+            raise RestoreExecutionError("RESTORE_POSTCONDITION_FAILED", "topologie finale différente")
+    return commands
 
 
 def execute_fresh_plan(
@@ -431,12 +669,17 @@ def execute_fresh_plan(
     timeout: float = DEFAULT_WINDOW_TIMEOUT_SECONDS,
     monotonic: Callable[[], float] = time.monotonic,
     sleeper: Callable[[float], None] = time.sleep,
+    tree_module: Any | None = None,
 ) -> dict[str, Any]:
     """Appliquer séquentiellement un plan déjà préflighté et arrêter au premier écart."""
-    capability_gate(
+    tree_module = _load_tree_compiler() if tree_module is None else tree_module
+    preflight_live = collector()
+    tree_compilation = capability_gate(
         source,
         plan,
+        preflight_live,
         planner_module=planner_module,
+        tree_module=tree_module,
         desktop_entries=desktop_entries,
         resolve_desktop_entry=resolve_desktop_entry,
     )
@@ -453,6 +696,7 @@ def execute_fresh_plan(
     applications_launched = 0
     mutating_commands = 0
     stopped_reason: str | None = None
+    tree_executed = False
 
     for action, status in zip(plan["actions"], statuses):
         action_type = action["action"]
@@ -462,7 +706,17 @@ def execute_fresh_plan(
             if action_type == "reuse-window":
                 con_id = _runtime_con_id(action["live_window"])
                 assert con_id is not None
-                _revalidate_runtime(saved, con_id, collector=collector, planner_module=planner_module)
+                saved_scratchpad = saved.get("scratchpad")
+                _revalidate_runtime(
+                    saved,
+                    con_id,
+                    collector=collector,
+                    planner_module=planner_module,
+                    allow_scratchpad=(
+                        isinstance(saved_scratchpad, Mapping)
+                        and saved_scratchpad.get("member") is True
+                    ),
+                )
                 runtime_by_source[source_id] = con_id
                 status.update(status="success", reason="fenêtre live réutilisée et revalidée")
             elif action_type == "skip-autostart-managed":
@@ -513,7 +767,34 @@ def execute_fresh_plan(
                         "RESTORE_RUNTIME_DIVERGED",
                         f"aucun con_id validé pour {source_id}",
                     )
-                _revalidate_runtime(saved, con_id, collector=collector, planner_module=planner_module)
+                saved_scratchpad = saved.get("scratchpad")
+                _revalidate_runtime(
+                    saved,
+                    con_id,
+                    collector=collector,
+                    planner_module=planner_module,
+                    allow_scratchpad=(
+                        isinstance(saved_scratchpad, Mapping)
+                        and saved_scratchpad.get("member") is True
+                    ),
+                )
+                if action_type == "restore-tree-position":
+                    if not tree_executed:
+                        mutating_commands += _execute_tree_compilation(
+                            source,
+                            plan,
+                            tree_compilation,
+                            runtime_by_source,
+                            collector=collector,
+                            planner_module=planner_module,
+                            tree_module=tree_module,
+                            runner=runner,
+                            monotonic=monotonic,
+                            sleeper=sleeper,
+                        )
+                        tree_executed = True
+                    status.update(status="success", reason="topologie Sway cible confirmée")
+                    continue
                 if action_type == "move-to-workspace":
                     workspace = str(int(action["desired_workspace"]))
                     operation = f"move container to workspace number {workspace}"
@@ -521,6 +802,61 @@ def execute_fresh_plan(
                     operation = "floating enable" if action["desired_floating"] else "floating disable"
                 elif action_type == "restore-fullscreen":
                     operation = "fullscreen enable" if action["desired_fullscreen_mode"] == 1 else "fullscreen disable"
+                elif action_type in {"restore-scratchpad-hidden", "restore-scratchpad-visible"}:
+                    current = collector()
+                    candidate = _find_con_id(current, con_id)
+                    if candidate is None or not _compatible_match(planner_module, saved, candidate):
+                        raise RestoreExecutionError("RESTORE_RUNTIME_DIVERGED", f"scratchpad cible absente: {con_id}")
+                    scratch = candidate.get("scratchpad")
+                    scratch = scratch if isinstance(scratch, Mapping) else {}
+                    must_hide = (
+                        action_type == "restore-scratchpad-hidden"
+                        and scratch.get("visibility") != "hidden"
+                    )
+                    must_admit = (
+                        action_type == "restore-scratchpad-visible"
+                        and scratch.get("member") is not True
+                    )
+                    if must_hide or must_admit:
+                        completed = runner(_direct_sway_command(con_id, "move scratchpad"), 5.0)
+                        _parse_sway_success(completed)
+                        mutating_commands += 1
+                        _wait_for_postcondition(
+                            saved,
+                            con_id,
+                            lambda item: isinstance(item.get("scratchpad"), Mapping)
+                            and item["scratchpad"].get("member") is True
+                            and item["scratchpad"].get("visibility") == "hidden",
+                            "fenêtre non déplacée vers le scratchpad caché",
+                            collector=collector,
+                            planner_module=planner_module,
+                            monotonic=monotonic,
+                            sleeper=sleeper,
+                            allow_scratchpad=True,
+                        )
+                        scratch = {"member": True, "visibility": "hidden"}
+                    if (
+                        action_type == "restore-scratchpad-visible"
+                        and scratch.get("visibility") != "visible"
+                    ):
+                        completed = runner(_direct_sway_command(con_id, "scratchpad show"), 5.0)
+                        _parse_sway_success(completed)
+                        mutating_commands += 1
+                        _wait_for_postcondition(
+                            saved,
+                            con_id,
+                            lambda item: isinstance(item.get("scratchpad"), Mapping)
+                            and item["scratchpad"].get("member") is True
+                            and item["scratchpad"].get("visibility") == "visible",
+                            "fenêtre scratchpad ciblée non visible",
+                            collector=collector,
+                            planner_module=planner_module,
+                            monotonic=monotonic,
+                            sleeper=sleeper,
+                            allow_scratchpad=True,
+                        )
+                    status.update(status="success", reason="scratchpad ciblé confirmé")
+                    continue
                 else:
                     operation = "focus"
                 completed = runner(_direct_sway_command(con_id, operation), 5.0)

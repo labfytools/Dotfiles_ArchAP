@@ -481,6 +481,9 @@ def build_restore_plan(source: Mapping[str, Any], live: Mapping[str, Any]) -> di
         base = base_keys[saved_id]
         current_workspace = live_window.get("workspace") if live_window else None
         current_output = live_window.get("output") if live_window else None
+        saved_scratchpad = saved.get("scratchpad")
+        saved_scratchpad = saved_scratchpad if isinstance(saved_scratchpad, Mapping) else {}
+        scratchpad_target = saved_scratchpad.get("member") is True
         if desired_output is not None and desired_output not in live_outputs:
             add(_draft(
                 f"manual-output:{saved_id}", "manual-required", "workspace", saved,
@@ -488,7 +491,10 @@ def build_restore_plan(source: Mapping[str, Any], live: Mapping[str, Any]) -> di
                 desired_output=desired_output, policy="deferred-no-fallback",
             ), order)
             continue
-        if live_window is None or current_workspace != desired_workspace or current_output != desired_output:
+        if (
+            not scratchpad_target
+            and (live_window is None or current_workspace != desired_workspace or current_output != desired_output)
+        ):
             add(_draft(
                 f"workspace:{saved_id}", "move-to-workspace", "workspace", saved,
                 depends=(base,), desired_workspace=desired_workspace, desired_output=desired_output,
@@ -505,7 +511,11 @@ def build_restore_plan(source: Mapping[str, Any], live: Mapping[str, Any]) -> di
         # CONTRACT: le planner ne demande une reconstruction d'arbre que pour
         # une fenêtre déjà matchée dont la structure diffère effectivement.
         # INVARIANT: l'absence n'est jamais assimilée à une structure divergente.
-        if live_window is not None and current_placement != desired_placement:
+        if (
+            live_window is not None
+            and saved_scratchpad.get("member") is not True
+            and current_placement != desired_placement
+        ):
             add(_draft(
                 f"tree:{saved_id}", "restore-tree-position", "tree-layout", saved,
                 depends=(base,), capability="partially-supported",
