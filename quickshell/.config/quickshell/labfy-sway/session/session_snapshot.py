@@ -9,6 +9,7 @@ import configparser
 import datetime as dt
 import errno
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -1115,8 +1116,52 @@ def delete_session(
         os.close(directory_fd)
 
 
+def _load_restore_planner() -> Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]]:
+    """Charger le planner voisin sans lui donner d'accès implicite au backend."""
+    path = Path(__file__).with_name("session_restore.py")
+    spec = importlib.util.spec_from_file_location("labfy_session_restore", path)
+    if spec is None or spec.loader is None:
+        raise SnapshotError("planner de restauration indisponible")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, ImportError, SyntaxError) as exc:
+        raise SnapshotError(f"chargement du planner impossible: {exc}") from exc
+    planner = getattr(module, "build_restore_plan", None)
+    if not callable(planner):
+        raise SnapshotError("planner de restauration invalide")
+    return planner
+
+
+def plan_session(
+    name: str,
+    autostart_path: Path | None = None,
+    *,
+    snapshot_loader: Callable[[str], dict[str, Any]] | None = None,
+    live_collector: Callable[[Path | None], dict[str, Any]] | None = None,
+    planner: Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Charger deux états validés et produire un plan sans jamais l'exécuter."""
+    # WHY: STEP19A doit réutiliser exactement la validation persistante et la
+    # résolution DesktopEntry STEP18, sans ouvrir une seconde voie divergente.
+    # CONTRACT: loader et collector sont en lecture seule ; le planner est pur.
+    # INVARIANT: aucune commande applicative ou Sway mutatrice n'est accessible ici.
+    load = show_session if snapshot_loader is None else snapshot_loader
+    observe = collect if live_collector is None else live_collector
+    build = _load_restore_planner() if planner is None else planner
+    source = load(normalize_session_name(name))
+    live = observe(autostart_path)
+    validate_snapshot(live)
+    try:
+        return build(source, live)
+    except Exception as exc:
+        if exc.__class__.__name__ != "RestorePlanError":
+            raise
+        raise SnapshotError(str(exc)) from exc
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Sauvegarde persistante read-only d'une session Sway")
+    parser = argparse.ArgumentParser(description="Snapshots persistants et restore planner read-only pour Sway")
     parser.add_argument("--stdout", action="store_true", help="émettre le JSON validé sur stdout")
     parser.add_argument("--compact", action="store_true", help="émettre un JSON compact")
     parser.add_argument(
@@ -1125,14 +1170,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=Path.home() / ".config/sway/autostart",
         help="fichier Sway autostart utilisé seulement pour la classification",
     )
-    parser.add_argument("command", nargs="?", choices=("save", "list", "show", "delete"))
+    parser.add_argument("command", nargs="?", choices=("save", "list", "show", "delete", "plan"))
     parser.add_argument("name", nargs="?")
     args = parser.parse_args(argv)
     if args.stdout and args.command is not None:
         parser.error("--stdout ne peut pas être combiné avec une commande persistante")
     if not args.stdout and args.command is None:
-        parser.error("utiliser --stdout ou une commande save/list/show/delete")
-    if args.command in {"save", "show", "delete"} and args.name is None:
+        parser.error("utiliser --stdout ou une commande save/list/show/delete/plan")
+    if args.command in {"save", "show", "delete", "plan"} and args.name is None:
         parser.error(f"{args.command} requiert un nom de session")
     if (args.stdout or args.command == "list") and args.name is not None:
         parser.error("nom de session inattendu")
@@ -1157,6 +1202,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(warning, file=sys.stderr)
         elif args.command == "show":
             result = show_session(args.name)
+        elif args.command == "plan":
+            result = plan_session(args.name, args.autostart)
         else:
             delete_session(args.name)
             result = {"deleted": args.name}

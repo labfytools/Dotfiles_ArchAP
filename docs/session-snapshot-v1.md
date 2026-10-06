@@ -317,13 +317,16 @@ session_snapshot.py save <name>
 session_snapshot.py list
 session_snapshot.py show <name>
 session_snapshot.py delete <name>
+session_snapshot.py plan <name>
 ```
 
 `--compact` produit du JSON compact. `save` collecte et publie ; `list` émet un
 tableau d'objets `{name, updated_at, windows, workspaces}` ; `show` retourne le
 document strictement validé ; `delete` supprime uniquement le fichier régulier
-dérivé du nom validé. Ces commandes ne contiennent et n'appellent aucune
-opération `restore`, `launch` ou `apply`.
+dérivé du nom validé. `plan` charge ce document, collecte un second Snapshot
+V1 live puis appelle le planner pur décrit dans `docs/session-restore-v1.md`.
+Il produit uniquement des intentions : aucune commande `restore`, `launch`,
+`move`, `focus` ou `apply` n'est exécutée.
 
 ### Cohérence IPC, verrouillage et publication atomique
 
