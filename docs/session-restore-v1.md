@@ -662,3 +662,36 @@ par preflight intégral, revalidation avant chaque commande, postcondition aprè
 chaque mutation, marks nettoyés et arrêt au premier écart. Il ne promet ni
 rollback global, ni restauration d'un arbre arbitraire, ni reconstruction des
 proportions, ni UI. `spatial-canvas-v1` demeure entièrement hors périmètre.
+
+## STEP19D — Gestionnaire graphique QuickShell
+
+Le Control Center expose une page dédiée sous la page système `Session`. La
+page système et ses commandes de verrouillage, veille, déconnexion UWSM,
+redémarrage et extinction restent distinctes. La navigation du gestionnaire
+est `Sessions → Détail → Aperçu` et chaque retour remonte d'un niveau.
+
+Le QML reste une frontière d'interface. Il appelle exclusivement
+`session_snapshot.py` avec les commandes publiques `list`, `show`, `save`,
+`delete`, `plan` et `apply <name> --execute`. Le chemin déployé est résolu par
+`$XDG_CONFIG_HOME/quickshell/labfy-sway/session/session_snapshot.py`, avec le
+repli XDG standard `$HOME/.config/...`. Aucun chemin utilisateur ou chemin de
+checkout n'est figé dans le QML.
+
+Un unique `Process` asynchrone sérialise les opérations. Ses commandes sont
+toujours des tableaux argv directs ; aucun shell, aucune interpolation de nom
+de session et aucune commande Sway ne sont accessibles à l'UI. `stdout` JSON
+et `stderr` diagnostic sont collectés séparément. Un résultat n'est accepté
+que si le processus termine avec succès et si le JSON attendu est entier et
+structurellement cohérent. Pendant `save`, `delete` ou `apply`, les autres
+mutations restent désactivées.
+
+`plan` est un aperçu strictement read-only. Après confirmation, `apply
+--execute` recharge le snapshot, observe un live frais, reconstruit le plan et
+refait le preflight : le QML n'exécute jamais les actions du plan et ne peut
+pas transformer un ancien aperçu en autorisation. Les limites sur l'état
+interne des applications et les proportions de splits sont affichées avant la
+confirmation.
+
+Il n'existe aucun déclencheur de sauvegarde ou restauration au chargement, à
+la connexion, à la déconnexion ou sur minuterie. Toutes les mutations sont la
+conséquence immédiate d'une action utilisateur confirmée.

@@ -8,10 +8,11 @@ Item {
 
     required property var actions
     signal backRequested()
+    signal managerRequested()
     signal actionRequested(string actionId)
 
     // La taille doit être connue avant la création des delegates pour éviter un popup de hauteur nulle.
-    implicitHeight: 28 + actions.length * 48 + actions.length * 10
+    implicitHeight: 28 + (actions.length + 1) * 48 + (actions.length + 1) * 10
 
     Column {
         id: content
@@ -47,6 +48,17 @@ Item {
                 acceptedButtons: Qt.LeftButton
                 onClicked: page.backRequested()
             }
+        }
+
+        SessionAction {
+            width: content.width
+            actionInfo: ({
+                id: "session-manager",
+                label: "Gestionnaire de sessions",
+                icon: "󰆓",
+                accent: Theme.accent
+            })
+            onSelected: page.managerRequested()
         }
 
         Repeater {

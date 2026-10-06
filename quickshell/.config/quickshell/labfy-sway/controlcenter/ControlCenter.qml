@@ -13,7 +13,8 @@ PopupWindow {
     // CONTRACT: indices externes historiques conservés ; tout nouveau routage
     // passe par ces noms afin de ne pas multiplier les indices StackLayout.
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
-        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8, nightLight: 9, sunMode: 10, locationTime: 11 })
+        confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8,
+        nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -81,7 +82,7 @@ PopupWindow {
         : currentPage === 5 ? batteryPage.implicitHeight + 32
         : currentPage === pages.wallpaper ? 550
         : currentPage === pages.appearance ? 520
-        : currentPage === pages.locationTime ? 650 : 440
+        : currentPage === pages.locationTime || currentPage === pages.sessionManager ? 650 : 440
     visible: false
     // CONTRACT: PopupWindow n'applique un changement de grabFocus qu'après
     // fermeture/réouverture ; le prendre dès MAIN garde le clavier disponible
@@ -183,6 +184,7 @@ PopupWindow {
                 id: sessionPage
                 actions: popup.sessionActions
                 onBackRequested: popup.openPage("main")
+                onManagerRequested: popup.openPage("sessionManager")
                 onActionRequested: id => popup.requestSessionAction(id)
             }
 
@@ -232,6 +234,10 @@ PopupWindow {
             }
             LocationTimePage {
                 onBackRequested: popup.openPage("appearance")
+            }
+            SessionManager {
+                activePage: popup.visible && popup.currentPage === popup.pages.sessionManager
+                onBackRequested: popup.openPage("session")
             }
         }
     }
