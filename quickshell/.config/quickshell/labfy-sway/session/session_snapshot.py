@@ -1133,6 +1133,62 @@ def _load_restore_planner() -> Callable[[Mapping[str, Any], Mapping[str, Any]], 
     return planner
 
 
+def _load_restore_modules() -> tuple[Any, Any]:
+    """Charger explicitement planner pur et frontière d'effets STEP19B."""
+    planner_path = Path(__file__).with_name("session_restore.py")
+    executor_path = Path(__file__).with_name("session_executor.py")
+
+    def load(name: str, path: Path) -> Any:
+        spec = importlib.util.spec_from_file_location(name, path)
+        if spec is None or spec.loader is None:
+            raise SnapshotError(f"module de restauration indisponible: {path.name}")
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except (OSError, ImportError, SyntaxError) as exc:
+            raise SnapshotError(f"chargement de {path.name} impossible: {exc}") from exc
+        return module
+
+    return load("labfy_session_restore_apply", planner_path), load("labfy_session_executor", executor_path)
+
+
+def apply_session(
+    name: str,
+    autostart_path: Path | None = None,
+    *,
+    snapshot_loader: Callable[[str], dict[str, Any]] | None = None,
+    live_collector: Callable[[Path | None], dict[str, Any]] | None = None,
+    sessions_path: Path | None = None,
+    planner_module: Any | None = None,
+    executor_module: Any | None = None,
+    desktop_loader: Callable[[], Sequence[Mapping[str, str | None]]] | None = None,
+    runner: Callable[[Sequence[str], float], Any] | None = None,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    """Construire puis exécuter un plan frais sous le verrou STEP19B."""
+    # WHY: un plan persistant pourrait viser des con_id recyclés. L'API apply
+    # n'accepte donc qu'un nom de snapshot et recollecte toujours Sway.
+    # CONTRACT: l'exécuteur détient le lock pendant load→plan→execute→rehash.
+    # INVARIANT: aucun plan fourni par l'appelant n'est une autorité exécutable.
+    normalized = normalize_session_name(name)
+    if planner_module is None or executor_module is None:
+        loaded_planner, loaded_executor = _load_restore_modules()
+        planner_module = loaded_planner if planner_module is None else planner_module
+        executor_module = loaded_executor if executor_module is None else executor_module
+    kwargs: dict[str, Any] = {
+        "sessions_path": sessions_directory() if sessions_path is None else sessions_path,
+        "snapshot_loader": show_session if snapshot_loader is None else snapshot_loader,
+        "live_collector": collect if live_collector is None else live_collector,
+        "planner_module": planner_module,
+        "desktop_loader": load_desktop_entries if desktop_loader is None else desktop_loader,
+        "resolve_desktop_entry": resolve_desktop_entry,
+        "timeout": timeout,
+    }
+    if runner is not None:
+        kwargs["runner"] = runner
+    return executor_module.apply_session(normalized, autostart_path, **kwargs)
+
+
 def plan_session(
     name: str,
     autostart_path: Path | None = None,
@@ -1161,26 +1217,36 @@ def plan_session(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Snapshots persistants et restore planner read-only pour Sway")
+    parser = argparse.ArgumentParser(description="Snapshots persistants et restauration contrôlée pour Sway")
     parser.add_argument("--stdout", action="store_true", help="émettre le JSON validé sur stdout")
     parser.add_argument("--compact", action="store_true", help="émettre un JSON compact")
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="autoriser explicitement les mutations, uniquement avec apply",
+    )
     parser.add_argument(
         "--autostart",
         type=Path,
         default=Path.home() / ".config/sway/autostart",
         help="fichier Sway autostart utilisé seulement pour la classification",
     )
-    parser.add_argument("command", nargs="?", choices=("save", "list", "show", "delete", "plan"))
+    parser.add_argument("command", nargs="?", choices=("save", "list", "show", "delete", "plan", "apply"))
     parser.add_argument("name", nargs="?")
     args = parser.parse_args(argv)
     if args.stdout and args.command is not None:
         parser.error("--stdout ne peut pas être combiné avec une commande persistante")
     if not args.stdout and args.command is None:
-        parser.error("utiliser --stdout ou une commande save/list/show/delete/plan")
-    if args.command in {"save", "show", "delete", "plan"} and args.name is None:
+        parser.error("utiliser --stdout ou une commande save/list/show/delete/plan/apply")
+    if args.command in {"save", "show", "delete", "plan", "apply"} and args.name is None:
         parser.error(f"{args.command} requiert un nom de session")
     if (args.stdout or args.command == "list") and args.name is not None:
         parser.error("nom de session inattendu")
+    if args.execute and args.command != "apply":
+        parser.error("--execute est réservé à la commande apply")
+    if args.command == "apply" and not args.execute:
+        print("RESTORE_EXECUTION_REQUIRES_EXPLICIT_EXECUTE: ajouter --execute", file=sys.stderr)
+        return 1
     try:
         if args.stdout:
             started = time.monotonic()
@@ -1204,6 +1270,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = show_session(args.name)
         elif args.command == "plan":
             result = plan_session(args.name, args.autostart)
+        elif args.command == "apply":
+            result = apply_session(args.name, args.autostart)
         else:
             delete_session(args.name)
             result = {"deleted": args.name}
@@ -1215,6 +1283,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         json.dump(result, sys.stdout, ensure_ascii=False, sort_keys=True, indent=2)
     sys.stdout.write("\n")
+    if args.command == "apply" and result.get("status") != "success":
+        return 1
     return 0
 
 

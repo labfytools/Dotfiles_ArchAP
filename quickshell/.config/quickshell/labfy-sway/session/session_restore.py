@@ -498,7 +498,14 @@ def build_restore_plan(source: Mapping[str, Any], live: Mapping[str, Any]) -> di
 
         desired_placement = _placement(source, saved)
         current_placement = _placement(live, live_window) if live_window else None
-        if current_placement != desired_placement:
+        # WHY: une fenêtre absente n'a aucune position live à comparer. Émettre
+        # immédiatement restore-tree-position bloquerait tout lancement STEP19B,
+        # même pour une simple racine de workspace. STEP19C pourra replanifier
+        # la topologie une fois la nouvelle fenêtre réellement observable.
+        # CONTRACT: le planner ne demande une reconstruction d'arbre que pour
+        # une fenêtre déjà matchée dont la structure diffère effectivement.
+        # INVARIANT: l'absence n'est jamais assimilée à une structure divergente.
+        if live_window is not None and current_placement != desired_placement:
             add(_draft(
                 f"tree:{saved_id}", "restore-tree-position", "tree-layout", saved,
                 depends=(base,), capability="partially-supported",

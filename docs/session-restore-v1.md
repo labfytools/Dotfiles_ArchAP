@@ -1,8 +1,9 @@
-# Restore Plan V1 — STEP19A
+# Restore Plan et Executor V1 — STEP19A/STEP19B
 
 ## Statut et architecture
 
-**STEP19A DOES NOT RESTORE.**
+**Le planner STEP19A ne restaure jamais.** L'exécution contrôlée appartient
+exclusivement au module séparé STEP19B décrit à la fin de ce document.
 
 STEP19A charge un Session Snapshot V1 persistant, observe la session Sway
 actuelle avec les quatre lectures STEP18, puis produit un plan JSON. Il ne
@@ -280,6 +281,173 @@ applications_launched = 0
 snapshots_written = 0
 ```
 
-Avant STEP19B, aucune attente de fenêtre, aucune commande Sway mutatrice,
-aucune restauration d'état interne, aucun fallback multi-output, aucune UI
-QML et aucun comportement Spatial Canvas ne sont implémentés.
+Le planner n'effectue aucune attente de fenêtre, aucune commande Sway
+mutatrice, aucune restauration d'état interne, aucun fallback multi-output,
+aucune UI QML et aucun comportement Spatial Canvas.
+
+## Executor V1 — STEP19B
+
+### Frontière d'effets et CLI
+
+`session_restore.py` reste le moteur pur. `session_executor.py` est la seule
+frontière autorisée à ouvrir le lock d'exécution et à lancer des argv directs.
+
+```text
+Session Snapshot V1 validé
+        ↓
+Restore Planner pur
+        ↓
+Restore Plan V1 frais
+        ↓
+Session Executor V1
+        ↓
+uwsm app + Sway IPC ciblé
+```
+
+La mutation nécessite une intention explicite difficile à déclencher par
+accident :
+
+```bash
+session_snapshot.py apply <name> --execute
+```
+
+`apply <name>` sans `--execute` retourne
+`RESTORE_EXECUTION_REQUIRES_EXPLICIT_EXECUTE` sans charger l'exécuteur. Le CLI
+n'accepte jamais un fichier Restore Plan comme autorité. Chaque apply exécute
+obligatoirement :
+
+```text
+load snapshot → collect live → build fresh plan → validate → preflight → execute
+```
+
+Le snapshot est hashé avant et après l'opération. Une différence produit un
+échec explicite ; l'exécuteur ne possède aucune API d'écriture de snapshot.
+
+### Capability gate intégrale
+
+Avant le premier lancement ou la première commande Sway, l'exécuteur examine
+toutes les actions. Le sous-ensemble STEP19B est :
+
+```text
+reuse-window             no-op revalidé
+launch-application       uwsm app + attente/rematching
+skip-autostart-managed   no-op explicite, propriétaire inchangé
+move-to-workspace        workspace numérique seulement
+restore-floating         enable/disable déterministe
+restore-fullscreen       modes 0 et 1 seulement
+restore-focus            toujours dernière mutation
+```
+
+Ces actions bloquent l'ensemble du plan avec
+`RESTORE_BLOCKED_UNSUPPORTED_ACTION` et une liste précise, sans aucune mutation :
+
+```text
+restore-tree-position
+restore-scratchpad-hidden
+restore-scratchpad-visible
+manual-required
+toute action inconnue
+```
+
+Un matching runtime `ambiguous`, un workspace non numérique et un mode
+fullscreen non prouvé bloquent eux aussi le plan. Une fenêtre absente n'a pas
+encore de position d'arbre observable ; le planner n'émet donc une différence
+`restore-tree-position` que pour une fenêtre déjà matchée. STEP19C pourra
+replanifier l'arbre après apparition.
+
+### Lock privé
+
+Un apply détient un `flock(LOCK_EX|LOCK_NB)` sur `.restore.lock` pendant toute
+la séquence load/plan/execute/rehash. Le fichier est régulier, ouvert sans
+suivre les symlinks et forcé à `0600` dans le répertoire sessions `0700`. Le
+fichier peut persister ; la fermeture du FD libère le lock. Aucun daemon ou
+scheduler supplémentaire n'est créé.
+
+### DesktopEntry et lancement UWSM
+
+`launch.argv` dans le plan reste purement descriptif et n'est jamais exécuté.
+Pour chaque lancement, l'exécuteur vérifie :
+
+```text
+action = launch-application
+backend = uwsm-app-desktop-entry
+classification = user-application
+restore_identity.confidence = exact
+DesktopEntry ID syntaxiquement bornée
+résolution exacte identique dans les sources XDG courantes
+```
+
+Il reconstruit ensuite lui-même exactement :
+
+```python
+["uwsm", "app", "--", desktop_entry]
+```
+
+Il n'utilise ni shell, ni `Sway exec`, ni `gtk-launch`, ni `gio launch`. Comme
+`uwsm app` peut rester attaché pendant toute la vie de l'application, le
+processus est lancé avec un argv direct, sorties vers `DEVNULL` et une nouvelle
+session de processus. Son PID et son exit status ne prouvent jamais le succès.
+
+### Apparition et matching post-launch
+
+L'exécuteur conserve l'inventaire des `con_id` avant lancement, puis poll
+`get_tree` via la collecte Session Snapshot V1 pendant au plus 10 secondes.
+Seules les nouvelles fenêtres sont candidates. Il réutilise directement
+`session_restore.match_windows()` ; il ne possède aucun second matcher.
+
+Zéro candidate compatible conduit à `RESTORE_LAUNCH_TIMEOUT`. Plusieurs
+candidates indiscernables conduisent à `RESTORE_LAUNCH_AMBIGUOUS`. Le PID du
+processus lancé n'intervient pas, ce qui couvre aussi une application qui
+demanderait à une instance existante de créer une nouvelle fenêtre.
+
+### Revalidation runtime et commandes ciblées
+
+Avant chaque mutation, une nouvelle collecte doit retrouver le même `con_id`,
+une identité application compatible et un workspace connu. Cela interdit de
+cibler silencieusement un `con_id` disparu ou recyclé. Après la commande, une
+attente bornée à une seconde relit l'arbre jusqu'à observer la postcondition,
+en revalidant l'identité à chaque lecture. Elle absorbe uniquement le délai de
+visibilité IPC ; son expiration reste un échec critique.
+
+Les workspaces exécutables sont des chaînes numériques canoniques positives.
+Les noms libres restent hors périmètre afin qu'aucun quoting Sway non prouvé
+ne devienne une surface d'injection. Un déplacement reconstruit uniquement :
+
+```text
+[con_id=<entier validé>] move container to workspace number <entier validé>
+```
+
+Floating utilise exclusivement `floating enable` ou `floating disable`.
+L'audit de `sway(5)` 1.12.0 prouve `fullscreen enable|disable [global]` : V1
+supporte `fullscreen_mode=0` avec `fullscreen disable` et le mode workspace
+`fullscreen_mode=1` avec `fullscreen enable`. Le mode global et toute autre
+valeur sont bloqués. Aucun état ne recourt à `toggle`.
+
+Le focus utilise `[con_id=<id>] focus`, après la même revalidation, et reste la
+dernière mutation. La disparition de la cible ne focalise jamais une autre
+fenêtre par défaut.
+
+### Rapport, arrêt et absence de rollback magique
+
+Chaque action du rapport possède `pending`, `success`, `skipped`, `failed` ou
+`blocked`, avec un `reason`. L'exécution s'arrête à la première divergence
+critique et laisse les actions suivantes `pending`.
+
+Les lancements et mutations Sway ne sont pas transactionnels. Executor V1 ne
+promet aucun rollback global : sa politique est un preflight total strict,
+des commandes ciblées, une vérification après chaque commande, puis un arrêt
+immédiat au premier écart.
+
+### Validation contrôlée STEP19B
+
+La validation réelle utilise exclusivement une Kitty créée pour le test sur
+un workspace numérique libre. Le scénario A réutilise la fenêtre existante et
+la replace par `con_id`, sans nouveau lancement. Le scénario B ferme seulement
+cette fenêtre, lance `kitty.desktop` via UWSM, observe une nouvelle fenêtre,
+la rematche et la replace. Le cleanup ferme uniquement le nouveau `con_id`,
+supprime uniquement le snapshot de validation et restaure le focus utilisateur
+initial lorsqu'il existe encore.
+
+Les fenêtres non marquées `TEST_ONLY` sont comparées avant/après sur
+`con_id`, workspace, floating et fullscreen. L'arbre complet, le scratchpad
+avancé, le Spatial Canvas et toute UI QML restent hors STEP19B.
