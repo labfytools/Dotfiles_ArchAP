@@ -1,0 +1,4 @@
+#!/bin/sh
+# Le compositor greeter doit terminer avant que greetd lance la session authentifiée.
+/usr/bin/python3 /usr/local/libexec/labfy-greeter/labfy_greeter.py
+/usr/bin/swaymsg exit >/dev/null 2>&1

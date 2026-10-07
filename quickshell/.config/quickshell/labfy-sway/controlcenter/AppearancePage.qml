@@ -6,6 +6,7 @@ Item {
     id: page
     signal backRequested()
     signal wallpaperRequested()
+    signal avatarRequested()
     signal themeRequested()
     signal nightLightRequested()
     signal sunModeRequested()
@@ -31,6 +32,18 @@ Item {
                 Text { text: AppearanceController.effectiveWallpaper.split("/").pop(); color: Theme.secondaryForeground; font.pixelSize: 11; width: 290; elide: Text.ElideMiddle }
             }
             MouseArea { id: pointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.wallpaperRequested() }
+        }
+        Rectangle {
+            width: parent.width; height: 72; radius: 4
+            color: avatarPointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+            NerdIcon { anchors.left: parent.left; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: ""; color: Theme.accent; font.pixelSize: 22 }
+            Column {
+                anchors.left: parent.left; anchors.leftMargin: 47; anchors.verticalCenter: parent.verticalCenter
+                spacing: 4
+                Text { text: "Avatar"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
+                Text { text: "Image de l’écran de connexion"; color: Theme.secondaryForeground; font.pixelSize: 11 }
+            }
+            MouseArea { id: avatarPointer; anchors.fill: parent; hoverEnabled: true; onClicked: page.avatarRequested() }
         }
         Rectangle {
             width: parent.width; height: 72; radius: 4

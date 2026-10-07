@@ -17,7 +17,7 @@ PopupWindow {
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
         confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8,
         nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12,
-        checkpointFailure: 13 })
+        checkpointFailure: 13, avatar: 14 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -115,7 +115,7 @@ PopupWindow {
         : currentPage === 4 ? confirmationPage.implicitHeight + 32
         : currentPage === 5 ? batteryPage.implicitHeight + 32
         : currentPage === pages.wallpaper ? 550
-        : currentPage === pages.appearance ? 520
+        : currentPage === pages.appearance ? 610
         : currentPage === pages.locationTime || currentPage === pages.sessionManager ? 650 : 440
     visible: false
     // CONTRACT: PopupWindow n'applique un changement de grabFocus qu'après
@@ -250,6 +250,7 @@ PopupWindow {
                 onNightLightRequested: popup.openPage("nightLight")
                 onSunModeRequested: popup.openPage("sunMode")
                 onLocationTimeRequested: popup.openPage("locationTime")
+                onAvatarRequested: popup.openPage("avatar")
             }
 
             WallpaperPage {
@@ -314,6 +315,11 @@ PopupWindow {
                         onClicked: popup.quitWithoutCheckpoint()
                     }
                 }
+            }
+            // Append-only: historical StackLayout indices remain unchanged.
+            AvatarPage {
+                activePage: popup.visible && popup.currentPage === popup.pages.avatar
+                onBackRequested: popup.openPage("appearance")
             }
         }
     }

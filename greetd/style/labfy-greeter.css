@@ -1,0 +1,33 @@
+/* Couleurs issues de theme/catppuccin.json, flavor mocha ; CSS autonome au runtime. */
+* { font-family: "JetBrainsMono Nerd Font", monospace; color: #cdd6f4; }
+.canvas { background: #1e1e2e url('/etc/greetd/background/sway.png') center center / cover no-repeat; }
+.shade { background: alpha(#11111b, 0.55); }
+.clock { font-size: 76px; font-weight: 700; }
+.date { font-size: 20px; color: #cdd6f4; }
+.battery { font-size: 12px; color: #a6adc8; }
+.battery-icon { font-size: 15px; color: #cdd6f4; }
+.login-card { background: alpha(#181825, 0.94); border: 1px solid #b4befe; border-radius: 8px; padding: 30px; box-shadow: 0 12px 35px alpha(#11111b, 0.4); }
+.avatar { color: #b4befe; font-size: 44px; }
+.avatar-picture { border-radius: 8px; border: 1px solid #585b70; }
+.card-title { font-size: 23px; font-weight: 700; margin-bottom: 8px; }
+.secondary { color: #a6adc8; font-size: 13px; }
+.error { color: #f38ba8; font-size: 13px; }
+entry, dropdown > button { background: #313244; color: #cdd6f4; border: 1px solid #585b70; border-radius: 8px; padding: 10px; min-height: 26px; }
+entry:focus, dropdown > button:focus, button:focus-visible { outline: 2px solid #b4befe; outline-offset: 2px; border-color: #b4befe; }
+/* Le popover du GtkDropDown a ses propres nœuds CSS : la palette du bouton ne s'y propage pas. */
+dropdown.user-selector popover > contents { background: #181825; border: 1px solid #585b70; border-radius: 8px; box-shadow: 0 8px 22px alpha(#11111b, 0.45); }
+dropdown.user-selector popover listview { background: transparent; color: #cdd6f4; }
+dropdown.user-selector popover listview row { background: transparent; color: #cdd6f4; border-radius: 6px; }
+dropdown.user-selector popover listview row:hover { background: #45475a; }
+dropdown.user-selector popover listview row:selected { background: #b4befe; color: #11111b; }
+dropdown.user-selector popover listview row:selected label { color: #11111b; }
+button { background: #45475a; border: 1px solid #585b70; border-radius: 8px; padding: 10px 15px; }
+button:hover { background: #585b70; }
+button:active { background: #313244; }
+button.primary { background: #b4befe; color: #11111b; font-weight: 700; border-color: #b4befe; }
+button.primary label { color: #11111b; }
+button.primary:hover { background: #cdd6f4; }
+button:disabled { opacity: 0.55; }
+scale trough { background: #45475a; border-radius: 8px; min-height: 7px; }
+scale highlight { background: #b4befe; border-radius: 8px; }
+scale slider { background: #cdd6f4; border: 2px solid #b4befe; min-width: 17px; min-height: 17px; }
