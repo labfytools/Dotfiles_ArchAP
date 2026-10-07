@@ -116,6 +116,18 @@ inventaires et validations sont décrits dans le
 | [Recovery](docs/recovery.md) | Reconstruction complète après perte du disque |
 | [Security](docs/security.md) | Secrets exclus et règles de publication |
 
+## Session Restore V2
+
+QuickShell crée un checkpoint avant logout, reboot ou poweroff. Au login suivant,
+un chooser unique restaure la session en un clic, sans autre interaction.
+Firefox s’appuie sur son companion signé et un native host de corrélation ;
+Limusic reste géré par l’autostart Sway. La fenêtre terminal est restaurée,
+mais pas son contenu ni ses processus. Ratios exacts, fullscreen et scratchpad
+ne sont pas pris en charge ; le multi-output physique n’est pas validé et le
+provider Firefox actuel reste limité au profil supporté.
+
+Voir [installation, fonctionnement et tests V2](docs/session-restore-v2.md).
+
 ## ✦ Mirrors
 
 | Rôle | Dépôt |

@@ -36,3 +36,8 @@ bin/.local/bin/trainlog-bt-watch
 bin/.local/bin/trainlog-btd
 bin/.local/bin/trainlog-sync-once
 bin/.local/bin/trainlog-syncd
+
+# Session V2 : sorties locales reproductibles, jamais distribuées par Git.
+/build/session-v2/
+/build/session-v2-tests/
+/quickshell/.config/quickshell/labfy-sway/session_v2/libexec/

@@ -1,0 +1,7 @@
+{
+  "name": "org.labfy.session_v2_identity",
+  "description": "Labfy Session V2 — corrélation locale",
+  "path": "@ABSOLUTE_NATIVE_HOST_LAUNCHER@",
+  "type": "stdio",
+  "allowed_extensions": ["session-v2@labfy.org"]
+}

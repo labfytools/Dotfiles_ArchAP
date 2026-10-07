@@ -32,6 +32,11 @@ ShellRoot {
     Variants {
         model: Quickshell.screens
 
-        Bar { notificationService: rootNotificationService }
+        Bar {
+            notificationService: rootNotificationService
+            // Une seule barre possède le chooser, même en configuration multi-écran.
+            startupHost: Quickshell.screens.length > 0
+                && modelData === Quickshell.screens[0]
+        }
     }
 }

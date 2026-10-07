@@ -16,6 +16,7 @@ PanelWindow {
 
     required property var modelData
     required property var notificationService
+    required property bool startupHost
     screen: modelData
 
     anchors {
@@ -138,5 +139,9 @@ PanelWindow {
     NotificationToastArea {
         barWindow: bar
         service: bar.notificationService
+    }
+    SessionStartupPromptV2 {
+        barWindow: bar
+        startupHost: bar.startupHost
     }
 }

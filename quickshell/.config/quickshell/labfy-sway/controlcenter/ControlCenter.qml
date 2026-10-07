@@ -1,10 +1,12 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import Quickshell.Networking
 import Quickshell.Bluetooth
 import "../components"
 import "../theme"
+import "../sessionui"
 
 PopupWindow {
     id: popup
@@ -14,11 +16,17 @@ PopupWindow {
     // passe par ces noms afin de ne pas multiplier les indices StackLayout.
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
         confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8,
-        nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12 })
+        nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12,
+        checkpointFailure: 13 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
-    property var pendingAction: null
+    readonly property var pendingAction: sessionExitGate.pendingAction
+    readonly property string checkpointError: sessionExitGate.errorMessage
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
+        || ((Quickshell.env("HOME") || "") + "/.config")
+    readonly property string sessionBackend: configHome
+        + "/quickshell/labfy-sway/session-v2.py"
     // Une seule table associe les libellés, confirmations et commandes de session.
     readonly property var sessionActions: [
         { id: "lock", label: "Verrouiller", icon: "", accent: Theme.accent, command: ["swaylock"] },
@@ -29,14 +37,17 @@ PopupWindow {
         { id: "logout", label: "Déconnexion", icon: "", accent: Theme.urgent,
             confirmTitle: "Se déconnecter ?",
             description: "La session SwayFX en cours sera fermée.",
+            checkpointReason: "logout",
             command: ["uwsm", "stop"] },
         { id: "reboot", label: "Redémarrer", icon: "", accent: Theme.warning,
             confirmTitle: "Redémarrer l'ordinateur ?",
             description: "La session en cours sera fermée.",
+            checkpointReason: "reboot",
             command: ["systemctl", "reboot"] },
         { id: "poweroff", label: "Éteindre", icon: "", accent: Theme.danger,
             confirmTitle: "Éteindre l'ordinateur ?",
             description: "La session en cours sera fermée.",
+            checkpointReason: "poweroff",
             command: ["systemctl", "poweroff"] }
     ]
     readonly property var wifiDevice: Networking.devices.values.find(device => device.type === DeviceType.Wifi) || null
@@ -45,28 +56,51 @@ PopupWindow {
     // Une nouvelle ouverture recommence sur MAIN ; les pages libèrent leurs scans à la fermeture.
     onVisibleChanged: if (!visible) {
         openPage("main");
-        pendingAction = null;
+        if (!sessionExitGate.busy) sessionExitGate.cancel();
     }
 
     function requestSessionAction(id) {
-        const selected = sessionActions.find(item => item.id === id);
-        if (!selected) return;
-        if (id === "lock") {
-            executeSessionAction(id);
-            return;
-        }
-        pendingAction = selected;
-        openPage("confirmation");
+        sessionExitGate.requestAction(id);
     }
 
-    function executeSessionAction(id) {
-        const selected = sessionActions.find(item => item.id === id);
-        if (!selected) return;
-        // Fermer le popup avant toute commande qui peut verrouiller ou terminer la session.
-        visible = false;
-        // CONTRACT: UWSM possède le cycle de vie de Sway ; son arrêt doit donc
-        // passer par la commande déclarée, comme les autres actions de session.
-        if (selected.command) Quickshell.execDetached(selected.command);
+    function confirmSessionAction(id) {
+        sessionExitGate.confirmAction(id);
+    }
+
+    function quitWithoutCheckpoint() {
+        sessionExitGate.quitWithoutCheckpoint();
+    }
+
+    SessionExitGate {
+        id: sessionExitGate
+        actions: popup.sessionActions
+        checkpointSuccessStatus: "saved"
+        onConfirmationRequested: popup.openPage("confirmation")
+        onCheckpointRequested: reason => {
+            // WHY: Sway IPC doit rester vivant jusqu'à la fin de la capture.
+            // CONTRACT: argv direct, puis aucune action système avant validation du résultat.
+            if (!SessionV2Service.run("checkpoint-last", "", reason, popup))
+                sessionExitGate.checkpointFinished(2, 0, "{}", "Une opération de session est déjà en cours.");
+        }
+        onCommandRequested: command => {
+            // CONTRACT: UWSM possède le cycle de vie de Sway ; lock/suspend et
+            // les sorties utilisent toujours exactement l'argv de sessionActions.
+            popup.visible = false;
+            Quickshell.execDetached(command);
+        }
+        onCheckpointFailed: {
+            popup.openPage("checkpointFailure");
+            popup.visible = true;
+        }
+    }
+
+    Connections {
+        target: SessionV2Service
+        function onCompleted(owner, kind, value, okay) {
+            if (owner === popup && kind === "checkpoint-last")
+                sessionExitGate.checkpointFinished(okay ? 0 : 2, 0,
+                    JSON.stringify(value), okay ? "" : "Le checkpoint V2 a échoué.");
+        }
     }
 
     anchor.window: barWindow
@@ -193,12 +227,12 @@ PopupWindow {
                 actionInfo: popup.pendingAction || ({ id: "", label: "", confirmTitle: "",
                     description: "", accent: Theme.foreground })
                 onCancelled: {
-                    popup.pendingAction = null;
+                    sessionExitGate.cancel();
                     popup.openPage("session");
                 }
                 onConfirmed: id => {
                     if (popup.pendingAction && popup.pendingAction.id === id)
-                        popup.executeSessionAction(id);
+                        popup.confirmSessionAction(id);
                 }
             }
 
@@ -235,9 +269,51 @@ PopupWindow {
             LocationTimePage {
                 onBackRequested: popup.openPage("appearance")
             }
-            SessionManager {
+            SessionManagerV2 {
                 activePage: popup.visible && popup.currentPage === popup.pages.sessionManager
                 onBackRequested: popup.openPage("session")
+            }
+
+            Column {
+                id: checkpointFailurePage
+                spacing: 16
+
+                Text {
+                    width: parent.width
+                    text: "La session n’a pas pu être sauvegardée."
+                    color: Theme.warningForeground
+                    font.pixelSize: 16
+                    font.bold: true
+                    wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    text: popup.checkpointError
+                    color: Theme.secondaryForeground
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                }
+                Row {
+                    spacing: 8
+                    ActionButton {
+                        label: "Annuler"
+                        enabled: !sessionExitGate.busy
+                        onClicked: {
+                            sessionExitGate.cancel();
+                            popup.openPage("session");
+                        }
+                    }
+                    ActionButton {
+                        danger: true
+                        enabled: !sessionExitGate.busy
+                        label: popup.pendingAction && popup.pendingAction.id === "reboot"
+                            ? "Redémarrer sans sauvegarder"
+                            : popup.pendingAction && popup.pendingAction.id === "poweroff"
+                                ? "Éteindre sans sauvegarder"
+                                : "Quitter sans sauvegarder"
+                        onClicked: popup.quitWithoutCheckpoint()
+                    }
+                }
             }
         }
     }
