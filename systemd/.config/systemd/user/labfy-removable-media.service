@@ -1,0 +1,13 @@
+[Unit]
+Description=Gestion des supports amovibles USB et SD
+PartOf=wayland-session@sway.desktop.target
+After=wayland-session@sway.desktop.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/labfy-removable-media
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=wayland-session@sway.desktop.target

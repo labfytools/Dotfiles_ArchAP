@@ -1,0 +1,719 @@
+#!/usr/bin/python3
+"""Daemon d'accès conservateur aux supports amovibles via UDisks2."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "labfy.removable-media"
+VERSION = 1
+MAX_REQUEST = 16 * 1024
+MAX_ERROR = 240
+MAX_CLIENTS = 8
+READ_TIMEOUT = 2.0
+SOCKET_NAME = "labfy-removable-media.sock"
+STATE_NAME = "labfy-removable-media.json"
+ALLOWED_OPERATIONS = {"list", "mount", "unmount", "open", "safe-remove"}
+LOGGER = logging.getLogger(__name__)
+UDISKS_DEVICE_BUSY = "org.freedesktop.UDisks2.Error.DeviceBusy"
+UDISKS_ERROR_PREFIX = "org.freedesktop.UDisks2.Error."
+
+
+class RequestError(Exception):
+    """Erreur bornée et présentable au client."""
+
+
+def bounded_error(error: BaseException | str) -> str:
+    text = " ".join(str(error).split()) or "Erreur inconnue"
+    return text[:MAX_ERROR]
+
+
+def public_operation_error(error: BaseException, operation: str) -> str:
+    """Traduit les identités D-Bus connues sans exposer leur détail technique."""
+    if isinstance(error, RequestError):
+        return bounded_error(error)
+    detail = str(error)
+    if UDISKS_DEVICE_BUSY in detail:
+        return "Le périphérique est utilisé par une application."
+    if UDISKS_ERROR_PREFIX in detail:
+        return {
+            "mount": "Impossible de monter le périphérique.",
+            "unmount": "Impossible de démonter le périphérique.",
+            "safe-remove": "Impossible de retirer le périphérique en sécurité.",
+        }.get(operation, "Impossible d'effectuer l'opération sur le périphérique.")
+    return bounded_error(error)
+
+
+def runtime_dir() -> Path:
+    value = os.environ.get("XDG_RUNTIME_DIR")
+    if not value or not os.path.isabs(value):
+        raise RuntimeError("XDG_RUNTIME_DIR doit être un chemin absolu")
+    return Path(value)
+
+
+def decode_udisks_bytes(value: Any) -> str:
+    """UDisks expose les points de montage en tableaux d'octets terminés par NUL."""
+    if hasattr(value, "unpack"):
+        value = value.unpack()
+    if isinstance(value, str):
+        return value.rstrip("\0")
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).rstrip(b"\0").decode("utf-8", "replace")
+    if isinstance(value, (list, tuple)):
+        return bytes(value).rstrip(b"\0").decode("utf-8", "replace")
+    return ""
+
+
+def unpack(value: Any, default: Any = None) -> Any:
+    if value is None:
+        return default
+    return value.unpack() if hasattr(value, "unpack") else value
+
+
+@dataclass(frozen=True)
+class FilesystemRecord:
+    path: str
+    drive_path: str
+    display_name: str
+    label: str
+    filesystem: str
+    size_bytes: int
+    mount_point: str
+    removable: bool
+    ejectable: bool
+    power_off_capable: bool
+
+    def public(self, busy: bool = False, error: str = "") -> dict[str, Any]:
+        return {
+            "runtime_id": self.path,
+            "drive_runtime_id": self.drive_path,
+            "display_name": self.display_name,
+            "label": self.label,
+            "filesystem": self.filesystem,
+            "size_bytes": self.size_bytes,
+            "mount_point": self.mount_point,
+            "mounted": bool(self.mount_point),
+            "removable": self.removable,
+            "ejectable": self.ejectable,
+            "power_off_capable": self.power_off_capable,
+            "busy": busy,
+            "error": error,
+        }
+
+
+class UDisksBackend:
+    """Adaptateur Gio minimal ; l'ObjectManager reste l'unique source de vérité."""
+
+    BUS_NAME = "org.freedesktop.UDisks2"
+    ROOT = "/org/freedesktop/UDisks2"
+    IFACE_DRIVE = "org.freedesktop.UDisks2.Drive"
+    IFACE_BLOCK = "org.freedesktop.UDisks2.Block"
+    IFACE_FILESYSTEM = "org.freedesktop.UDisks2.Filesystem"
+
+    def __init__(self, Gio: Any, GLib: Any) -> None:
+        self.Gio = Gio
+        self.GLib = GLib
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        self.manager = Gio.DBusObjectManagerClient.new_sync(
+            self.bus,
+            Gio.DBusObjectManagerClientFlags.NONE,
+            self.BUS_NAME,
+            self.ROOT,
+            None,
+            None,
+            None,
+        )
+
+    @staticmethod
+    def _prop(interface: Any, name: str, default: Any = None) -> Any:
+        return unpack(interface.get_cached_property(name), default)
+
+    def _interfaces(self) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {}
+        for obj in self.manager.get_objects():
+            result[obj.get_object_path()] = {
+                iface.get_interface_name(): iface for iface in obj.get_interfaces()
+            }
+        return result
+
+    def records(self) -> list[FilesystemRecord]:
+        objects = self._interfaces()
+        drives: dict[str, dict[str, Any]] = {}
+        for path, interfaces in objects.items():
+            drive = interfaces.get(self.IFACE_DRIVE)
+            if drive is None:
+                continue
+            bus = str(self._prop(drive, "ConnectionBus", "")).lower()
+            compatibility = {
+                str(item).lower()
+                for item in self._prop(drive, "MediaCompatibility", [])
+            }
+            is_sd = any("sd" in item or "mmc" in item for item in compatibility)
+            # CONTRACT: une propriété Removable seule est trop large (disques internes,
+            # lecteurs optiques). Seuls USB et cartes SD/MMC sont auto-présentés.
+            if bus != "usb" and not is_sd:
+                continue
+            drives[path] = {
+                "display": str(self._prop(drive, "Model", "")).strip()
+                or str(self._prop(drive, "Vendor", "")).strip()
+                or "Support amovible",
+                "removable": bool(self._prop(drive, "Removable", False)),
+                "ejectable": bool(self._prop(drive, "Ejectable", False)),
+                "power": bool(self._prop(drive, "CanPowerOff", False)),
+            }
+
+        records: list[FilesystemRecord] = []
+        for path, interfaces in objects.items():
+            block = interfaces.get(self.IFACE_BLOCK)
+            filesystem = interfaces.get(self.IFACE_FILESYSTEM)
+            if block is None or filesystem is None:
+                continue
+            drive_path = str(self._prop(block, "Drive", "/"))
+            drive = drives.get(drive_path)
+            if drive is None:
+                continue
+            # CONTRACT: UDisks réserve HintIgnore/HintSystem aux blocs que les
+            # interfaces utilisateur ne doivent jamais proposer (dont l'EFI).
+            if bool(self._prop(block, "HintIgnore", False)) or bool(
+                self._prop(block, "HintSystem", False)
+            ):
+                continue
+            usage = str(self._prop(block, "IdUsage", ""))
+            fs_type = str(self._prop(block, "IdType", ""))
+            # INVARIANT: pas d'auto-unlock LUKS, pas de périphérique sans filesystem.
+            if usage != "filesystem" or fs_type in {"crypto_LUKS", ""}:
+                continue
+            points = self._prop(filesystem, "MountPoints", []) or []
+            mount_point = decode_udisks_bytes(points[0]) if points else ""
+            label = str(self._prop(block, "IdLabel", "")).strip()
+            records.append(
+                FilesystemRecord(
+                    path=path,
+                    drive_path=drive_path,
+                    display_name=label or drive["display"],
+                    label=label,
+                    filesystem=fs_type,
+                    size_bytes=int(self._prop(block, "Size", 0)),
+                    mount_point=mount_point,
+                    removable=drive["removable"],
+                    ejectable=drive["ejectable"],
+                    power_off_capable=drive["power"],
+                )
+            )
+        return sorted(records, key=lambda item: (item.drive_path, item.path))
+
+    def connect_changed(self, callback: Callable[[], None]) -> None:
+        self.manager.connect("object-added", lambda *_args: callback())
+        self.manager.connect("object-removed", lambda *_args: callback())
+        self.manager.connect(
+            "interface-proxy-properties-changed", lambda *_args: callback()
+        )
+
+    def _call(self, path: str, interface: str, method: str) -> Any:
+        proxy = self.Gio.DBusProxy.new_sync(
+            self.bus,
+            self.Gio.DBusProxyFlags.NONE,
+            None,
+            self.BUS_NAME,
+            path,
+            interface,
+            None,
+        )
+        parameters = self.GLib.Variant("(a{sv})", ({},))
+        return proxy.call_sync(
+            method,
+            parameters,
+            self.Gio.DBusCallFlags.NONE,
+            15_000,
+            None,
+        )
+
+    def mount(self, path: str) -> list[Any]:
+        self._call(path, self.IFACE_FILESYSTEM, "Mount")
+        points = self.mount_points_sync(path)
+        if not points:
+            raise RequestError("Le volume n'est pas monté après la demande")
+        return points
+
+    def unmount(self, path: str) -> list[Any]:
+        self._call(path, self.IFACE_FILESYSTEM, "Unmount")
+        points = self.mount_points_sync(path)
+        if points:
+            raise RequestError("Le volume reste monté après la demande")
+        return points
+
+    def _managed_objects_sync(self) -> dict[str, dict[str, Any]]:
+        reply = self.bus.call_sync(
+            self.BUS_NAME,
+            self.ROOT,
+            "org.freedesktop.DBus.ObjectManager",
+            "GetManagedObjects",
+            None,
+            None,
+            self.Gio.DBusCallFlags.NONE,
+            15_000,
+            None,
+        )
+        return unpack(reply)[0]
+
+    def mount_points_sync(self, path: str) -> list[Any]:
+        interfaces = self._managed_objects_sync().get(path, {})
+        filesystem = interfaces.get(self.IFACE_FILESYSTEM)
+        if filesystem is None:
+            raise RequestError("Volume introuvable après la demande")
+        filesystem = unpack(filesystem, {})
+        return list(unpack(filesystem.get("MountPoints"), []) or [])
+
+    def safe_remove(self, drive: FilesystemRecord) -> None:
+        # INVARIANT: la portée de l'éjection est le lecteur entier. Il faut donc
+        # considérer aussi les filesystems masqués de l'interface utilisateur.
+        for path, mount_points in reversed(self._drive_filesystems(drive.drive_path)):
+            if mount_points:
+                self.unmount(path)
+        remaining = [
+            path
+            for path, mount_points in self._drive_filesystems_sync(drive.drive_path)
+            if mount_points
+        ]
+        if remaining:
+            raise RequestError("Éjection refusée : un volume du lecteur reste monté")
+        method = "PowerOff" if drive.power_off_capable else "Eject"
+        if method == "Eject" and not drive.ejectable:
+            raise RequestError("Ce support ne peut être ni éjecté ni mis hors tension")
+        self._call(drive.drive_path, self.IFACE_DRIVE, method)
+
+    def _drive_filesystems(self, drive_path: str) -> list[tuple[str, list[Any]]]:
+        result: list[tuple[str, list[Any]]] = []
+        for path, interfaces in self._interfaces().items():
+            block = interfaces.get(self.IFACE_BLOCK)
+            filesystem = interfaces.get(self.IFACE_FILESYSTEM)
+            if block is None or filesystem is None:
+                continue
+            if str(self._prop(block, "Drive", "/")) != drive_path:
+                continue
+            points = list(self._prop(filesystem, "MountPoints", []) or [])
+            result.append((path, points))
+        return sorted(result)
+
+    def _drive_filesystems_sync(self, drive_path: str) -> list[tuple[str, list[Any]]]:
+        # WHY: call_sync(Unmount) peut revenir avant que PropertiesChanged ait
+        # actualisé le cache du client ObjectManager sur ce même thread GLib.
+        managed = self._managed_objects_sync()
+        result: list[tuple[str, list[Any]]] = []
+        for path, interfaces in managed.items():
+            block = interfaces.get(self.IFACE_BLOCK)
+            filesystem = interfaces.get(self.IFACE_FILESYSTEM)
+            if block is None or filesystem is None:
+                continue
+            block = unpack(block, {})
+            filesystem = unpack(filesystem, {})
+            if str(unpack(block.get("Drive"), "/")) != drive_path:
+                continue
+            points = list(unpack(filesystem.get("MountPoints"), []) or [])
+            result.append((path, points))
+        return sorted(result)
+
+
+class MediaDaemon:
+    """Modèle métier injectable et indépendant de Gio."""
+
+    def __init__(
+        self,
+        backend: Any,
+        state_path: Path,
+        launcher: Callable[[str], None] | None = None,
+    ) -> None:
+        self.backend = backend
+        self.state_path = state_path
+        self.launcher = launcher or self._launch_yazi
+        self._records: list[FilesystemRecord] = []
+        self._busy_drives: set[str] = set()
+        self._errors: dict[str, str] = {}
+        self._automount_seen: set[str] = set()
+        self._lock = threading.RLock()
+        self._updated_at = int(time.time())
+        self.refresh()
+
+    def state(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "schema": SCHEMA,
+                "version": VERSION,
+                "devices": [
+                    record.public(
+                        record.drive_path in self._busy_drives,
+                        self._errors.get(record.path, ""),
+                    )
+                    for record in self._records
+                ],
+                "updated_at": self._updated_at,
+            }
+
+    def _write_state(self) -> None:
+        self._updated_at = int(time.time())
+        payload = json.dumps(
+            self.state(), ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8") + b"\n"
+        self.state_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(
+            prefix=f".{self.state_path.name}.", dir=self.state_path.parent
+        )
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.state_path)
+            os.chmod(self.state_path, 0o600)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+    def refresh(self) -> None:
+        with self._lock:
+            self._records = self.backend.records()
+            live = {item.path for item in self._records}
+            self._errors = {key: value for key, value in self._errors.items() if key in live}
+            self._write_state()
+
+    def start(self) -> None:
+        """Effectue le scan initial après l'abonnement aux événements UDisks."""
+        self.devices_changed()
+
+    def devices_changed(self) -> None:
+        with self._lock:
+            self.refresh()
+            live = {item.path for item in self._records}
+            # INVARIANT: une disparition termine la vie de l'objet ; une même
+            # object path réinsérée peut alors recevoir une nouvelle tentative.
+            self._automount_seen.intersection_update(live)
+            newcomers = [item for item in self._records if item.path not in self._automount_seen]
+            self._automount_seen.update(item.path for item in newcomers)
+
+            confirmed: dict[str, str] = {}
+            for item in newcomers:
+                if item.mount_point:
+                    continue
+                try:
+                    self.backend.mount(item.path)
+                    points = self.backend.mount_points_sync(item.path)
+                    if not points:
+                        raise RequestError("Le volume n'est pas monté après la demande")
+                    confirmed[item.path] = decode_udisks_bytes(points[0])
+                    self._errors.pop(item.path, None)
+                except Exception as error:
+                    # CONTRACT: l'échec d'un volume ne bloque ni les autres
+                    # volumes ni une future réinsertion physique de celui-ci.
+                    LOGGER.warning("Échec UDisks pendant le montage automatique : %s", error)
+                    self._errors[item.path] = public_operation_error(error, "mount")
+            self.refresh()
+            if confirmed:
+                self._records = [
+                    replace(item, mount_point=confirmed[item.path])
+                    if item.path in confirmed
+                    else item
+                    for item in self._records
+                ]
+                self._write_state()
+
+    def _record(self, runtime_id: str) -> FilesystemRecord:
+        # CONTRACT: on relit UDisks avant toute mutation ; un identifiant d'objet
+        # disparu ou réutilisé ne doit jamais viser un ancien support en cache.
+        self.refresh()
+        for record in self._records:
+            if record.path == runtime_id:
+                return record
+        raise RequestError("Support introuvable ou retiré")
+
+    def _drive_records(self, drive_path: str) -> list[FilesystemRecord]:
+        return [item for item in self._records if item.drive_path == drive_path]
+
+    def _set_busy(self, drive_path: str, value: bool) -> None:
+        if value:
+            if drive_path in self._busy_drives:
+                raise RequestError("Une opération est déjà en cours sur ce support")
+            self._busy_drives.add(drive_path)
+        else:
+            self._busy_drives.discard(drive_path)
+        self._write_state()
+
+    def _run_drive_operation(
+        self, record: FilesystemRecord, operation: Callable[[list[FilesystemRecord]], None]
+    ) -> None:
+        self._set_busy(record.drive_path, True)
+        try:
+            operation(self._drive_records(record.drive_path))
+            for item in self._drive_records(record.drive_path):
+                self._errors.pop(item.path, None)
+        except Exception as error:
+            LOGGER.warning("Échec UDisks pendant une opération lecteur : %s", error)
+            message = public_operation_error(error, "safe-remove")
+            for item in self._drive_records(record.drive_path):
+                self._errors[item.path] = message
+            raise RequestError(message) from None
+        finally:
+            self._set_busy(record.drive_path, False)
+            self.refresh()
+
+    def _run_volume_operation(
+        self,
+        record: FilesystemRecord,
+        operation_name: str,
+        operation: Callable[[], list[Any]],
+    ) -> list[Any]:
+        points: list[Any] | None = None
+        self._set_busy(record.drive_path, True)
+        try:
+            points = operation()
+            self._errors.pop(record.path, None)
+        except Exception as error:
+            LOGGER.warning("Échec UDisks pendant une opération volume : %s", error)
+            message = public_operation_error(error, operation_name)
+            self._errors[record.path] = message
+            raise RequestError(message) from None
+        finally:
+            self._set_busy(record.drive_path, False)
+            self.refresh()
+            if points is not None:
+                mount_point = decode_udisks_bytes(points[0]) if points else ""
+                # CONTRACT: publier immédiatement l'état relu auprès d'UDisks,
+                # même si le cache ObjectManager attend encore PropertiesChanged.
+                self._records = [
+                    replace(item, mount_point=mount_point)
+                    if item.path == record.path
+                    else item
+                    for item in self._records
+                ]
+                self._write_state()
+        assert points is not None
+        return points
+
+    def _mount(self, item: FilesystemRecord) -> list[Any]:
+        if not item.mount_point:
+            self.backend.mount(item.path)
+        points = self.backend.mount_points_sync(item.path)
+        if not points:
+            raise RequestError("Le volume n'est pas monté après la demande")
+        return points
+
+    def _unmount(self, item: FilesystemRecord) -> list[Any]:
+        if item.mount_point:
+            self.backend.unmount(item.path)
+        points = self.backend.mount_points_sync(item.path)
+        if points:
+            raise RequestError("Le volume reste monté après la demande")
+        return points
+
+    def handle(self, request: dict[str, Any]) -> dict[str, Any]:
+        operation, runtime_id = validate_request(request)
+        if operation == "list":
+            self.refresh()
+            return {"ok": True, "state": self.state()}
+        assert runtime_id is not None
+        if operation == "safe-remove":
+            self.refresh()
+            records = self._drive_records(runtime_id)
+            if not records:
+                raise RequestError("Lecteur introuvable ou retiré")
+            record = records[0]
+
+            def remove(_all_records: list[FilesystemRecord]) -> None:
+                self.backend.safe_remove(record)
+
+            self._run_drive_operation(record, remove)
+        else:
+            record = self._record(runtime_id)
+            if operation == "mount":
+                self._run_volume_operation(record, operation, lambda: self._mount(record))
+            elif operation == "unmount":
+                self._run_volume_operation(record, operation, lambda: self._unmount(record))
+            elif operation == "open":
+                if not record.mount_point:
+                    points = self._run_volume_operation(record, "mount", lambda: self._mount(record))
+                    mount_point = decode_udisks_bytes(points[0]) if points else ""
+                else:
+                    mount_point = record.mount_point
+                if not mount_point:
+                    raise RequestError("Le support n'a pas fourni de point de montage")
+                self.launcher(mount_point)
+        return {"ok": True, "state": self.state()}
+
+    @staticmethod
+    def _launch_yazi(mount_point: str) -> None:
+        subprocess.Popen(
+            [
+                "/usr/bin/uwsm",
+                "app",
+                "--",
+                "/usr/bin/kitty",
+                "-e",
+                "/usr/bin/yazi",
+                mount_point,
+            ],
+            start_new_session=True,
+            close_fds=True,
+        )
+
+
+def validate_request(request: Any) -> tuple[str, str | None]:
+    if not isinstance(request, dict) or set(request) - {"operation", "runtime_id"}:
+        raise RequestError("Requête JSON invalide")
+    operation = request.get("operation")
+    if operation not in ALLOWED_OPERATIONS:
+        raise RequestError("Opération non autorisée")
+    runtime_id = request.get("runtime_id")
+    if operation == "list":
+        if runtime_id is not None:
+            raise RequestError("runtime_id est interdit pour list")
+        return operation, None
+    if not isinstance(runtime_id, str) or not runtime_id.startswith(
+        "/org/freedesktop/UDisks2/"
+    ) or len(runtime_id) > 512:
+        raise RequestError("runtime_id invalide")
+    return operation, runtime_id
+
+
+class JsonSocketServer:
+    def __init__(self, path: Path, handler: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
+        self.path = path
+        self.handler = handler
+        self.socket: socket.socket | None = None
+        self._clients = threading.BoundedSemaphore(MAX_CLIENTS)
+
+    def start(self) -> None:
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(str(self.path))
+        os.chmod(self.path, 0o600)
+        server.listen(8)
+        self.socket = server
+
+    def serve_forever(self) -> None:
+        assert self.socket is not None
+        while True:
+            connection, _ = self.socket.accept()
+            if not self._clients.acquire(blocking=False):
+                connection.close()
+                continue
+            threading.Thread(
+                target=self._serve_client, args=(connection,), daemon=True
+            ).start()
+
+    def _serve_client(self, connection: socket.socket) -> None:
+        try:
+            self._serve_connection(connection)
+        finally:
+            self._clients.release()
+
+    def _serve_connection(self, connection: socket.socket) -> None:
+        response: dict[str, Any]
+        try:
+            # WHY: un client incomplet ne doit pas immobiliser une capacité du
+            # serveur indéfiniment.
+            connection.settimeout(READ_TIMEOUT)
+            data = bytearray()
+            while b"\n" not in data:
+                remaining = MAX_REQUEST + 1 - len(data)
+                if remaining <= 0:
+                    raise RequestError("Requête trop volumineuse")
+                chunk = connection.recv(min(4096, remaining))
+                if not chunk:
+                    break
+                data.extend(chunk)
+                if len(data) > MAX_REQUEST:
+                    raise RequestError("Requête trop volumineuse")
+            if not data or b"\n" not in data or data.partition(b"\n")[2]:
+                raise RequestError("Une seule requête JSON terminée par LF est requise")
+            request = json.loads(data[:-1].decode("utf-8"))
+            response = self.handler(request)
+        except socket.timeout:
+            response = {"ok": False, "error": "Délai de lecture dépassé"}
+        except (RequestError, UnicodeError, json.JSONDecodeError) as error:
+            response = {"ok": False, "error": bounded_error(error)}
+        except Exception as error:
+            response = {"ok": False, "error": bounded_error(error)}
+        try:
+            connection.sendall(
+                json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode()
+                + b"\n"
+            )
+        except OSError:
+            pass
+        finally:
+            connection.close()
+
+
+class GLibDispatcher:
+    """Fait exécuter les mutations Gio dans le thread de la boucle GLib."""
+
+    def __init__(self, GLib: Any, handler: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
+        self.GLib = GLib
+        self.handler = handler
+
+    def __call__(self, request: dict[str, Any]) -> dict[str, Any]:
+        completed = threading.Event()
+        result: list[dict[str, Any] | BaseException] = []
+
+        def invoke() -> bool:
+            try:
+                result.append(self.handler(request))
+            except BaseException as error:
+                result.append(error)
+            finally:
+                completed.set()
+            return False
+
+        self.GLib.idle_add(invoke)
+        if not completed.wait(30):
+            raise RequestError("Délai d'opération dépassé")
+        value = result[0]
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+
+def main() -> int:
+    try:
+        import gi
+
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib
+
+        base = runtime_dir()
+        backend = UDisksBackend(Gio, GLib)
+        daemon = MediaDaemon(backend, base / STATE_NAME)
+        # CONTRACT: s'abonner avant le scan ferme la fenêtre où un objet ajouté
+        # entre ces deux opérations aurait échappé à l'automount.
+        backend.connect_changed(daemon.devices_changed)
+        daemon.start()
+        server = JsonSocketServer(base / SOCKET_NAME, GLibDispatcher(GLib, daemon.handle))
+        server.start()
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        GLib.MainLoop().run()
+    except KeyboardInterrupt:
+        return 0
+    except Exception as error:
+        print(f"labfy-removable-media: {bounded_error(error)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

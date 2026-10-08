@@ -45,6 +45,7 @@ PanelWindow {
         const opening = !dateCenter.visible && !dateCenter.opening;
         controlCenter.visible = false;
         windowStrip.closeMenu();
+        rightStatusArea.closeRemovableMedia();
         if (opening) dateCenter.requestOpen();
         else dateCenter.requestClose();
     }
@@ -76,6 +77,7 @@ PanelWindow {
             onMenuOpened: {
                 controlCenter.visible = false;
                 dateCenter.requestClose();
+                rightStatusArea.closeRemovableMedia();
             }
         }
     }
@@ -111,6 +113,7 @@ PanelWindow {
             onOpenPageRequested: page => {
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
+                rightStatusArea.closeRemovableMedia();
                 controlCenter.currentPage = page;
                 controlCenter.visible = true;
             }
@@ -118,8 +121,16 @@ PanelWindow {
                 const opening = !controlCenter.visible;
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
+                rightStatusArea.closeRemovableMedia();
                 controlCenter.currentPage = 0;
                 controlCenter.visible = opening;
+            }
+            onToggleRemovableMediaRequested: {
+                const opening = !rightStatusArea.removableMediaOpen;
+                controlCenter.visible = false;
+                dateCenter.requestClose();
+                windowStrip.closeMenu();
+                rightStatusArea.setRemovableMediaOpen(opening);
             }
         }
     }
