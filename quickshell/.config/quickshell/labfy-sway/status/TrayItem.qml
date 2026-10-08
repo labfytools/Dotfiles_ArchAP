@@ -18,8 +18,10 @@ Item {
     Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     IconImage {
         anchors.centerIn: parent
-        width: 18
-        height: 18
+        // CONTRACT: l'image fournie par l'application reste inchangée ; seul
+        // son emplacement dans le slot de 26 px est harmonisé.
+        width: 20
+        height: 20
         source: entry.item.icon
         opacity: entry.item.status === Status.Passive ? 0.7 : 1
     }

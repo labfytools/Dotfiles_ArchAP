@@ -1,6 +1,7 @@
 import QtQuick
 import "../components"
 import "../theme"
+import "StatusColorRoles.js" as StatusColorRoles
 
 Item {
     id: indicator
@@ -20,11 +21,12 @@ Item {
     Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
     NerdIcon {
         anchors.centerIn: parent
-        // WHY: la silhouette Bluetooth est étroite ; seul le dessin grandit, pas la hitbox.
-        font.pixelSize: 22
+        // WHY: le glyphe Bluetooth remplit toute la hauteur de sa police ;
+        // 18 px l'aligne visuellement sur les autres statuts sans changer sa cible.
+        font.pixelSize: 18
         text: indicator.adapter && indicator.adapter.enabled ? "" : "󰂲"
-        color: !indicator.adapter || !indicator.adapter.enabled ? Theme.secondaryForeground
-            : indicator.connectedDevices.length > 0 ? Theme.accent : Theme.foreground
+        // L'infobulle conserve la distinction appareil connecté / radio active.
+        color: Theme[StatusColorRoles.bluetooth(!!indicator.adapter && indicator.adapter.enabled)]
     }
     MouseArea {
         id: pointer

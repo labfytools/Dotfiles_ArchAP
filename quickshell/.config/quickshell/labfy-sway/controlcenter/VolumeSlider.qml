@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell.Services.Pipewire
 import "../components"
 import "../theme"
+import "PercentMath.js" as PercentMath
 
 Item {
     id: volumeControl
@@ -12,6 +13,28 @@ Item {
     readonly property var sinkAudio: sink && sink.ready && sink.audio ? sink.audio : null
     readonly property bool muted: sinkAudio ? sinkAudio.muted : false
     readonly property int percent: sinkAudio ? Math.round(sinkAudio.volume * 100) : 0
+
+    // CONTRACT: un pas est un point absolu, calculé depuis la dernière
+    // consigne locale tant que PipeWire n'a pas encore publié son écho.
+    property int requestedPercent: -1
+    property var sentPercents: []
+    function adjustBy(steps) {
+        if (!sinkAudio || !steps) return;
+        const base = requestedPercent >= 0 ? requestedPercent : percent;
+        const next = PercentMath.bounded(base + steps, 0);
+        requestedPercent = next;
+        sentPercents = sentPercents.concat([next]).slice(-100);
+        sinkAudio.volume = next / 100;
+    }
+    onSinkAudioChanged: { requestedPercent = -1; sentPercents = []; }
+    onPercentChanged: {
+        // Un changement extérieur annule la consigne locale ; les échos de
+        // commandes rapprochées déjà envoyées ne doivent pas l'annuler.
+        if (requestedPercent === percent || sentPercents.indexOf(percent) < 0) {
+            requestedPercent = -1;
+            sentPercents = [];
+        }
+    }
 
     PwObjectTracker {
         objects: [volumeControl.sink]

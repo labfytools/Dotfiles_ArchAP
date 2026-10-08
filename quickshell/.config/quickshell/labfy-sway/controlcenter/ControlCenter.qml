@@ -21,6 +21,15 @@ PopupWindow {
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
+    // CONTRACT: la barre appelle les mêmes instances que les curseurs du
+    // panneau ; les valeurs affichées restent celles des backends observés.
+    readonly property bool volumeAvailable: volumeSlider.sinkAudio !== null
+    readonly property bool volumeMuted: volumeSlider.muted
+    readonly property int volumePercent: volumeSlider.percent
+    readonly property bool brightnessAvailable: brightnessSlider.available
+    readonly property int brightnessPercent: brightnessSlider.percent
+    function adjustVolume(steps) { volumeSlider.adjustBy(steps); }
+    function adjustBrightness(steps) { brightnessSlider.adjustBy(steps); }
     readonly property var pendingAction: sessionExitGate.pendingAction
     readonly property string checkpointError: sessionExitGate.errorMessage
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
@@ -162,8 +171,8 @@ PopupWindow {
                     }
                 }
 
-                VolumeSlider { width: parent.width }
-                BrightnessSlider { width: parent.width }
+                VolumeSlider { id: volumeSlider; width: parent.width }
+                BrightnessSlider { id: brightnessSlider; width: parent.width }
                 PowerProfile { width: parent.width }
 
                 Rectangle {

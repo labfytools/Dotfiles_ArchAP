@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# CONTRACT: build the pinned upstream release with the narrow keymap guard;
+# install only in the user's libexec, never over the system package.
+repo="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+source_dir="${XDG_CACHE_HOME:-$HOME/.cache}/labfy-slurp-v1.5.0"
+binary="$HOME/.local/libexec/labfy-slurp"
+if [[ ! -d "$source_dir/.git" ]]; then
+    git clone --depth 1 --branch v1.5.0 https://github.com/emersion/slurp.git "$source_dir"
+fi
+[[ "$(git -C "$source_dir" rev-parse HEAD)" == fc921b603ee02afff42aba9eb073e82fab900048 ]] || exit 1
+if ! git -C "$source_dir" diff --quiet -- main.c; then
+    git -C "$source_dir" apply --reverse --check "$repo/tools/slurp-keymap-guard.patch"
+else
+    patch -d "$source_dir" -p1 < "$repo/tools/slurp-keymap-guard.patch"
+fi
+meson setup "$source_dir/build" "$source_dir" -Dman-pages=disabled --reconfigure 2>/dev/null || \
+    meson setup "$source_dir/build" "$source_dir" -Dman-pages=disabled
+ninja -C "$source_dir/build"
+install -Dm755 "$source_dir/build/slurp" "$binary"
+printf '%s\n' "$binary"

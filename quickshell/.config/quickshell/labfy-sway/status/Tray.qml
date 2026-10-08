@@ -4,7 +4,7 @@ import Quickshell.Services.SystemTray
 Row {
     id: tray
     required property var barWindow
-    spacing: 2
+    spacing: 4
     // Le modèle natif suit les inscriptions et retraits D-Bus sans scrutation.
     Repeater {
         model: SystemTray.items

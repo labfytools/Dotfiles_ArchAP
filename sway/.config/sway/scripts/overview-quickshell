@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# CONTRACT: le raccourci vise la sortie focalisée ; aucun workspace n'est
+# activé avant le clic de l'utilisateur dans l'Overview.
+output="$(swaymsg -t get_outputs -r | jq -r '.[] | select(.focused == true) | .name' | head -n 1)"
+[[ -n "$output" ]] || exit 1
+for attempt in 1 2 3 4 5; do
+    if quickshell ipc -c labfy-sway call "overviewUi-$output" toggle >/dev/null 2>&1; then
+        exit 0
+    fi
+    sleep 0.1
+done
+exit 1

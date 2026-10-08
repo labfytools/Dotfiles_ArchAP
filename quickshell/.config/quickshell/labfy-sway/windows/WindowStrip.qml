@@ -113,6 +113,11 @@ Item {
     function closeMenu() {
         windowMenu.visible = false;
     }
+    function openActiveMenu() {
+        if (!activeWindow) return false;
+        showMenu(activeButton, activeWindow);
+        return true;
+    }
 
     function showMenu(item, windowInfo) {
         if (windowMenu.visible && menuWindow && menuWindow.id === windowInfo.id) {

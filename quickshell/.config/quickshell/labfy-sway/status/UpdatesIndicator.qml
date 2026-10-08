@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import "../components"
 import "../theme"
+import "StatusColorRoles.js" as StatusColorRoles
 
 Item {
     id: indicator
@@ -22,6 +23,7 @@ Item {
         }
     }
     readonly property bool hasError: Boolean(state.error)
+    readonly property bool pending: state.error === "Vérification en attente"
     visible: hasError || state.totalUpdates > 0
     width: visible ? icon.width + (hasError ? 0 : count.implicitWidth + 3) + 6 : 0
     height: 26
@@ -52,12 +54,12 @@ Item {
         id: icon
         width: 18
         // WHY: le trait circulaire paraît plus petit que le glyphe batterie à 18 px.
-        font.pixelSize: 22
+        font.pixelSize: 26
         anchors.left: parent.left
         anchors.leftMargin: 3
         anchors.verticalCenter: parent.verticalCenter
         text: indicator.hasError ? "" : "󰚰"
-        color: indicator.hasError ? Theme.urgentForeground : Theme.accent
+        color: Theme[StatusColorRoles.updates(indicator.hasError, indicator.pending)]
     }
     Text {
         id: count
@@ -66,7 +68,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         visible: !indicator.hasError
         text: indicator.state.totalUpdates
-        color: Theme.accent
+        color: Theme.foreground
         font.family: "JetBrainsMono Nerd Font Mono"
         font.pixelSize: 12
     }

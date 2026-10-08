@@ -1,0 +1,3 @@
+# These upstream unified diffs preserve source whitespace needed by patch.
+tools/slurp-keymap-guard.patch whitespace=-blank-at-eol,-space-before-tab
+tools/quickshell-qt-compat-v1/qt612-metatypes-v031.patch whitespace=-blank-at-eol,-space-before-tab

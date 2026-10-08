@@ -1,0 +1,28 @@
+diff --git a/main.c b/main.c
+index 135c98a..75b6f4f 100644
+--- a/main.c
++++ b/main.c
+@@ -305,6 +305,11 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
+ 		const uint32_t key_state) {
+ 	struct slurp_seat *seat = data;
+ 	struct slurp_state *state = seat->state;
++	/* WHY: SwayFX may send keyboard events before a keymap. Without an
++	 * xkb_state, xkb_state_key_get_one_sym dereferences NULL. */
++	if (seat->xkb_state == NULL) {
++		return;
++	}
+ 	const xkb_keysym_t keysym = xkb_state_key_get_one_sym(seat->xkb_state, key + 8);
+ 
+ 	switch (key_state) {
+@@ -351,6 +356,11 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
+ 		const uint32_t mods_latched, const uint32_t mods_locked,
+ 		const uint32_t group) {
+ 	struct slurp_seat *seat = data;
++	/* CONTRACT: modifier events received before keymap do not carry a
++	 * usable XKB state; the next event after keymap will update it. */
++	if (seat->xkb_state == NULL) {
++		return;
++	}
+ 	xkb_state_update_mask(seat->xkb_state, mods_depressed, mods_latched,
+ 			mods_locked, 0, 0, group);
+ }

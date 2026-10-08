@@ -107,7 +107,9 @@ bindsym $mod+v splitv
 
 # Switch the current container between different layout styles
 bindsym $mod+s layout stacking
-bindsym $mod+w layout tabbed
+# Super+W appartient à l'Overview ; conserver tabbed sur Super+Shift+W.
+bindsym $mod+Shift+w layout tabbed
+bindsym $mod+w exec ~/.config/sway/scripts/overview-quickshell
 bindsym $mod+e layout toggle split
 
 # Make the current focus fullscreen
@@ -212,7 +214,7 @@ bindsym $mod+Alt+p exec proton-pass
 bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton
 bindsym $mod+Alt+y exec kitty -- sh -c "yazi" 
 bindsym $mod+Alt+w exec gtk-launch chrome-hnpfjngllnobngcgfapefoaidbinmjnm-Default
-bindsym $mod+Alt+v exec ~/.config/sway/scripts/copypast
+bindsym $mod+Alt+v exec ~/.config/sway/scripts/clipboard-quickshell
 bindsym $mod+Alt+c exec --no-startup-id kitty --app-id=lardon-freecad-log --title="Lardon · FreeCAD autopush" --directory=/home/fy59/Documents/Lardon /home/fy59/Documents/Lardon/tools/lardon-freecad-launcher
 bindsym $mod+Alt+s exec sqlitebrowser
 bindsym $mod+Alt+e exec sh -c 'cd /home/fy59/Documents/Investigations/Template/labfy-investigation && exec ./labfy-investigation'
@@ -231,7 +233,7 @@ bindsym $mod+c exec codex-desktop
 bindsym Shift+Print exec grim - | wl-copy -t image/png
 
 # Print = zone -> presse-papier
-bindsym Print exec grim -g "$(slurp)" - | wl-copy -t image/png
+bindsym Print exec ~/.config/sway/scripts/screenshot-region
 
 
 ###############################################

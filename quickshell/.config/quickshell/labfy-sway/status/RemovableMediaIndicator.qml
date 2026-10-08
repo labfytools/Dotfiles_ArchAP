@@ -4,6 +4,7 @@ import Quickshell.Io
 import "../components"
 import "../controlcenter"
 import "../theme"
+import "StatusColorRoles.js" as StatusColorRoles
 
 Item {
     id: indicator
@@ -20,6 +21,13 @@ Item {
     readonly property var devices: testState ? fakeDevices(testState) : readDevices()
     readonly property int deviceCount: devices.length
     readonly property bool hasBusyDevice: devices.some(device => device.busy)
+    readonly property bool hasErrorDevice: devices.some(device => Boolean(device.error))
+    readonly property var publicDeviceKeys: [
+        "actions", "busy", "display_name", "ejectable", "error", "filesystem",
+        "kind", "label", "mount_point", "mounted", "power_off_capable",
+        "removable", "runtime_id", "safe_remove_runtime_id", "size_bytes"
+    ]
+    readonly property var allowedActions: ["mount", "unmount", "open", "safe-remove"]
 
     visible: deviceCount > 0
     width: visible ? 26 : 0
@@ -27,10 +35,26 @@ Item {
 
     onDeviceCountChanged: if (deviceCount === 0) popup.visible = false
 
+    function hasExactKeys(device, expectedKeys) {
+        const keys = Object.keys(device).sort();
+        if (keys.length !== expectedKeys.length) return false;
+        return keys.every((key, index) => key === expectedKeys[index]);
+    }
+
     function validDevice(device) {
         return device !== null && typeof device === "object"
+            // CONTRACT: la vue ne tolère aucune extension implicite du protocole
+            // public, notamment une URI ou une identité matérielle MTP.
+            && hasExactKeys(device, publicDeviceKeys)
             && typeof device.runtime_id === "string" && device.runtime_id.length > 0
-            && typeof device.drive_runtime_id === "string" && device.drive_runtime_id.length > 0
+            && typeof device.safe_remove_runtime_id === "string"
+            && device.safe_remove_runtime_id.length > 0
+            && (device.kind === "block" || device.kind === "mtp")
+            && Array.isArray(device.actions)
+            && device.actions.every((action, index) =>
+                typeof action === "string"
+                    && allowedActions.indexOf(action) !== -1
+                    && device.actions.indexOf(action) === index)
             && typeof device.display_name === "string"
             && (device.label === null || typeof device.label === "string")
             && (device.filesystem === null || typeof device.filesystem === "string")
@@ -51,7 +75,9 @@ Item {
             const value = JSON.parse(raw);
             // CONTRACT: ignorer intégralement un snapshot d'un autre protocole ou
             // partiellement écrit ; aucune commande ne doit viser ses identifiants.
-            if (value.schema !== "labfy.removable-media" || value.version !== 1
+            if (value === null || typeof value !== "object"
+                    || !hasExactKeys(value, ["devices", "schema", "updated_at", "version"])
+                    || value.schema !== "labfy.removable-media" || value.version !== 2
                     || !Array.isArray(value.devices) || !Number.isSafeInteger(value.updated_at)
                     || value.updated_at < 0
                     || !value.devices.every(validDevice))
@@ -63,19 +89,41 @@ Item {
         }
     }
 
-    function fakeDevice(id, mounted, busy, error) {
+    function fakeBlockDevice(busy, error) {
         return {
-            runtime_id: "test-volume-" + id,
-            drive_runtime_id: "test-drive-" + id,
-            display_name: id === 1 ? "Clé USB de test" : "Disque de sauvegarde",
-            label: id === 1 ? "LABFY" : "ARCHIVES",
-            filesystem: id === 1 ? "exfat" : "ext4",
-            size_bytes: id === 1 ? 64000000000 : 1000000000000,
-            mount_point: mounted ? "/run/media/test/" + (id === 1 ? "LABFY" : "ARCHIVES") : "",
-            mounted: mounted,
+            runtime_id: "test-volume-usb",
+            safe_remove_runtime_id: "test-drive-usb",
+            kind: "block",
+            actions: ["unmount", "open", "safe-remove"],
+            display_name: "Clé USB de test",
+            label: "LABFY",
+            filesystem: "exfat",
+            size_bytes: 64000000000,
+            mount_point: "/run/media/test/LABFY",
+            mounted: true,
             removable: true,
-            ejectable: id === 1,
-            power_off_capable: id === 2,
+            ejectable: true,
+            power_off_capable: false,
+            busy: busy,
+            error: error
+        };
+    }
+
+    function fakeMtpDevice(busy, error) {
+        return {
+            runtime_id: "test-mtp-session",
+            safe_remove_runtime_id: "test-mtp-session",
+            kind: "mtp",
+            actions: ["unmount", "open", "safe-remove"],
+            display_name: "Stockage du téléphone",
+            label: "Téléphone Android",
+            filesystem: "mtp",
+            size_bytes: 128000000000,
+            mount_point: "/run/user/1000/gvfs/mtp:host=test",
+            mounted: true,
+            removable: true,
+            ejectable: false,
+            power_off_capable: false,
             busy: busy,
             error: error
         };
@@ -83,16 +131,19 @@ Item {
 
     function fakeDevices(mode) {
         if (mode === "0") return [];
-        if (mode === "1" || mode === "mounted" || mode === "1-mounted")
-            return [fakeDevice(1, true, false, "")];
-        if (mode === "unmounted" || mode === "1-unmounted")
-            return [fakeDevice(1, false, false, "")];
-        if (mode === "2" || mode === "busy-error" || mode === "2-busy-error") return [
-            fakeDevice(1, true, true, ""),
-            fakeDevice(2, false, false, "Le support nécessite une vérification.")
-        ];
+        if (mode === "USB") return [fakeBlockDevice(false, "")];
+        if (mode === "MTP") return [fakeMtpDevice(false, "")];
+        if (mode === "USB+MTP")
+            return [fakeBlockDevice(false, ""), fakeMtpDevice(false, "")];
+        if (mode === "busy") return [fakeMtpDevice(true, "")];
+        if (mode === "error")
+            return [fakeBlockDevice(false, "Le support nécessite une vérification.")];
         console.warn("LABFY_REMOVABLE_MEDIA_TEST_STATE inconnu :", mode);
         return [];
+    }
+
+    function hasAction(device, action) {
+        return device.actions.indexOf(action) !== -1;
     }
 
     function formatSize(bytes) {
@@ -110,9 +161,10 @@ Item {
 
     function runAction(action, device) {
         // INVARIANT: les identifiants TEST_ONLY ne quittent jamais le renderer.
-        if (testState || actionProcess.running || device.busy) return;
+        if (testState || actionProcess.running || device.busy || !hasAction(device, action))
+            return;
         let target = device.runtime_id;
-        if (action === "safe-remove") target = device.drive_runtime_id;
+        if (action === "safe-remove") target = device.safe_remove_runtime_id;
         // CONTRACT: le client est l'unique frontière de commande et reçoit un
         // argv direct. Les identifiants opaques ne traversent jamais un shell.
         actionProcess.command = [clientPath, action, target];
@@ -162,8 +214,8 @@ Item {
     NerdIcon {
         anchors.centerIn: parent
         text: indicator.hasBusyDevice || actionProcess.running ? "󰔟" : "󰕓"
-        color: indicator.hasBusyDevice || actionProcess.running
-            ? Theme.warningForeground : Theme.foreground
+        color: Theme[StatusColorRoles.removable(indicator.hasErrorDevice,
+            indicator.hasBusyDevice || actionProcess.running)]
         font.pixelSize: 18
     }
 
@@ -251,9 +303,12 @@ Item {
 
                                 Text {
                                     width: parent.width
-                                    text: (modelData.label ? modelData.label + " • " : "")
-                                        + (modelData.filesystem || "Système de fichiers inconnu")
-                                        + " • " + indicator.formatSize(modelData.size_bytes)
+                                    text: modelData.kind === "mtp"
+                                        ? "Appareil MTP • " + indicator.formatSize(modelData.size_bytes)
+                                        : (modelData.label ? modelData.label + " • " : "")
+                                            + (modelData.filesystem
+                                                || "Système de fichiers inconnu")
+                                            + " • " + indicator.formatSize(modelData.size_bytes)
                                     color: Theme.secondaryForeground
                                     font.pixelSize: 11
                                     elide: Text.ElideRight
@@ -262,6 +317,11 @@ Item {
                                 Text {
                                     width: parent.width
                                     text: modelData.busy ? "Opération en cours…"
+                                        : modelData.kind === "mtp" && modelData.mounted
+                                            ? (modelData.mount_point
+                                                ? "Connexion ouverte sur " + modelData.mount_point
+                                                : "Connexion ouverte")
+                                        : modelData.kind === "mtp" ? "Connexion fermée"
                                         : modelData.mounted ? "Monté sur " + modelData.mount_point
                                         : "Non monté"
                                     color: modelData.busy ? Theme.warningForeground
@@ -269,6 +329,16 @@ Item {
                                         : Theme.secondaryForeground
                                     font.pixelSize: 11
                                     elide: Text.ElideMiddle
+                                }
+
+                                Text {
+                                    visible: modelData.kind === "mtp"
+                                        && indicator.hasAction(modelData, "safe-remove")
+                                    width: parent.width
+                                    text: "Fermer la connexion déconnecte proprement l’appareil de cette session."
+                                    color: Theme.secondaryForeground
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
                                 }
 
                                 Text {
@@ -285,22 +355,30 @@ Item {
                                     spacing: 6
 
                                     ActionButton {
-                                        visible: modelData.mounted
+                                        visible: indicator.hasAction(modelData, "open")
                                         label: "Ouvrir"
                                         enabled: !indicator.testState && !modelData.busy
                                             && !actionProcess.running
                                         onClicked: indicator.runAction("open", modelData)
                                     }
                                     ActionButton {
-                                        label: modelData.mounted ? "Démonter" : "Monter"
+                                        visible: indicator.hasAction(modelData, "mount")
+                                        label: "Monter"
                                         enabled: !indicator.testState && !modelData.busy
                                             && !actionProcess.running
-                                        onClicked: indicator.runAction(
-                                            modelData.mounted ? "unmount" : "mount", modelData)
+                                        onClicked: indicator.runAction("mount", modelData)
                                     }
                                     ActionButton {
-                                        visible: modelData.ejectable || modelData.power_off_capable
-                                        label: "Retirer en sécurité"
+                                        visible: indicator.hasAction(modelData, "unmount")
+                                        label: "Démonter"
+                                        enabled: !indicator.testState && !modelData.busy
+                                            && !actionProcess.running
+                                        onClicked: indicator.runAction("unmount", modelData)
+                                    }
+                                    ActionButton {
+                                        visible: indicator.hasAction(modelData, "safe-remove")
+                                        label: modelData.kind === "mtp"
+                                            ? "Fermer la connexion" : "Retirer en sécurité"
                                         enabled: !indicator.testState && !modelData.busy
                                             && !actionProcess.running
                                         onClicked: indicator.runAction("safe-remove", modelData)

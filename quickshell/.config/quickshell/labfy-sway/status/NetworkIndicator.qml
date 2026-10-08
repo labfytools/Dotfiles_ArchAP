@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell.Networking
 import "../components"
 import "../theme"
+import "StatusColorRoles.js" as StatusColorRoles
 
 Item {
     id: indicator
@@ -25,14 +26,14 @@ Item {
         anchors.centerIn: parent
         // WHY: md-wifi remplit mieux la hauteur visuelle que les quatre glyphes
         // de niveau ; le pourcentage exact reste disponible dans le tooltip.
-        font.pixelSize: 26
+        font.pixelSize: 30
         // CONTRACT: les glyphes connecté, déconnecté et off existent dans la
         // Nerd Font installée ; seul l'état connecté est simplifié dans la barre.
         text: !Networking.wifiHardwareEnabled ? "󰖪"
             : !Networking.wifiEnabled ? "󰖪"
             : !indicator.connectedNetwork ? "󰤯" : "󰖩"
-        color: !Networking.wifiHardwareEnabled ? Theme.danger
-            : !Networking.wifiEnabled ? Theme.secondaryForeground : Theme.foreground
+        color: Theme[StatusColorRoles.wifi(Networking.wifiHardwareEnabled,
+            Networking.wifiEnabled, !!indicator.connectedNetwork)]
     }
     MouseArea {
         id: pointer

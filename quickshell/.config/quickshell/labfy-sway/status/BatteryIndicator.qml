@@ -3,6 +3,7 @@ import Quickshell.Io
 import Quickshell.Services.UPower
 import "../components"
 import "../theme"
+import "StatusColorRoles.js" as StatusColorRoles
 
 Item {
     id: indicator
@@ -33,7 +34,7 @@ Item {
                 + Math.floor(remaining / 3600) + " h " + String(Math.floor(remaining % 3600 / 60)).padStart(2, "0") : "")
             + (battery.healthSupported ? "\nSanté : " + Math.round(battery.healthPercentage * 100) + " %" : "")
             + (configuredThreshold >= 0 ? "\nLimite configurée : " + configuredThreshold + " %" : "")
-    width: available ? icon.width + value.implicitWidth + 10 : 26
+    width: content.width
     height: 26
 
     FileView {
@@ -44,32 +45,21 @@ Item {
     }
 
     Rectangle { anchors.fill: parent; radius: 4; color: pointer.containsMouse ? Theme.border : "transparent" }
-    NerdIcon {
-        id: icon
-        width: 18
-        anchors.left: parent.left
-        anchors.leftMargin: 3
-        anchors.verticalCenter: parent.verticalCenter
+    PercentIndicatorContent {
+        id: content
         // Les seuils 30/15 % sont visuels ; ils ne modifient aucune politique UPower.
-        text: !indicator.available ? "󰂑"
+        glyph: !indicator.available ? "󰂑"
             : indicator.charging ? "󰂄"
             : indicator.full ? "󰁹"
             : indicator.percent <= 15 ? "󰁺"
             : indicator.percent <= 30 ? "󰁻"
             : indicator.percent <= 50 ? "󰁽"
             : indicator.percent <= 75 ? "󰁿" : "󰁹"
-        color: indicator.percent <= 15 ? Theme.danger
-            : indicator.percent <= 30 ? Theme.urgentForeground : Theme.foreground
-    }
-    Text {
-        id: value
-        anchors.left: icon.right
-        anchors.leftMargin: 2
-        anchors.verticalCenter: parent.verticalCenter
-        text: indicator.available ? indicator.percent + "%" : ""
-        color: icon.color
-        font.family: "JetBrainsMono Nerd Font Mono"
-        font.pixelSize: 12
+        available: indicator.available
+        percent: indicator.percent
+        tint: Theme[StatusColorRoles.battery(indicator.available, indicator.percent)]
+        valueTint: Theme[StatusColorRoles.batteryValue(indicator.available, indicator.percent)]
+        glyphPixelSize: 18
     }
     MouseArea {
         id: pointer

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# WHY: la surface plein écran du presse-papiers prend le focus exclusif et
+# peut faire échouer slurp sur SwayFX. La détruire avant de créer le sélecteur.
+output="$(swaymsg -t get_outputs -r | jq -r '.[] | select(.focused == true) | .name' | head -n 1)"
+if [[ -n "$output" ]]; then
+    target="clipboardUi-$output"
+    state="$(quickshell ipc -c labfy-sway call "$target" state 2>/dev/null || true)"
+    if [[ -n "$state" ]] && jq -e '.loaded == true' >/dev/null 2>&1 <<<"$state"; then
+        quickshell ipc -c labfy-sway call "$target" toggle >/dev/null
+        # CONTRACT: slurp ne démarre qu'une fois le layer-shell exclusif détruit.
+        for ((attempt = 0; attempt < 40; attempt++)); do
+            state="$(quickshell ipc -c labfy-sway call "$target" state 2>/dev/null || true)"
+            if [[ -n "$state" ]] && jq -e '.loaded == false' >/dev/null 2>&1 <<<"$state"; then
+                break
+            fi
+            sleep 0.05
+        done
+        [[ -n "$state" ]] && jq -e '.loaded == false' >/dev/null 2>&1 <<<"$state" || exit 1
+    fi
+fi
+
+# INVARIANT: Échap ou une géométrie vide ne lance ni grim ni wl-copy.
+selector="$HOME/.local/libexec/labfy-slurp"
+[[ -x "$selector" ]] || { echo "Sélecteur slurp corrigé absent : exécuter tools/build-slurp-keymap-guard" >&2; exit 1; }
+geometry="$("$selector")" || exit 0
+[[ -n "$geometry" ]] || exit 0
+runtime="${XDG_RUNTIME_DIR:?}"
+image="$(mktemp "$runtime/labfy-screenshot-XXXXXXXX.png")"
+chmod 600 "$image"
+trap 'rm -f -- "$image"' EXIT
+grim -g "$geometry" "$image"
+# CONTRACT: seul un PNG complet et non vide peut remplacer le presse-papiers.
+[[ -s "$image" ]] || exit 1
+python3 - "$image" <<'PY'
+import sys
+with open(sys.argv[1], 'rb') as image:
+    if image.read(8) != b'\x89PNG\r\n\x1a\n':
+        raise SystemExit(1)
+PY
+wl-copy --type image/png < "$image"
