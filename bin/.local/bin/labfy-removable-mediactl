@@ -22,7 +22,7 @@ def usage() -> int:
         "       labfy-removable-mediactl mount <runtime-id>\n"
         "       labfy-removable-mediactl unmount <runtime-id>\n"
         "       labfy-removable-mediactl open <runtime-id>\n"
-        "       labfy-removable-mediactl safe-remove <drive-id>",
+        "       labfy-removable-mediactl safe-remove <safe-remove-id>",
         file=sys.stderr,
     )
     return 2

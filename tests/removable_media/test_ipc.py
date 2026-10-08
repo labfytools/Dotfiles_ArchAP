@@ -25,6 +25,10 @@ SPEC.loader.exec_module(media)
 class IpcTests(unittest.TestCase):
     def test_request_allowlist_and_shape(self):
         self.assertEqual(media.validate_request({"operation": "list"}), ("list", None))
+        self.assertEqual(
+            media.validate_request({"operation": "mount", "runtime_id": "mtp:nonce:1"}),
+            ("mount", "mtp:nonce:1"),
+        )
         with self.assertRaises(media.RequestError):
             media.validate_request({"operation": "format", "runtime_id": "/tmp/x"})
         with self.assertRaises(media.RequestError):
@@ -69,6 +73,30 @@ class IpcTests(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertIn("volumineuse", response["error"])
         self.assertEqual(called, [])
+
+    def test_dispatcher_waits_for_async_completion(self):
+        pending = []
+
+        class GLib:
+            @staticmethod
+            def idle_add(callback):
+                callback()
+
+        dispatcher = media.GLibDispatcher(
+            GLib, lambda request, done: pending.append((request, done)) or (lambda: None)
+        )
+        result = []
+        thread = threading.Thread(
+            target=lambda: result.append(dispatcher({"operation": "list"}))
+        )
+        thread.start()
+        while not pending:
+            threading.Event().wait(0.001)
+        pending[0][1]({"ok": True})
+        thread.join(2)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result, [{"ok": True}])
 
     def test_slow_incomplete_request_times_out_without_calling_handler(self):
         called = []

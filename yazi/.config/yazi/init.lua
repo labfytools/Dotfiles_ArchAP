@@ -25,3 +25,9 @@ Status:children_add(function()
 		" ",
 	}
 end, 500, Status.RIGHT)
+
+-- WHY: panneau non interactif au-dessus du parent et menu explicite sur M.
+require("devices"):setup()
+
+-- WHY: espace réellement disponible sur le filesystem du répertoire courant.
+require("disk-space"):setup()

@@ -106,17 +106,23 @@ class MediaDaemonTests(unittest.TestCase):
 
         state = daemon.state()
         self.assertEqual(state["schema"], "labfy.removable-media")
-        self.assertEqual(state["version"], 1)
+        self.assertEqual(state["version"], 2)
         self.assertEqual(set(state), {"schema", "version", "devices", "updated_at"})
         self.assertEqual(
             set(state["devices"][0]),
             {
-                "runtime_id", "drive_runtime_id", "display_name", "label",
+                "runtime_id", "safe_remove_runtime_id", "kind", "actions",
+                "display_name", "label",
                 "filesystem", "size_bytes", "mount_point", "mounted",
                 "removable", "ejectable", "power_off_capable", "busy", "error",
             },
         )
         self.assertTrue(state["devices"][0]["mounted"])
+        self.assertEqual(state["devices"][0]["kind"], "block")
+        self.assertEqual(
+            state["devices"][0]["safe_remove_runtime_id"],
+            "/org/freedesktop/UDisks2/drives/usb",
+        )
         self.assertEqual(stat.S_IMODE(self.state_path.stat().st_mode), 0o600)
         self.assertEqual(json.loads(self.state_path.read_text()), state)
 

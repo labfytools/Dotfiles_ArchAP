@@ -1,8 +1,9 @@
 #!/usr/bin/python3
-"""Daemon d'accès conservateur aux supports amovibles via UDisks2."""
+"""Daemon d'accès aux supports bloc UDisks2 et aux appareils MTP Gio."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -12,16 +13,18 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
 SCHEMA = "labfy.removable-media"
-VERSION = 1
+VERSION = 2
 MAX_REQUEST = 16 * 1024
 MAX_ERROR = 240
 MAX_CLIENTS = 8
 READ_TIMEOUT = 2.0
+OPERATION_TIMEOUT_SECONDS = 30
 SOCKET_NAME = "labfy-removable-media.sock"
 STATE_NAME = "labfy-removable-media.json"
 ALLOWED_OPERATIONS = {"list", "mount", "unmount", "open", "safe-remove"}
@@ -53,6 +56,17 @@ def public_operation_error(error: BaseException, operation: str) -> str:
             "safe-remove": "Impossible de retirer le périphérique en sécurité.",
         }.get(operation, "Impossible d'effectuer l'opération sur le périphérique.")
     return bounded_error(error)
+
+
+def public_mtp_operation_error(error: BaseException, operation: str) -> str:
+    """Ne publie jamais le détail Gio, qui peut contenir l'URI MTP."""
+    if isinstance(error, RequestError):
+        return bounded_error(error)
+    return {
+        "mount": "Impossible de monter l'appareil MTP.",
+        "unmount": "Impossible de démonter l'appareil MTP.",
+        "safe-remove": "Impossible de fermer la session MTP.",
+    }.get(operation, "Impossible d'effectuer l'opération sur l'appareil MTP.")
 
 
 def runtime_dir() -> Path:
@@ -93,23 +107,57 @@ class FilesystemRecord:
     removable: bool
     ejectable: bool
     power_off_capable: bool
+    kind: str = "block"
+    mounted_state: bool | None = None
+
+    @property
+    def mounted(self) -> bool:
+        return bool(self.mount_point) if self.mounted_state is None else self.mounted_state
+
+    @property
+    def safe_remove_runtime_id(self) -> str:
+        return self.drive_path
+
+    def actions(self) -> list[str]:
+        actions = ["unmount", "open"] if self.mount_point else ["mount", "open"]
+        if self.power_off_capable or self.ejectable:
+            actions.append("safe-remove")
+        return actions
 
     def public(self, busy: bool = False, error: str = "") -> dict[str, Any]:
         return {
             "runtime_id": self.path,
-            "drive_runtime_id": self.drive_path,
+            "safe_remove_runtime_id": self.safe_remove_runtime_id,
+            "kind": self.kind,
+            "actions": self.actions(),
             "display_name": self.display_name,
             "label": self.label,
             "filesystem": self.filesystem,
             "size_bytes": self.size_bytes,
             "mount_point": self.mount_point,
-            "mounted": bool(self.mount_point),
+            "mounted": self.mounted,
             "removable": self.removable,
             "ejectable": self.ejectable,
             "power_off_capable": self.power_off_capable,
             "busy": busy,
             "error": error,
         }
+
+
+@dataclass(frozen=True)
+class MTPRecord(FilesystemRecord):
+    """Vue publique d'un volume MTP, sans URI ni identité matérielle."""
+
+    kind: str = "mtp"
+
+    def actions(self) -> list[str]:
+        if not self.mounted:
+            return ["mount"]
+        actions = ["unmount"]
+        if self.mount_point:
+            actions.append("open")
+        actions.append("safe-remove")
+        return actions
 
 
 class UDisksBackend:
@@ -325,6 +373,266 @@ class UDisksBackend:
         return sorted(result)
 
 
+class MTPBackend:
+    """Adaptateur des volumes MTP exposés par GVFS via Gio.VolumeMonitor."""
+
+    def __init__(self, Gio: Any, GLib: Any, monitor: Any | None = None) -> None:
+        self.Gio = Gio
+        self.GLib = GLib
+        self.monitor = monitor or Gio.VolumeMonitor.get()
+        self._nonce = uuid.uuid4().hex
+        self._counter = 0
+        self._ids_by_identity: dict[str, str] = {}
+        self._identity_by_id: dict[str, str] = {}
+        self._volumes_by_id: dict[str, Any] = {}
+
+    @staticmethod
+    def _is_mtp(volume: Any) -> bool:
+        try:
+            root = volume.get_activation_root()
+            return root is not None and str(root.get_uri_scheme()).lower() == "mtp"
+        except (AttributeError, TypeError):
+            return False
+
+    def _live_volumes(self) -> list[Any]:
+        return [volume for volume in self.monitor.get_volumes() if self._is_mtp(volume)]
+
+    @staticmethod
+    def _identity(volume: Any) -> str:
+        """Identifie une présence sans conserver ni publier son URI MTP."""
+        root = volume.get_activation_root()
+        uri = str(root.get_uri())
+        return hashlib.sha256(uri.encode("utf-8")).hexdigest()
+
+    def _runtime_id(self, volume: Any) -> str:
+        identity = self._identity(volume)
+        runtime_id = self._ids_by_identity.get(identity)
+        if runtime_id is None:
+            self._counter += 1
+            runtime_id = f"mtp:{self._nonce}:{self._counter}"
+            self._ids_by_identity[identity] = runtime_id
+            self._identity_by_id[runtime_id] = identity
+        self._volumes_by_id[runtime_id] = volume
+        return runtime_id
+
+    def _forget_volume(self, volume: Any) -> None:
+        if not self._is_mtp(volume):
+            return
+        identity = self._identity(volume)
+        runtime_id = self._ids_by_identity.pop(identity, None)
+        if runtime_id is not None:
+            self._identity_by_id.pop(runtime_id, None)
+            self._volumes_by_id.pop(runtime_id, None)
+
+    @staticmethod
+    def _mount_path(volume: Any) -> str:
+        mount = volume.get_mount()
+        if mount is None:
+            return ""
+        root = mount.get_root()
+        if root is None:
+            return ""
+        # CONTRACT: ce chemin local est fourni par GVFS. Une URI MTP ne doit
+        # jamais servir à reconstruire à la main un chemin sous /run/user.
+        return str(root.get_path() or "")
+
+    @staticmethod
+    def _size(volume: Any) -> int:
+        mount = volume.get_mount()
+        if mount is None:
+            return 0
+        try:
+            info = mount.get_root().query_filesystem_info("filesystem::size", None)
+            return int(info.get_attribute_uint64("filesystem::size"))
+        except Exception:
+            return 0
+
+    def records(self) -> list[FilesystemRecord]:
+        volumes = self._live_volumes()
+        live_identities = {self._identity(volume) for volume in volumes}
+        for identity, runtime_id in list(self._ids_by_identity.items()):
+            if identity not in live_identities:
+                self._ids_by_identity.pop(identity, None)
+                self._identity_by_id.pop(runtime_id, None)
+                self._volumes_by_id.pop(runtime_id, None)
+        records: list[FilesystemRecord] = []
+        for volume in volumes:
+            runtime_id = self._runtime_id(volume)
+            name = str(volume.get_name() or "Appareil Android")
+            mount = volume.get_mount()
+            display_name = name
+            if mount is not None:
+                try:
+                    display_name = str(mount.get_name() or name)
+                except AttributeError:
+                    pass
+            records.append(
+                MTPRecord(
+                    path=runtime_id,
+                    drive_path=runtime_id,
+                    display_name=display_name,
+                    label=name,
+                    filesystem="mtp",
+                    size_bytes=self._size(volume),
+                    mount_point=self._mount_path(volume),
+                    removable=True,
+                    ejectable=False,
+                    power_off_capable=False,
+                    mounted_state=mount is not None,
+                )
+            )
+        return sorted(records, key=lambda item: item.path)
+
+    def connect_changed(self, callback: Callable[[], None]) -> None:
+        def volume_removed(_monitor: Any, volume: Any, *_args: Any) -> None:
+            self._forget_volume(volume)
+            callback()
+
+        self.monitor.connect("volume-removed", volume_removed)
+        for signal in (
+            "volume-added",
+            "volume-changed",
+            "mount-added",
+            "mount-changed",
+            "mount-removed",
+        ):
+            self.monitor.connect(signal, lambda *_args: callback())
+
+    def _volume(self, runtime_id: str) -> Any:
+        # INVARIANT: relire le moniteur avant toute action et utiliser le wrapper
+        # vivant correspondant à la présence ayant reçu cet identifiant opaque.
+        identity = self._identity_by_id.get(runtime_id)
+        volume = next(
+            (
+                item
+                for item in self._live_volumes()
+                if identity is not None and self._identity(item) == identity
+            ),
+            None,
+        )
+        if volume is None:
+            raise RequestError("Appareil MTP introuvable ou retiré")
+        self._volumes_by_id[runtime_id] = volume
+        return volume
+
+    def operate_async(
+        self,
+        runtime_id: str,
+        operation: str,
+        callback: Callable[[str | None, BaseException | None], None],
+    ) -> Callable[[], None]:
+        volume = self._volume(runtime_id)
+        cancellable = self.Gio.Cancellable.new()
+        finished = False
+        timeout_id: int | None = None
+        settle_id: int | None = None
+
+        def complete(path: str | None = None, error: BaseException | None = None) -> None:
+            nonlocal finished
+            if finished:
+                return
+            finished = True
+            if timeout_id is not None:
+                self.GLib.source_remove(timeout_id)
+            if settle_id is not None:
+                self.GLib.source_remove(settle_id)
+            callback(path, error)
+
+        def timed_out() -> bool:
+            cancellable.cancel()
+            complete(error=RequestError("Délai d'opération MTP dépassé"))
+            return False
+
+        timeout_id = self.GLib.timeout_add_seconds(OPERATION_TIMEOUT_SECONDS, timed_out)
+
+        def verify_postcondition(expect_mounted: bool) -> bool:
+            try:
+                current = self._volume(runtime_id)
+                mounted = current.get_mount() is not None
+                if mounted != expect_mounted:
+                    return True
+                complete(self._mount_path(current) if mounted else "")
+            except BaseException as error:
+                complete(error=error)
+            return False
+
+        def settle(expect_mounted: bool) -> None:
+            nonlocal settle_id
+            if not verify_postcondition(expect_mounted):
+                return
+            # WHY: GVFS peut publier GMount quelques instants après mount_finish.
+            # Le polling rend la main entre chaque lecture et reste couvert par
+            # le timeout/cancellable global de l'opération.
+            settle_id = self.GLib.timeout_add(100, verify_postcondition, expect_mounted)
+
+        def mount_done(source: Any, result: Any, *_args: Any) -> None:
+            try:
+                source.mount_finish(result)
+                settle(True)
+            except BaseException as error:
+                complete(error=error)
+
+        def unmount_done(source: Any, result: Any, *_args: Any) -> None:
+            try:
+                source.unmount_with_operation_finish(result)
+                settle(False)
+            except BaseException as error:
+                complete(error=error)
+
+        try:
+            if operation == "mount":
+                volume.mount(
+                    self.Gio.MountMountFlags.NONE, None, cancellable, mount_done
+                )
+            elif operation in {"unmount", "safe-remove"}:
+                mount = volume.get_mount()
+                if mount is None:
+                    if operation == "safe-remove":
+                        raise RequestError("L'appareil MTP n'a pas de session à fermer")
+                    complete("")
+                else:
+                    # CONTRACT: le retrait MTP ferme uniquement la session GVFS ;
+                    # il ne déclenche jamais UDisks PowerOff/Eject.
+                    mount.unmount_with_operation(
+                        self.Gio.MountUnmountFlags.NONE,
+                        None,
+                        cancellable,
+                        unmount_done,
+                    )
+            else:
+                raise RequestError("Opération MTP non autorisée")
+        except BaseException as error:
+            complete(error=error)
+
+        return cancellable.cancel
+
+
+class RemovableMediaBackend:
+    """Agrège les deux sources sans modifier la politique UDisks existante."""
+
+    def __init__(self, block: UDisksBackend, mtp: MTPBackend) -> None:
+        self.block = block
+        self.mtp = mtp
+
+    def records(self) -> list[FilesystemRecord]:
+        return self.block.records() + self.mtp.records()
+
+    def connect_changed(self, callback: Callable[[], None]) -> None:
+        self.block.connect_changed(callback)
+        self.mtp.connect_changed(callback)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.block, name)
+
+    def operate_mtp_async(
+        self,
+        runtime_id: str,
+        operation: str,
+        callback: Callable[[str | None, BaseException | None], None],
+    ) -> Callable[[], None]:
+        return self.mtp.operate_async(runtime_id, operation, callback)
+
+
 class MediaDaemon:
     """Modèle métier injectable et indépendant de Gio."""
 
@@ -391,7 +699,7 @@ class MediaDaemon:
             self._write_state()
 
     def start(self) -> None:
-        """Effectue le scan initial après l'abonnement aux événements UDisks."""
+        """Effectue le scan initial après l'abonnement aux deux sources."""
         self.devices_changed()
 
     def devices_changed(self) -> None:
@@ -406,7 +714,10 @@ class MediaDaemon:
 
             confirmed: dict[str, str] = {}
             for item in newcomers:
-                if item.mount_point:
+                if item.mounted:
+                    continue
+                if item.kind == "mtp":
+                    self._start_mtp_operation(item, "mount", None)
                     continue
                 try:
                     self.backend.mount(item.path)
@@ -429,6 +740,35 @@ class MediaDaemon:
                     for item in self._records
                 ]
                 self._write_state()
+
+    def _start_mtp_operation(
+        self,
+        record: FilesystemRecord,
+        operation: str,
+        done: Callable[[dict[str, Any] | BaseException], None] | None,
+    ) -> Callable[[], None]:
+        self._set_busy(record.safe_remove_runtime_id, True)
+
+        def completed(path: str | None, error: BaseException | None) -> None:
+            with self._lock:
+                result_error: BaseException | None = None
+                if error is None:
+                    self._errors.pop(record.path, None)
+                else:
+                    message = public_mtp_operation_error(error, operation)
+                    self._errors[record.path] = message
+                    result_error = RequestError(message)
+                    LOGGER.warning("Échec Gio pendant une opération MTP : %s", error)
+                self._busy_drives.discard(record.safe_remove_runtime_id)
+                self.refresh()
+                if done is not None:
+                    done(result_error or {"ok": True, "state": self.state()})
+
+        try:
+            return self.backend.operate_mtp_async(record.path, operation, completed)
+        except BaseException as error:
+            completed(None, error)
+            return lambda: None
 
     def _record(self, runtime_id: str) -> FilesystemRecord:
         # CONTRACT: on relit UDisks avant toute mutation ; un identifiant d'objet
@@ -524,8 +864,19 @@ class MediaDaemon:
             self.refresh()
             return {"ok": True, "state": self.state()}
         assert runtime_id is not None
+        self.refresh()
+        mtp_record = next(
+            (item for item in self._records if item.path == runtime_id and item.kind == "mtp"),
+            None,
+        )
+        if mtp_record is not None:
+            if operation == "open":
+                if "open" not in mtp_record.actions() or not mtp_record.mount_point:
+                    raise RequestError("L'appareil MTP n'a pas fourni de chemin local")
+                self.launcher(mtp_record.mount_point)
+                return {"ok": True, "state": self.state()}
+            raise RequestError("Cette opération MTP exige une complétion asynchrone")
         if operation == "safe-remove":
-            self.refresh()
             records = self._drive_records(runtime_id)
             if not records:
                 raise RequestError("Lecteur introuvable ou retiré")
@@ -551,6 +902,44 @@ class MediaDaemon:
                     raise RequestError("Le support n'a pas fourni de point de montage")
                 self.launcher(mount_point)
         return {"ok": True, "state": self.state()}
+
+    def handle_async(
+        self,
+        request: dict[str, Any],
+        done: Callable[[dict[str, Any] | BaseException], None],
+    ) -> Callable[[], None]:
+        """Lance une requête depuis GLib et remet sa réponse au callback."""
+        try:
+            operation, runtime_id = validate_request(request)
+            if operation == "list":
+                done(self.handle(request))
+                return lambda: None
+            assert runtime_id is not None
+            self.refresh()
+            record = next(
+                (
+                    item
+                    for item in self._records
+                    if item.kind == "mtp"
+                    and runtime_id in {item.path, item.safe_remove_runtime_id}
+                ),
+                None,
+            )
+            if record is None:
+                done(self.handle(request))
+                return lambda: None
+            if operation not in record.actions():
+                raise RequestError("Opération indisponible pour cet appareil MTP")
+            if operation == "open":
+                if not record.mount_point:
+                    raise RequestError("L'appareil MTP n'a pas fourni de chemin local")
+                self.launcher(record.mount_point)
+                done({"ok": True, "state": self.state()})
+                return lambda: None
+            return self._start_mtp_operation(record, operation, done)
+        except BaseException as error:
+            done(error)
+            return lambda: None
 
     @staticmethod
     def _launch_yazi(mount_point: str) -> None:
@@ -580,9 +969,11 @@ def validate_request(request: Any) -> tuple[str, str | None]:
         if runtime_id is not None:
             raise RequestError("runtime_id est interdit pour list")
         return operation, None
-    if not isinstance(runtime_id, str) or not runtime_id.startswith(
-        "/org/freedesktop/UDisks2/"
-    ) or len(runtime_id) > 512:
+    valid_prefix = isinstance(runtime_id, str) and (
+        runtime_id.startswith("/org/freedesktop/UDisks2/")
+        or runtime_id.startswith("mtp:")
+    )
+    if not valid_prefix or len(runtime_id) > 512:
         raise RequestError("runtime_id invalide")
     return operation, runtime_id
 
@@ -663,25 +1054,38 @@ class JsonSocketServer:
 class GLibDispatcher:
     """Fait exécuter les mutations Gio dans le thread de la boucle GLib."""
 
-    def __init__(self, GLib: Any, handler: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        GLib: Any,
+        handler: Callable[
+            [dict[str, Any], Callable[[dict[str, Any] | BaseException], None]],
+            Callable[[], None],
+        ],
+    ) -> None:
         self.GLib = GLib
         self.handler = handler
 
     def __call__(self, request: dict[str, Any]) -> dict[str, Any]:
         completed = threading.Event()
         result: list[dict[str, Any] | BaseException] = []
+        cancellation: list[Callable[[], None]] = []
+
+        def complete(value: dict[str, Any] | BaseException) -> None:
+            if not completed.is_set():
+                result.append(value)
+                completed.set()
 
         def invoke() -> bool:
             try:
-                result.append(self.handler(request))
+                cancellation.append(self.handler(request, complete))
             except BaseException as error:
-                result.append(error)
-            finally:
-                completed.set()
+                complete(error)
             return False
 
         self.GLib.idle_add(invoke)
-        if not completed.wait(30):
+        if not completed.wait(OPERATION_TIMEOUT_SECONDS + 2):
+            if cancellation:
+                self.GLib.idle_add(cancellation[0])
             raise RequestError("Délai d'opération dépassé")
         value = result[0]
         if isinstance(value, BaseException):
@@ -697,13 +1101,17 @@ def main() -> int:
         from gi.repository import Gio, GLib
 
         base = runtime_dir()
-        backend = UDisksBackend(Gio, GLib)
+        backend = RemovableMediaBackend(
+            UDisksBackend(Gio, GLib), MTPBackend(Gio, GLib)
+        )
         daemon = MediaDaemon(backend, base / STATE_NAME)
         # CONTRACT: s'abonner avant le scan ferme la fenêtre où un objet ajouté
         # entre ces deux opérations aurait échappé à l'automount.
         backend.connect_changed(daemon.devices_changed)
         daemon.start()
-        server = JsonSocketServer(base / SOCKET_NAME, GLibDispatcher(GLib, daemon.handle))
+        server = JsonSocketServer(
+            base / SOCKET_NAME, GLibDispatcher(GLib, daemon.handle_async)
+        )
         server.start()
         threading.Thread(target=server.serve_forever, daemon=True).start()
         GLib.MainLoop().run()

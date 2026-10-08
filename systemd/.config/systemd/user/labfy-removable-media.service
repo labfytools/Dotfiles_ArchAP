@@ -1,5 +1,5 @@
 [Unit]
-Description=Gestion des supports amovibles USB et SD
+Description=Gestion des supports amovibles USB, SD et Android MTP
 PartOf=wayland-session@sway.desktop.target
 After=wayland-session@sway.desktop.target
 
