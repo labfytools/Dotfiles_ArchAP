@@ -13,6 +13,10 @@ import tempfile
 def count(command):
     # CONTRACT: aucune mise à jour n'est appliquée ; chaque vérification est bornée.
     result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+    # CONTRACT: checkupdates utilise le code 2 pour « aucune mise à jour » ;
+    # INVARIANT: une sortie inattendue garde le chemin d'erreur existant.
+    if command[0] == "checkupdates" and result.returncode == 2 and not result.stdout.strip() and not result.stderr.strip():
+        return 0
     # yay -Qua retourne 1 avec stdout/stderr vides quand aucune entrée AUR n'existe.
     if command[0] == "yay" and result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
         return 0
