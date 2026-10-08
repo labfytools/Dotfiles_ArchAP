@@ -5,6 +5,10 @@ Le [moteur de thème commun](theme/README.md) fournit les couleurs effectives
 
 Barre principale et serveur de notifications de la session SwayFX.
 
+Le haut-parleur de la barre ouvre le [mixeur audio du Control Center](controlcenter/AUDIO_MIXER.md),
+avec sorties, flux de lecture et microphones. Le volume général conserve son
+contrôleur partagé avec la barre et ses pas de 1 point au défilement.
+
 Le bouton Arch **Applications**, premier élément à gauche même en mode Resize,
 ouvre le [menu d'applications](applications/README.md) sous la barre.
 `Mod+Alt+L` ouvre ce menu sur la sortie focalisée.

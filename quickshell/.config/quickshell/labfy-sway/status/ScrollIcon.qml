@@ -11,7 +11,9 @@ Item {
     property int glyphPixelSize: 22
     property color glyphColor: Theme.foreground
     property bool available: false
+    property bool clickable: false
     signal adjusted(int steps)
+    signal activated()
     // CONTRACT: la hitbox et la valeur partagent la même largeur stable que
     // la batterie ; le texte débute à 4 px de l'icône, sans vide variable.
     width: content.width
@@ -47,8 +49,9 @@ Item {
     MouseArea {
         id: pointer
         anchors.fill: parent
-        acceptedButtons: Qt.NoButton
+        acceptedButtons: iconButton.clickable ? Qt.LeftButton : Qt.NoButton
         hoverEnabled: true
+        onClicked: iconButton.activated()
     }
     StatusTooltip {
         target: iconButton

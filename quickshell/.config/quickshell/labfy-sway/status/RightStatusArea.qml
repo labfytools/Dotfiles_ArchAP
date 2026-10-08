@@ -39,6 +39,8 @@ Row {
             label: "Volume"
             percent: area.audioBrightnessController.volumePercent
             available: area.audioBrightnessController.volumeAvailable
+            clickable: true
+            onActivated: area.openPageRequested(15)
             onAdjusted: steps => area.audioBrightnessController.adjustVolume(steps)
         }
         ScrollIcon {

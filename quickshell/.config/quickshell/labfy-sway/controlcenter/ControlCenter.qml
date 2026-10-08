@@ -17,7 +17,7 @@ PopupWindow {
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
         confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8,
         nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12,
-        checkpointFailure: 13, avatar: 14 })
+        checkpointFailure: 13, avatar: 14, audio: 15 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -125,7 +125,8 @@ PopupWindow {
         : currentPage === 5 ? batteryPage.implicitHeight + 32
         : currentPage === pages.wallpaper ? 550
         : currentPage === pages.appearance ? 610
-        : currentPage === pages.locationTime || currentPage === pages.sessionManager ? 650 : 440
+        : currentPage === pages.locationTime || currentPage === pages.sessionManager ? 650
+        : currentPage === pages.audio ? 620 : 440
     visible: false
     // CONTRACT: PopupWindow n'applique un changement de grabFocus qu'après
     // fermeture/réouverture ; le prendre dès MAIN garde le clavier disponible
@@ -329,6 +330,11 @@ PopupWindow {
             AvatarPage {
                 activePage: popup.visible && popup.currentPage === popup.pages.avatar
                 onBackRequested: popup.openPage("appearance")
+            }
+            AudioMixerPage {
+                activePage: popup.visible && popup.currentPage === popup.pages.audio
+                volumeControl: volumeSlider
+                onBackRequested: popup.openPage("main")
             }
         }
     }
