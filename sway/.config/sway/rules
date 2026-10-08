@@ -9,6 +9,11 @@
 for_window [app_id="blueman-manager"] floating enable, resize set 40ppt 40ppt, move position center
 for_window [app_id="Proton Pass"] floating enable, resize set 40ppt 40ppt, move position right top
 
+# WHY: le sélecteur portal doit flotter et rester centré.
+# CONTRACT: seul l'app_id dédié au wrapper Yazi reçoit ce placement ;
+# la bordure serveur garantit la même politique que les autres flottantes.
+for_window [app_id="labfy-yazi-filechooser"] floating enable, border pixel 2, move position center
+
 #=================================================
 # Lardon
 #=================================================
@@ -17,3 +22,9 @@ for_window [app_id="lardon-freecad-log"] floating enable
 for_window [app_id="lardon-freecad-log"] resize set width 850 px height 360 px
 for_window [app_id="lardon-freecad-log"] move position center
 for_window [app_id="lardon-freecad-log"] border pixel 2
+
+# WHY: les fenêtres CSD peuvent ignorer default_floating_border.
+# CONTRACT: toute fenêtre créée flottante utilise une bordure serveur de 2 px,
+# sans barre de titre ; client.* fournit Lavender au focus et Mocha hors focus.
+# Les transitions ultérieures sont traitées par l'abonné IPC d'opacité existant.
+for_window [floating] border pixel 2

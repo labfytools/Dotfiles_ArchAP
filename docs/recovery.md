@@ -50,7 +50,7 @@ exigent une décision spécifique ; aucun helper AUR n'est supposé magique.
 ## 6. Déployer Stow
 
 Suivre le [guide d'installation](installation.md) : définir explicitement les
-31 packages, exécuter le dry-run, résoudre les conflits, puis seulement lancer
+32 packages, exécuter le dry-run, résoudre les conflits, puis seulement lancer
 le déploiement réel. `docs/` et `.assets/` ne sont pas déployés.
 
 ## 7. Restaurer les services

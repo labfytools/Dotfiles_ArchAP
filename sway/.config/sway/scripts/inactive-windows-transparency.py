@@ -2,20 +2,25 @@
 
 # This script requires i3ipc-python package (install it from a system package manager
 # or pip).
-# It makes inactive windows transparent. Use `transparency_val` variable to control
-# transparency strength in range of 0…1 or use the command line argument -o.
+# It makes inactive windows transparent and corrects borders on floating events.
+# Use the command line argument -o to control inactive opacity in range 0…1.
 
 import argparse
 import json
 import os
 import signal
 import sys
+import time
 from functools import partial
 from pathlib import Path
 
 import i3ipc
 
 STATE = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'labfy-appearance/effective.json'
+
+# INVARIANT: seules les bordures de mosaïque remplacées en flottant sont
+# mémorisées, puis oubliées au retour en mosaïque ou à la fermeture.
+previous_tiled_borders = {}
 
 
 def inactive_opacity():
@@ -38,9 +43,37 @@ def apply_all(ipc):
 def on_window(args, ipc, event):
     global focused_set
 
-    # To get the workspace for a container, we need to have received its
-    # parents, so fetch the whole tree
+    # WHY: Sway émet window::floating avant de finir le passage à csd de
+    # certaines fenêtres. Attendre uniquement cette transition évite qu'une
+    # bordure corrigée aussitôt soit écrasée dans la même opération.
+    if event.change == 'floating' and event.container.floating in ('user_on', 'auto_on'):
+        time.sleep(0.05)
+
+    # L'arbre courant remplace l'instantané trop précoce de l'événement.
     tree = ipc.get_tree()
+
+    # WHY: for_window ne se rejoue pas sur une transition IPC vers floating.
+    # CONTRACT: la bordure serveur ne s'applique qu'au conteneur devenu
+    # flottant ; sa décoration précédente revient lors du retour en mosaïque.
+    # INVARIANT: une bordure déjà correcte ne déclenche aucune commande, donc
+    # aucune réaction répétée à un éventuel événement causé par border.
+    if event.change == 'floating':
+        window = tree.find_by_id(event.container.id)
+        if window is not None and window.floating in ('user_on', 'auto_on'):
+            if window.border != 'pixel' or window.current_border_width != 2:
+                # L'instantané de l'événement garde la bordure d'entrée,
+                # même si l'arbre courant montre déjà csd en flottant.
+                previous_tiled_borders[window.id] = (
+                    event.container.border, event.container.current_border_width)
+                window.command('border pixel 2')
+        elif event.container.id in previous_tiled_borders:
+            border, width = previous_tiled_borders.pop(event.container.id)
+            if border in ('normal', 'pixel') and isinstance(width, int) and 0 <= width <= 1000:
+                event.container.command(f'border {border} {width}')
+            elif border in ('none', 'csd'):
+                event.container.command(f'border {border}')
+    elif event.change == 'close':
+        previous_tiled_borders.pop(event.container.id, None)
 
     args.opacity = inactive_opacity()
     focused = tree.find_focused()

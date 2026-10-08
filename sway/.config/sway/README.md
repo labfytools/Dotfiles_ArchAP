@@ -23,6 +23,9 @@ QuickShell, lancé par `quickshell-labfy-sway.service`.
 
 `autostart` lance une fois le listener IPC
 `scripts/inactive-windows-transparency.py`, `limusic-app` et `autotiling`.
+Ce listener réutilise les événements `window::floating` pour appliquer la
+bordure serveur de 2 px lors des bascules IPC, puis restaure la bordure
+antérieure au retour en mosaïque. Aucun second abonné permanent n'est lancé.
 Cliphist, swayidle, wlsunset et QuickShell sont gérés par systemd user ;
 aucune commande `qs` n'est lancée par Sway. Le fichier `swayfx` fixe les
 animations à 0, les coins à 4, les ombres validées et le flou uniquement sur

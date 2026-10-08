@@ -74,7 +74,7 @@ ArchASP
 └── Dotfiles_ArchAP   utilisateur · $HOME · Stow · systemd --user
 ```
 
-Les 31 packages Stow couvrent le desktop, le shell, le développement, les
+Les 32 packages Stow couvrent le desktop, le shell, le développement, les
 services utilisateur et l'apparence. `.assets/` contient les inventaires de
 reconstruction ; `docs/` contient la documentation et n'est jamais un package
 Stow. Voir le [contrat d'architecture](docs/architecture.md).
@@ -90,7 +90,7 @@ git clone --recurse-submodules \
 cd "$HOME/.dotfiles"
 
 packages=(atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock \
-  hyprwhspr icons kitty mako nvim opencode qt5ct qt6ct \
+  hyprwhspr icons kitty mako nvim opencode portal qt5ct qt6ct \
   quickshell starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi \
   ytmusic-tui zsh)
 
@@ -110,6 +110,7 @@ inventaires et validations sont décrits dans le
 | [Architecture](docs/architecture.md) | Frontières ArchASP, Stow et données locales |
 | [Installation](docs/installation.md) | Clone neuf, sous-modules, Stow et validations |
 | [Desktop](docs/desktop.md) | Chaîne greetd/UWSM/Sway et composants Wayland |
+| [Sélecteur de fichiers](portal/README.md) | Portail FileChooser, Yazi, Kitty et raccourcis |
 | [Shell](docs/shell.md) | Zsh, outils interactifs, plugins et scripts |
 | [systemd](docs/systemd.md) | Services système et unités utilisateur |
 | [Packages](docs/packages.md) | Inventaires Pacman, AUR, services et outils externes |

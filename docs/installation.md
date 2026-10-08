@@ -63,14 +63,14 @@ installer. Comparer leur contenu à la machine cible et lire
 [`packages.md`](packages.md) ainsi que
 [`external-tools.md`](../.assets/external-tools.md) avant toute installation.
 
-## 5. Définir les 31 packages Stow
+## 5. Définir les 32 packages Stow
 
 Les commandes suivantes sont destinées à Bash :
 
 ```bash
 packages=(
   atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock
-  hyprwhspr icons kitty mako nvim opencode qt5ct qt6ct
+  hyprwhspr icons kitty mako nvim opencode portal qt5ct qt6ct
   quickshell starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi
   ytmusic-tui zsh
 )
@@ -79,6 +79,9 @@ printf '%s\n' "${packages[@]}"
 ```
 
 `docs/` et `.assets/` ne doivent pas être ajoutés à ce tableau. Le package
+`portal` demande l'installation du backend décrite dans
+[`portal/README.md`](../portal/README.md).
+Le package
 `quickshell` déploie `~/.config/quickshell/labfy-sway/` ; une Nerd Font
 (`ttf-jetbrains-mono-nerd` sur cette machine) fournit les icônes.
 SwayFX 0.6 est un paquet foreign/local à reconstruire depuis sa source
