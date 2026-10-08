@@ -209,7 +209,7 @@ bindsym $mod+Alt+g exec gimp
 bindsym $mod+Alt+m exec limusic-app
 bindsym $mod+Alt+b exec blueman-manager
 bindsym $mod+Alt+o exec swaylock
-bindsym $mod+Alt+l exec wofi --cache-file=/dev/null -Dimage_size=26 -Dynamic_lines=true --location top --yoffset=10 --width=600 --height=300 --gtk-dark --show drun
+bindsym $mod+Alt+l exec ~/.config/sway/scripts/applications-quickshell
 bindsym $mod+Alt+p exec proton-pass
 bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton
 bindsym $mod+Alt+y exec kitty -- sh -c "yazi" 

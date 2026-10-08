@@ -172,7 +172,8 @@ def state():
     by_number = {item["num"]: item for item in workspaces if item.get("num") in range(1, 11)}
     output_info = {item["name"]: item for item in outputs if item.get("active")}
     overlay_outputs = [item["name"] for item in outputs if item.get("active")
-                       and any(surface.get("namespace") == "labfy-workspace-overview"
+                       and any(surface.get("namespace") in {
+                           "labfy-workspace-overview", "labfy-applications-menu"}
                                for surface in item.get("layer_shell_surfaces") or [])]
     workspace_nodes = {}
 

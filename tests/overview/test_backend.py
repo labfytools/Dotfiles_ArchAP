@@ -40,6 +40,10 @@ class OverviewBackendTests(unittest.TestCase):
         self.assertTrue(result["cards"][0]["windows"][1]["floating"])
         self.assertEqual(result["cards"][0]["windows"][0]["foreignId"], "a" * 32)
         self.assertFalse(result["cards"][1]["exists"])
+        outputs[0]["layer_shell_surfaces"].append({"namespace": "labfy-applications-menu"})
+        with patch.object(backend, "sway", side_effect=lambda kind: {
+                "get_tree": tree, "get_workspaces": ws, "get_outputs": outputs}[kind]):
+            self.assertEqual(backend.state()["overlayOutputs"], ["eDP-1"])
 
     def test_move_uses_only_valid_con_id_and_workspace(self):
         cards = [{"number": 1, "revision": "before", "windows": [{"id": 42}]},

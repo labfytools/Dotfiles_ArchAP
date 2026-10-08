@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.I3
@@ -12,6 +13,7 @@ import "status"
 import "theme"
 import "clipboard"
 import "overview"
+import "applications"
 
 PanelWindow {
     id: bar
@@ -22,6 +24,7 @@ PanelWindow {
     required property var notificationService
     required property bool startupHost
     required property bool resizeMode
+    required property var applicationCoordinator
     screen: modelData
 
     anchors {
@@ -45,6 +48,87 @@ PanelWindow {
     focusable: true
     color: Theme.panelBackground
 
+    property string applicationsError: ""
+    property string queuedApplicationId: ""
+    readonly property string applicationsBackend: (Quickshell.env("XDG_CONFIG_HOME") ||
+        (Quickshell.env("HOME") + "/.config")) + "/quickshell/labfy-sway/applications/backend.py"
+    function closeApplications() { applicationCoordinator.applicationsOutput = ""; }
+    function toggleApplications() {
+        if (applicationCoordinator.applicationsOutput !== screen.name) applicationsError = "";
+        applicationCoordinator.toggleApplications(screen.name);
+        return true;
+    }
+    function launchApplication(id) {
+        if (applicationLaunch.running || launchDelay.running) return;
+        queuedApplicationId = id;
+        closeApplications();
+        // WHY: release exclusive layer focus before the new client requests it.
+        launchDelay.start();
+    }
+    Timer {
+        id: launchDelay
+        interval: 140; repeat: false
+        onTriggered: {
+            applicationLaunch.command = ["python3", "-B", bar.applicationsBackend,
+                "launch", bar.queuedApplicationId];
+            applicationLaunch.running = true;
+        }
+    }
+    Process {
+        id: applicationLaunch
+        stdout: StdioCollector { id: launchOutput; waitForEnd: true }
+        onExited: (code, status) => {
+            let result = {};
+            try { result = JSON.parse(launchOutput.text); } catch (_) {}
+            if (code !== 0 || result.error) {
+                bar.applicationsError = result.error || "Lancement impossible";
+                if (!bar.applicationCoordinator.applicationsOutput)
+                    bar.applicationCoordinator.toggleApplications(bar.screen.name);
+            }
+            bar.queuedApplicationId = "";
+        }
+    }
+    Connections {
+        target: bar.applicationCoordinator
+        function onApplicationsOpening(output) {
+            bar.closeOverview();
+            bar.closeClipboard();
+            controlCenter.visible = false;
+            dateCenter.requestClose();
+            windowStrip.closeMenu();
+            rightStatusArea.closeRemovableMedia();
+        }
+    }
+    IpcHandler {
+        target: "applicationsUi-" + bar.screen.name
+        function toggle(): bool { return bar.toggleApplications(); }
+        function state(): string {
+            return JSON.stringify({ loaded: applicationsLoader.active,
+                visible: !!applicationsLoader.item && applicationsLoader.item.visible,
+                searchFocused: !!applicationsLoader.item && applicationsLoader.item.searchFocused,
+                navigationFocused: !!applicationsLoader.item && applicationsLoader.item.navigationFocused,
+                gridFocused: !!applicationsLoader.item && applicationsLoader.item.gridFocused,
+                category: applicationsLoader.item ? applicationsLoader.item.selectedCategory : "",
+                resultCount: applicationsLoader.item ? applicationsLoader.item.visibleApps.length : 0,
+                firstIds: applicationsLoader.item ? applicationsLoader.item.visibleApps.slice(0, 4).map(item => item.id) : [],
+                bounds: applicationsLoader.item ? {
+                    x: applicationsLoader.item.cardX, y: applicationsLoader.item.cardY,
+                    width: applicationsLoader.item.cardWidth,
+                    height: applicationsLoader.item.cardHeight
+                } : null });
+        }
+    }
+    LazyLoader {
+        id: applicationsLoader
+        active: bar.applicationCoordinator.applicationsOutput === bar.screen.name
+        ApplicationsMenu {
+            barWindow: bar
+            errorMessage: bar.applicationsError
+            onMenuDismissed: bar.closeApplications()
+            onLaunchRequested: id => bar.launchApplication(id)
+        }
+    }
+
     function closeClipboard() {
         if (clipboardLoader.item && !clipboardLoader.item.closing)
             clipboardLoader.item.dismiss(true);
@@ -54,6 +138,7 @@ PanelWindow {
         if (clipboardLoader.active) {
             closeClipboard();
         } else {
+            closeApplications();
             closeOverview();
             controlCenter.visible = false;
             dateCenter.requestClose();
@@ -72,6 +157,7 @@ PanelWindow {
     }
     function toggleOverview() {
         if (overviewRequested || overviewLoader.active) { closeOverview(); return true; }
+        closeApplications();
         closeClipboard();
         controlCenter.visible = false;
         dateCenter.requestClose();
@@ -122,6 +208,7 @@ PanelWindow {
         interval: 350; repeat: false
         onTriggered: {
             if (!overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
+                    && !applicationsLoader.active
                     && !controlCenter.visible && !dateCenter.visible)
                 overviewCapture.running = true;
         }
@@ -132,6 +219,7 @@ PanelWindow {
         interval: 15000; repeat: true; running: true; triggeredOnStart: true
         onTriggered: {
             if (!overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
+                    && !applicationsLoader.active
                     && !controlCenter.visible && !dateCenter.visible)
                 overviewCapture.running = true;
         }
@@ -151,6 +239,7 @@ PanelWindow {
         target: "appearanceUi-" + bar.screen.name
         function openPage(page: string): bool {
             if (controlCenter.pages[page] === undefined) return false;
+            bar.closeApplications();
             bar.closeClipboard();
             dateCenter.requestClose();
             windowStrip.closeMenu();
@@ -161,6 +250,7 @@ PanelWindow {
         function close(): bool { controlCenter.visible = false; return true; }
         function openDateCenter(): bool { bar.toggleDateCenter(); return true; }
         function openWindowMenu(): bool {
+            bar.closeApplications();
             bar.closeClipboard();
             controlCenter.visible = false;
             dateCenter.requestClose();
@@ -197,6 +287,7 @@ PanelWindow {
     // CONTRACT: toute la capsule centrale partage le même popup et la même exclusion XOR.
     function toggleDateCenter() {
         const opening = !dateCenter.visible && !dateCenter.opening;
+        closeApplications();
         closeOverview();
         closeClipboard();
         controlCenter.visible = false;
@@ -216,9 +307,40 @@ PanelWindow {
         clip: true
 
         Rectangle {
+            id: applicationsButton
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 30; height: 28; radius: 4
+            color: bar.applicationCoordinator.applicationsOutput === bar.screen.name
+                ? Theme.buttonPressed : applicationsPointer.containsMouse
+                    ? Theme.buttonHover : "transparent"
+            Text {
+                anchors.centerIn: parent
+                text: "󰣇"; color: Theme.lavender
+                font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 25
+            }
+            MouseArea {
+                id: applicationsPointer
+                anchors.fill: parent; hoverEnabled: true
+                onClicked: bar.toggleApplications()
+            }
+        }
+
+        // Même séparation neutre que les groupes de droite, sans zone de clic.
+        Rectangle {
+            id: applicationsSeparator
+            anchors.left: applicationsButton.right
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 1; height: 14
+            color: Theme.separator
+        }
+
+        Rectangle {
             id: resizeIndicator
             visible: bar.resizeMode
-            anchors.left: parent.left
+            anchors.left: applicationsSeparator.right
             anchors.leftMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: visible ? resizeLabel.implicitWidth + 12 : 0
@@ -243,14 +365,24 @@ PanelWindow {
             anchors.verticalCenter: parent.verticalCenter
         }
 
+        Rectangle {
+            id: workspacesSeparator
+            anchors.left: workspaces.right
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 1; height: 14
+            color: Theme.separator
+        }
+
         WindowStrip {
             id: windowStrip
             screen: bar.screen
-            anchors.left: workspaces.right
-            anchors.leftMargin: 10
+            anchors.left: workspacesSeparator.right
+            anchors.leftMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             maxWidth: Math.max(0, leftArea.width - x - 8)
             onMenuOpened: {
+                bar.closeApplications();
                 bar.closeOverview();
                 bar.closeClipboard();
                 controlCenter.visible = false;
@@ -291,6 +423,7 @@ PanelWindow {
             audioBrightnessController: controlCenter
             clipboardOpen: clipboardLoader.active && !!clipboardLoader.item && !clipboardLoader.item.closing
             onOpenPageRequested: page => {
+                bar.closeApplications();
                 bar.closeOverview();
                 bar.closeClipboard();
                 dateCenter.requestClose();
@@ -300,6 +433,7 @@ PanelWindow {
                 controlCenter.visible = true;
             }
             onToggleControlCenterRequested: {
+                bar.closeApplications();
                 bar.closeOverview();
                 const opening = !controlCenter.visible;
                 bar.closeClipboard();
@@ -310,6 +444,7 @@ PanelWindow {
                 controlCenter.visible = opening;
             }
             onToggleRemovableMediaRequested: {
+                bar.closeApplications();
                 bar.closeOverview();
                 const opening = !rightStatusArea.removableMediaOpen;
                 bar.closeClipboard();

@@ -9,6 +9,15 @@ import "theme"
 ShellRoot {
     id: shell
     property bool resizeMode: false
+    // CONTRACT: one owner across all output bars; opening a menu asks every
+    // bar to release its other transient panels before the overlay appears.
+    property string applicationsOutput: ""
+    signal applicationsOpening(string output)
+    function toggleApplications(output) {
+        if (applicationsOutput === output) { applicationsOutput = ""; return; }
+        applicationsOpening(output);
+        applicationsOutput = output;
+    }
     IpcHandler {
         target: "barMode"
         function active(): bool { return shell.resizeMode; }
@@ -68,6 +77,7 @@ ShellRoot {
         model: Quickshell.screens
 
         Bar {
+            applicationCoordinator: shell
             resizeMode: shell.resizeMode
             notificationService: rootNotificationService
             // Une seule barre possède le chooser, même en configuration multi-écran.

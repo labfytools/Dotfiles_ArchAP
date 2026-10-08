@@ -5,8 +5,13 @@ Le [moteur de thème commun](theme/README.md) fournit les couleurs effectives
 
 Barre principale et serveur de notifications de la session SwayFX.
 
+Le bouton Arch **Applications**, premier élément à gauche même en mode Resize,
+ouvre le [menu d'applications](applications/README.md) sous la barre.
+`Mod+Alt+L` ouvre ce menu sur la sortie focalisée.
+
 ```text
 Bar
+├── Applications
 ├── Workspaces
 ├── Workspace Overview
 ├── Window/task switcher
