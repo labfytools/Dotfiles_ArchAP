@@ -16,6 +16,7 @@ Row {
     signal toggleControlCenterRequested()
     signal toggleRemovableMediaRequested()
     signal toggleClipboardRequested()
+    signal adjustedFromBar(string kind)
     function refreshBatteryThreshold() { batteryIndicator.refreshThreshold() }
     function closeRemovableMedia() { removableMediaIndicator.popupOpen = false }
     function setRemovableMediaOpen(open) { removableMediaIndicator.popupOpen = open }
@@ -42,7 +43,10 @@ Row {
             available: area.audioBrightnessController.volumeAvailable
             clickable: true
             onActivated: area.openPageRequested(15)
-            onAdjusted: steps => area.audioBrightnessController.adjustVolume(steps)
+            onAdjusted: steps => {
+                area.adjustedFromBar("volume");
+                area.audioBrightnessController.adjustVolume(steps);
+            }
         }
         ScrollIcon {
             glyph: "󰖨"
@@ -51,7 +55,10 @@ Row {
             label: "Luminosité"
             percent: area.audioBrightnessController.brightnessPercent
             available: area.audioBrightnessController.brightnessAvailable
-            onAdjusted: steps => area.audioBrightnessController.adjustBrightness(steps)
+            onAdjusted: steps => {
+                area.adjustedFromBar("brightness");
+                area.audioBrightnessController.adjustBrightness(steps);
+            }
         }
     }
     Rectangle {

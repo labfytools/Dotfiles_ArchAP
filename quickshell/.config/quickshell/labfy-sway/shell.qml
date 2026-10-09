@@ -8,12 +8,14 @@ import "notifications"
 import "idlebridge"
 import "theme"
 import "polkit"
+import "osd"
 
 ShellRoot {
     id: shell
     // CONTRACT: one PolkitAgent owns the native request queue for the entire
     // user session. A dialog is constructed only for its current flow.
     PolkitAgent { id: polkitAgent }
+    OsdService { id: shellOsdService; authenticationActive: shell.authenticationActive }
     property var polkitScreen: null
     readonly property bool authenticationActive: polkitAgent.flow !== null
     signal authenticationOpening()
@@ -200,6 +202,7 @@ ShellRoot {
         model: Quickshell.screens
 
         Bar {
+            osdService: shellOsdService
             applicationCoordinator: shell
             authenticationActive: shell.authenticationActive
             keepAwakeController: shell

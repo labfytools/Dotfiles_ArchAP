@@ -27,8 +27,12 @@ PopupWindow {
     readonly property bool volumeAvailable: volumeSlider.sinkAudio !== null
     readonly property bool volumeMuted: volumeSlider.muted
     readonly property int volumePercent: volumeSlider.percent
+    readonly property var volumeIdentity: volumeSlider.sink
+    readonly property real volumeRaw: volumeSlider.sinkAudio ? volumeSlider.sinkAudio.volume : NaN
     readonly property bool brightnessAvailable: brightnessSlider.available
     readonly property int brightnessPercent: brightnessSlider.percent
+    readonly property string brightnessIdentity: brightnessSlider.backlightPath
+    readonly property real brightnessRaw: brightnessSlider.brightness
     function adjustVolume(steps) { volumeSlider.adjustBy(steps); }
     function adjustBrightness(steps) { brightnessSlider.adjustBy(steps); }
     readonly property var pendingAction: sessionExitGate.pendingAction

@@ -211,6 +211,10 @@ Control Center, avec un minimum sûr de 10 % et un maximum de 100 %. Ses
 écriture, y compris si le pilote arrondit. L'absence de sortie audio ou de
 rétroéclairage désactive l'icône concernée.
 
+L'OSD des réglages est décrit dans [osd/README.md](osd/README.md). Il observe
+ces mêmes valeurs confirmées, ainsi que la sourdine de la source audio par
+défaut, sans modifier les commandes des touches matérielles.
+
 Le libellé `RESIZE` en Catppuccin Peach apparaît à gauche des workspaces
 quand l'événement IPC Sway `mode` annonce `resize`. Un seul abonnement
 `I3IpcListener` partage cet état entre toutes les sorties. Une requête

@@ -27,6 +27,7 @@ PanelWindow {
     required property var applicationCoordinator
     required property bool authenticationActive
     required property var keepAwakeController
+    required property var osdService
     screen: modelData
 
     // INVARIANT: une seule surface de barre porte l'inhibiteur, même avec
@@ -454,6 +455,7 @@ PanelWindow {
             adapter: controlCenter.adapter
             controlCenterOpen: controlCenter.visible
             audioBrightnessController: controlCenter
+            onAdjustedFromBar: kind => bar.osdService.barAction(kind, bar.screen)
             keepAwakeController: bar.keepAwakeController
             clipboardOpen: clipboardLoader.active && !!clipboardLoader.item && !clipboardLoader.item.closing
             onOpenPageRequested: page => {
@@ -496,6 +498,27 @@ PanelWindow {
         barWindow: bar
         keepAwakeController: bar.keepAwakeController
         onThresholdApplied: rightStatusArea.refreshBatteryThreshold()
+        onVisibleChanged: bar.osdService.setPanel(bar.screen, visible, currentPage)
+        onCurrentPageChanged: bar.osdService.setPanel(bar.screen, visible, currentPage)
+    }
+    Connections {
+        target: controlCenter
+        function snapshot() {
+            if (!bar.startupHost) return;
+            bar.osdService.sampleSink(controlCenter.volumeIdentity,
+                controlCenter.volumeAvailable, controlCenter.volumeRaw,
+                controlCenter.volumePercent, controlCenter.volumeMuted);
+            bar.osdService.sampleBrightness(controlCenter.brightnessIdentity,
+                controlCenter.brightnessAvailable, controlCenter.brightnessRaw,
+                controlCenter.brightnessPercent);
+        }
+        function onVolumeIdentityChanged() { snapshot(); }
+        function onVolumeAvailableChanged() { snapshot(); }
+        function onVolumeRawChanged() { snapshot(); }
+        function onVolumeMutedChanged() { snapshot(); }
+        function onBrightnessAvailableChanged() { snapshot(); }
+        function onBrightnessRawChanged() { snapshot(); }
+        Component.onCompleted: snapshot()
     }
 
     DateCenter {

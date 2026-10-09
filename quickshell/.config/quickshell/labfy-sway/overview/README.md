@@ -9,6 +9,9 @@ utiles sur `eDP-1`, sans défilement. Sur les petits écrans, le défilement res
 disponible si la grille dépasse réellement la hauteur utile. La surface
 layer-shell `Overlay` prend le focus
 clavier exclusivement pendant l'ouverture et libère ce focus en se fermant.
+La surface `labfy-setting-osd` suspend seulement une nouvelle capture
+automatique tant qu'elle est visible ; les miniatures déjà validées restent
+disponibles.
 
 ## Provenance des miniatures
 
