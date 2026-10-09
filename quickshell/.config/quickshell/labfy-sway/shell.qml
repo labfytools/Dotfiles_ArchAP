@@ -8,16 +8,23 @@ import "notifications"
 import "idlebridge"
 import "theme"
 import "polkit"
+import "scratchpad"
 import "osd"
 
 ShellRoot {
     id: shell
+    // WHY: distingue les générations QML du PID lors d'un incident. La
+    // valeur est purement technique et n'est pas conservée au rechargement.
+    readonly property string keepAwakeGeneration: String(Date.now())
     // CONTRACT: one PolkitAgent owns the native request queue for the entire
     // user session. A dialog is constructed only for its current flow.
     PolkitAgent { id: polkitAgent }
-    OsdService { id: shellOsdService; authenticationActive: shell.authenticationActive }
     property var polkitScreen: null
     readonly property bool authenticationActive: polkitAgent.flow !== null
+    // CONTRACT: le tiroir est global ; aucune barre n'installe son propre
+    // abonnement window ni son propre ordonnanceur de commandes.
+    DrawerService { id: shellDrawerService; authenticationActive: shell.authenticationActive }
+    OsdService { id: shellOsdService; authenticationActive: shell.authenticationActive }
     signal authenticationOpening()
     function choosePolkitScreen(output) {
         const screens = Quickshell.screens;
@@ -98,41 +105,82 @@ ShellRoot {
         if (polkitAgent.flow) beginPolkitPresentation();
     }
     property bool resizeMode: false
-    // CONTRACT: une seule sélection pour toutes les barres. L'inhibition est
-    // volontairement éphémère : un redémarrage de QuickShell la libère.
-    property bool keepAwake: false
-    property int keepAwakeMinutes: 0
+    // CONTRACT: seules la sélection manuelle et son échéance passent d'une
+    // génération QML à la suivante. Ni socket ni objet Wayland n'est conservé.
+    // Un arrêt du processus ou une nouvelle session repartent désactivés.
+    PersistentProperties {
+        id: manualKeepAwake
+        reloadableId: "manualKeepAwake"
+        property bool active: false
+        property int minutes: 0
+        property real deadlineEpochMs: 0
+        onLoaded: shell.refreshKeepAwake("chargement")
+    }
+    readonly property bool keepAwake: manualKeepAwake.active
+    readonly property int keepAwakeMinutes: manualKeepAwake.minutes
     property int keepAwakeRemainingSeconds: 0
     // INVARIANT: the helper's application requests never change the user's
     // manual duration or its monotonic expiry timer.
     IdleBridgeReceiver { id: idleBridge }
     readonly property int applicationRequestCount: idleBridge.applicationRequestCount
+    IpcHandler {
+        target: "keepAwakeDiagnostics"
+        function state(): string {
+            // CONTRACT: diagnostic local, sans identité d'application ni
+            // contenu de fenêtre. L'état applicatif vient toujours du pont.
+            return JSON.stringify({ generation: shell.keepAwakeGeneration,
+                manual: shell.keepAwake, minutes: shell.keepAwakeMinutes,
+                deadlineEpochMs: manualKeepAwake.deadlineEpochMs,
+                remainingSeconds: shell.keepAwakeRemainingSeconds,
+                applicationRequests: shell.applicationRequestCount });
+        }
+    }
     function setKeepAwake(minutes) {
         if (![0, 30, 60, 120].includes(minutes)) return false;
-        keepAwake = true;
-        keepAwakeMinutes = minutes;
+        // INVARIANT: l'échéance est écrite avant l'activation, afin qu'un
+        // rechargement ne redémarre jamais une durée entière.
+        manualKeepAwake.deadlineEpochMs = minutes ? Date.now() + minutes * 60000 : 0;
+        manualKeepAwake.minutes = minutes;
+        manualKeepAwake.active = true;
         keepAwakeRemainingSeconds = minutes * 60;
-        if (minutes > 0) keepAwakeElapsed.restartMs();
+        console.info("Maintien manuel activé", minutes === 0 ? "illimité" : minutes + " min",
+                     "échéance", manualKeepAwake.deadlineEpochMs);
         return true;
     }
-    function clearKeepAwake() {
-        keepAwake = false;
-        keepAwakeMinutes = 0;
+    function clearKeepAwake(reason) {
+        if (manualKeepAwake.active)
+            console.info("Maintien manuel désactivé", reason || "action utilisateur");
+        manualKeepAwake.active = false;
+        manualKeepAwake.minutes = 0;
+        manualKeepAwake.deadlineEpochMs = 0;
         keepAwakeRemainingSeconds = 0;
     }
-    // WHY: l'horloge monotone évite qu'un changement d'heure allonge ou
-    // raccourcisse une durée choisie. Le tick ne sert qu'à publier l'affichage.
-    ElapsedTimer { id: keepAwakeElapsed }
+    function refreshKeepAwake(reason) {
+        if (!manualKeepAwake.active) return;
+        if (manualKeepAwake.minutes === 0) {
+            keepAwakeRemainingSeconds = 0;
+        } else {
+            // WHY: une date absolue survit au rechargement, contrairement à
+            // ElapsedTimer. Elle empêche la réactivation d'une durée expirée.
+            const remaining = Math.ceil((manualKeepAwake.deadlineEpochMs - Date.now()) / 1000);
+            if (remaining <= 0) {
+                clearKeepAwake("échéance atteinte pendant " + reason);
+                return;
+            }
+            keepAwakeRemainingSeconds = remaining;
+        }
+        if (reason === "chargement")
+            console.info("Maintien manuel restauré", manualKeepAwake.minutes === 0
+                         ? "illimité" : manualKeepAwake.minutes + " min",
+                         "échéance", manualKeepAwake.deadlineEpochMs);
+    }
+    // CONTRACT: un seul tick dans ShellRoot publie le temps restant. Chaque
+    // barre lit cet état ; aucune n'avance séparément le compte à rebours.
     Timer {
         interval: 1000
         repeat: true
         running: shell.keepAwake && shell.keepAwakeMinutes > 0
-        onTriggered: {
-            const remaining = shell.keepAwakeMinutes * 60
-                - Math.floor(keepAwakeElapsed.elapsedMs() / 1000);
-            if (remaining <= 0) shell.clearKeepAwake();
-            else shell.keepAwakeRemainingSeconds = remaining;
-        }
+        onTriggered: shell.refreshKeepAwake("minuteur")
     }
     // CONTRACT: one owner across all output bars; opening a menu asks every
     // bar to release its other transient panels before the overlay appears.
@@ -202,6 +250,7 @@ ShellRoot {
         model: Quickshell.screens
 
         Bar {
+            drawerService: shellDrawerService
             osdService: shellOsdService
             applicationCoordinator: shell
             authenticationActive: shell.authenticationActive

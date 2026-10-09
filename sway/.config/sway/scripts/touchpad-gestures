@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Traiter un geste Sway natif sans service d'entrée permanent."""
+
+import json
+import subprocess
+import sys
+import time
+
+
+TIMEOUT = 1.5
+
+
+def run(*args):
+    # CONTRACT: IPC borné avec liste d'arguments ; un échec ne présume jamais
+    # l'état d'authentification et n'envoie pas de commande workspace.
+    result = subprocess.run(args, capture_output=True, text=True, timeout=TIMEOUT,
+                            check=True)
+    return result.stdout.strip()
+
+
+def ipc(target, operation):
+    return run("quickshell", "ipc", "-c", "labfy-sway", "call", target, operation)
+
+
+def state(target):
+    return json.loads(ipc(target, "state"))
+
+
+def focused_output():
+    workspaces = json.loads(run("swaymsg", "-t", "get_workspaces", "-r"))
+    focused = [item for item in workspaces if item.get("focused") is True]
+    if len(focused) != 1 or not isinstance(focused[0].get("output"), str):
+        raise ValueError("Aucune sortie focalisée unique")
+    return focused[0]["output"]
+
+
+def authentication_idle():
+    auth = state("polkitUi")
+    # INVARIANT: une réponse absente ou incomplète ne vaut jamais permission
+    # de changer de panneau ou de workspace.
+    return (auth.get("registered") is True and auth.get("active") is False
+            and auth.get("dialog") is False and auth.get("queryRunning") is False)
+
+
+def dispatch(action):
+    # WHY: seul l'état de l'agent Polkit fait foi ; titres et focus ne
+    # permettent pas d'identifier une demande d'authentification.
+    if not authentication_idle():
+        return 0
+
+    output = focused_output()
+    target = "overviewUi-" + output
+    if action == "open":
+        return 0 if ipc(target, "open") == "true" else 1
+    if action == "close":
+        return 0 if ipc(target, "close") == "true" else 1
+
+    # CONTRACT: Sway ne change de workspace existant sur la sortie focalisée
+    # qu'après la libération de l'Overview. Aucun conteneur n'est déplacé.
+    if ipc(target, "active") == "true":
+        if ipc(target, "close") != "true":
+            return 1
+        deadline = time.monotonic() + TIMEOUT
+        while time.monotonic() < deadline:
+            if ipc(target, "active") == "false":
+                break
+            time.sleep(0.02)
+        else:
+            return 1
+        # Un aller-retour au compositeur suit la disparition du panneau.
+        run("swaymsg", "-t", "get_version", "-r")
+
+    # Une demande peut débuter durant la fermeture : vérifier de nouveau
+    # l'agent juste avant la commande workspace.
+    if not authentication_idle():
+        return 0
+    command = "next_on_output" if action == "next" else "prev_on_output"
+    replies = json.loads(run("swaymsg", "-r", "workspace", command))
+    return 0 if replies and all(reply.get("success") for reply in replies) else 1
+
+
+def main(argv):
+    if len(argv) != 2 or argv[1] not in {"open", "close", "next", "prev"}:
+        return 2
+    try:
+        return dispatch(argv[1])
+    except (subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError,
+            json.JSONDecodeError):
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

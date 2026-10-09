@@ -174,7 +174,7 @@ def state():
     overlay_outputs = [item["name"] for item in outputs if item.get("active")
                        and any(surface.get("namespace") in {
                            "labfy-workspace-overview", "labfy-applications-menu",
-                           "labfy-setting-osd"}
+                           "labfy-scratchpad-drawer", "labfy-setting-osd"}
                                for surface in item.get("layer_shell_surfaces") or [])]
     workspace_nodes = {}
 

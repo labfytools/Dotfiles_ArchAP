@@ -27,16 +27,44 @@ PanelWindow {
     required property var applicationCoordinator
     required property bool authenticationActive
     required property var keepAwakeController
+    required property var drawerService
     required property var osdService
     screen: modelData
+
+    function closeDrawer() { drawerIndicator.close(false) }
+    function toggleDrawer() { drawerIndicator.toggle() }
 
     // INVARIANT: une seule surface de barre porte l'inhibiteur, même avec
     // plusieurs sorties. La tasse et les demandes applicatives sont deux
     // propriétaires indépendants ; la libération de l'un préserve l'autre.
     IdleInhibitor {
+        id: idleInhibitor
         window: bar
         enabled: bar.startupHost && (bar.keepAwakeController.keepAwake
                                      || bar.keepAwakeController.applicationRequestCount > 0)
+        // WHY: les transitions seules permettent de dater un éventuel trou
+        // d'inhibition entre deux générations, sans journal par frame.
+        onEnabledChanged: console.info("Inhibiteur activé", enabled,
+                                       "génération", bar.keepAwakeController.keepAwakeGeneration,
+                                       "ms", Date.now())
+        onWindowChanged: console.info("Surface inhibiteur présente", window === bar,
+                                      "génération", bar.keepAwakeController.keepAwakeGeneration,
+                                      "ms", Date.now())
+    }
+    // CONTRACT: le mapping observé ne vaut pas accusé d'inhibition du compositeur.
+    onBackingWindowVisibleChanged: {
+        if (startupHost) console.info("Surface barre mappée", backingWindowVisible,
+                                      "génération", keepAwakeController.keepAwakeGeneration,
+                                      "ms", Date.now());
+    }
+    Component.onCompleted: {
+        if (startupHost) console.info("Hôte inhibiteur créé", idleInhibitor.enabled,
+                                      backingWindowVisible, "génération",
+                                      keepAwakeController.keepAwakeGeneration, "ms", Date.now());
+    }
+    Component.onDestruction: {
+        if (startupHost) console.info("Hôte inhibiteur détruit", "génération",
+                                      keepAwakeController.keepAwakeGeneration, "ms", Date.now());
     }
 
     anchors {
@@ -115,6 +143,7 @@ PanelWindow {
             dateCenter.requestClose();
             windowStrip.closeMenu();
             rightStatusArea.closeRemovableMedia();
+            bar.closeDrawer();
         }
         function onApplicationsOpening(output) {
             bar.closeOverview();
@@ -123,6 +152,7 @@ PanelWindow {
             dateCenter.requestClose();
             windowStrip.closeMenu();
             rightStatusArea.closeRemovableMedia();
+            bar.closeDrawer();
         }
     }
     IpcHandler {
@@ -171,6 +201,7 @@ PanelWindow {
             dateCenter.requestClose();
             windowStrip.closeMenu();
             rightStatusArea.closeRemovableMedia();
+            bar.closeDrawer();
             clipboardLoader.active = true;
         }
         return true;
@@ -181,19 +212,27 @@ PanelWindow {
     function closeOverview() {
         overviewRequested = false;
         if (overviewLoader.item) overviewLoader.item.dismiss();
+        return true;
     }
-    function toggleOverview() {
+    function openOverview() {
         if (authenticationActive) return false;
-        if (overviewRequested || overviewLoader.active) { closeOverview(); return true; }
+        // INVARIANT: deux ouvertures ne créent ni une seconde capture ni une fermeture.
+        if (overviewRequested || overviewLoader.active) return true;
         closeApplications();
         closeClipboard();
         controlCenter.visible = false;
         dateCenter.requestClose();
         windowStrip.closeMenu();
         rightStatusArea.closeRemovableMedia();
+        bar.closeDrawer();
         overviewRequested = true;
         if (!overviewCapture.running) overviewCapture.running = true;
         return true;
+    }
+    function toggleOverview() {
+        if (authenticationActive) return false;
+        if (overviewRequested || overviewLoader.active) return closeOverview();
+        return openOverview();
     }
     property bool overviewRequested: false
     readonly property string overviewBackend: (Quickshell.env("XDG_CONFIG_HOME") ||
@@ -201,6 +240,13 @@ PanelWindow {
     IpcHandler {
         target: "overviewUi-" + bar.screen.name
         function toggle(): bool { return bar.toggleOverview(); }
+        // CONTRACT: chaque geste demande un état explicite. La fermeture retire
+        // la demande avant qu'une capture asynchrone puisse afficher la vue.
+        function open(): bool { return bar.openOverview(); }
+        function close(): bool { return bar.closeOverview(); }
+        // CONTRACT: le dispatcher ne lit pas la liste potentiellement longue
+        // des cartes pour attendre la libération du panneau.
+        function active(): bool { return bar.overviewRequested || overviewLoader.active; }
         function state(): string {
             return JSON.stringify({ loaded: overviewLoader.active,
                 visible: !!overviewLoader.item && overviewLoader.item.visible,
@@ -308,6 +354,16 @@ PanelWindow {
                 } : null });
         }
     }
+    IpcHandler {
+        target: "drawerUi-" + bar.screen.name
+        function toggle(): bool { bar.toggleDrawer(); return true; }
+        function close(): bool { bar.closeDrawer(); return true; }
+        function state(): string {
+            return JSON.stringify({count: bar.drawerService ? bar.drawerService.entries.length : 0,
+                open: drawerIndicator.open, busy: bar.drawerService ? bar.drawerService.busy : false,
+                error: bar.drawerService ? bar.drawerService.error : ""});
+        }
+    }
     LazyLoader {
         id: clipboardLoader
         active: false
@@ -327,8 +383,21 @@ PanelWindow {
         controlCenter.visible = false;
         windowStrip.closeMenu();
         rightStatusArea.closeRemovableMedia();
+        bar.closeDrawer();
         if (opening) dateCenter.requestOpen();
         else dateCenter.requestClose();
+    }
+
+    // CONTRACT: le tiroir prend le focus clavier sur une seule sortie et
+    // libère tous les autres panneaux transitoires avant son ouverture.
+    function prepareDrawer() {
+        closeApplications();
+        closeOverview();
+        closeClipboard();
+        controlCenter.visible = false;
+        dateCenter.requestClose();
+        windowStrip.closeMenu();
+        rightStatusArea.closeRemovableMedia();
     }
 
     Item {
@@ -391,11 +460,26 @@ PanelWindow {
             }
         }
 
+        // CONTRACT: une seule instance, dans le même groupe de navigation que
+        // les workspaces ; sa largeur n'occupe aucun espace si le tiroir est vide.
+        DrawerIndicator {
+            id: drawerIndicator
+            anchors.left: resizeIndicator.right
+            anchors.leftMargin: visible && resizeIndicator.visible ? 6 : 0
+            anchors.verticalCenter: parent.verticalCenter
+            service: bar.drawerService
+            barWindow: bar
+            output: bar.screen.name
+            authenticationActive: bar.authenticationActive
+            onOpened: bar.prepareDrawer()
+        }
+
         Workspaces {
             id: workspaces
             screen: bar.screen
-            anchors.left: resizeIndicator.right
-            anchors.leftMargin: resizeIndicator.visible ? 6 : 0
+            anchors.left: drawerIndicator.right
+            anchors.leftMargin: drawerIndicator.visible ? 6
+                : resizeIndicator.visible ? 6 : 0
             anchors.verticalCenter: parent.verticalCenter
         }
 
@@ -411,6 +495,8 @@ PanelWindow {
         WindowStrip {
             id: windowStrip
             screen: bar.screen
+            drawerService: bar.drawerService
+            authenticationActive: bar.authenticationActive
             anchors.left: workspacesSeparator.right
             anchors.leftMargin: 8
             anchors.verticalCenter: parent.verticalCenter
@@ -422,6 +508,7 @@ PanelWindow {
                 controlCenter.visible = false;
                 dateCenter.requestClose();
                 rightStatusArea.closeRemovableMedia();
+                bar.closeDrawer();
             }
         }
     }
@@ -465,6 +552,7 @@ PanelWindow {
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 rightStatusArea.closeRemovableMedia();
+                bar.closeDrawer();
                 controlCenter.currentPage = page;
                 controlCenter.visible = true;
             }
@@ -476,6 +564,7 @@ PanelWindow {
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 rightStatusArea.closeRemovableMedia();
+                bar.closeDrawer();
                 controlCenter.currentPage = 0;
                 controlCenter.visible = opening;
             }
@@ -488,6 +577,7 @@ PanelWindow {
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 rightStatusArea.setRemovableMediaOpen(opening);
+                bar.closeDrawer();
             }
             onToggleClipboardRequested: bar.toggleClipboard()
         }
@@ -501,6 +591,8 @@ PanelWindow {
         onVisibleChanged: bar.osdService.setPanel(bar.screen, visible, currentPage)
         onCurrentPageChanged: bar.osdService.setPanel(bar.screen, visible, currentPage)
     }
+    // CONTRACT: seul l'hôte existant transmet les lectures partagées ; les
+    // autres barres ne multiplient pas les événements lors d'un changement.
     Connections {
         target: controlCenter
         function snapshot() {

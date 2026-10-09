@@ -70,7 +70,8 @@ Row {
         spacing: 5
         height: 26
         KeepAwakeIndicator {
-            active: area.keepAwakeController.keepAwake
+            manualActive: area.keepAwakeController.keepAwake
+            automaticActive: area.keepAwakeController.applicationRequestCount > 0
             remainingSeconds: area.keepAwakeController.keepAwakeRemainingSeconds
             unlimited: area.keepAwakeController.keepAwakeMinutes === 0
             onActivated: area.openPageRequested(16)

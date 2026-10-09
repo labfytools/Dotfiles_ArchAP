@@ -9,6 +9,7 @@ PopupWindow {
     property var anchorItem: null
     property var selectedWindow: null
     property var windows: []
+    signal storeRequested(int id)
     readonly property var appWindows: selectedWindow
         ? windows.filter(window => window.appKey === selectedWindow.appKey) : []
     readonly property var entry: selectedWindow
@@ -88,6 +89,31 @@ PopupWindow {
                             menu.visible = false;
                             I3.dispatch("[con_id=" + modelData.id + "] focus");
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: content.width
+                height: 32
+                radius: 4
+                color: storePointer.containsMouse ? Theme.border : Theme.buttonBackground
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Ranger dans le tiroir"
+                    color: Theme.foreground
+                    font.pixelSize: 12
+                }
+                MouseArea {
+                    id: storePointer
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        const id = menu.selectedWindow ? menu.selectedWindow.id : 0;
+                        menu.visible = false;
+                        if (id > 0) menu.storeRequested(id);
                     }
                 }
             }

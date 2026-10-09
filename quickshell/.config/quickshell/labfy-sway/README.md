@@ -46,15 +46,20 @@ Bar
 ```
 
 Dans **Réglages rapides → Maintenir éveillé**, sélectionner 30 minutes,
-1 heure, 2 heures ou **Jusqu’à désactivation**. L’icône de la barre apparaît
-pendant l’inhibition ; son infobulle indique le temps restant et un clic rouvre
+1 heure, 2 heures ou **Jusqu’à désactivation**. L’icône reste présente même
+quand le mode est désactivé ; sa couleur et son infobulle indiquent la demande
+manuelle ou applicative, et un clic rouvre
 la page pour changer la durée ou désactiver le mode. Une seule barre porte
-l’inhibiteur Wayland, même avec plusieurs écrans. Le mode empêche l’inactivité
+l’inhibiteur Wayland, même avec plusieurs écrans. L’icône ne prouve pas à elle
+seule que le compositeur respecte l’inhibiteur. Le mode empêche l’inactivité
 détectée par le compositeur, donc les actions automatiques de `swayidle`
 (verrouillage et extinction de l’écran) tant que l’inhibition est respectée.
 Il ne bloque pas le verrouillage manuel, la veille demandée explicitement ni
 le verrouillage avant mise en veille. L’état est propre au processus
-QuickShell : son arrêt ou redémarrage libère l’inhibition. La configuration et
+QuickShell : un rechargement QML conserve la sélection manuelle et l’échéance
+initiale grâce à `PersistentProperties`, tandis qu’un arrêt ou redémarrage du
+processus libère l’inhibition. Une nouvelle session graphique repart aussi
+désactivée. La configuration et
 le cycle de vie de `swayidle.service` ne sont pas modifiés.
 
 Les demandes automatiques des applications arrivent séparément par le pont
@@ -302,7 +307,7 @@ pas. Les états rares sont vérifiés avec des données isolées par
 
 | Ancien bloc | QuickShell |
 | --- | --- |
-| scratchpad indicator | volontairement non repris |
+| scratchpad indicator | tiroir natif SwayFX, voir [scratchpad/README.md](scratchpad/README.md) |
 | focused_window | WindowStrip |
 | music | Date Center MPRIS |
 | bluetooth | status + Control Center |

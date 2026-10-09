@@ -110,6 +110,13 @@ bindsym $mod+s layout stacking
 # Super+W appartient à l'Overview ; conserver tabbed sur Super+Shift+W.
 bindsym $mod+Shift+w layout tabbed
 bindsym $mod+w exec ~/.config/sway/scripts/overview-quickshell
+# CONTRACT: seuls les swipes ASUS à trois doigts déclenchent ces actions.
+# Un geste natif achevé émet une commande ; les diagonales restent à essayer
+# sur le vrai pavé avant d'imposer --exact.
+bindgesture --input-device=2362:12311:ASCP1201:00_093A:3017_Touchpad swipe:3:up exec ~/.config/sway/scripts/touchpad-gestures open
+bindgesture --input-device=2362:12311:ASCP1201:00_093A:3017_Touchpad swipe:3:down exec ~/.config/sway/scripts/touchpad-gestures close
+bindgesture --input-device=2362:12311:ASCP1201:00_093A:3017_Touchpad swipe:3:left exec ~/.config/sway/scripts/touchpad-gestures next
+bindgesture --input-device=2362:12311:ASCP1201:00_093A:3017_Touchpad swipe:3:right exec ~/.config/sway/scripts/touchpad-gestures prev
 bindsym $mod+e layout toggle split
 
 # Make the current focus fullscreen

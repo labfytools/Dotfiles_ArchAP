@@ -13,6 +13,40 @@ La surface `labfy-setting-osd` suspend seulement une nouvelle capture
 automatique tant qu'elle est visible ; les miniatures déjà validées restent
 disponibles.
 
+## Gestes à trois doigts (SwayFX)
+
+Sur le touchpad ASUS `2362:12311:ASCP1201:00_093A:3017_Touchpad`, les
+`bindgesture` natifs du mode `default` déclenchent : haut → `open`, bas →
+`close`, gauche → `workspace next_on_output`, droite →
+`workspace prev_on_output`. Les directions désignent le mouvement physique des
+doigts. Les autres nombres de doigts, dont le défilement à deux doigts, ne sont
+pas liés ici. `--exact` n'est pas imposé avant l'essai matériel des diagonales.
+
+Le script ponctuel `~/.config/sway/scripts/touchpad-gestures` choisit la sortie
+du workspace focalisé à l'instant du geste. Il interroge `polkitUi state` et
+ignore ces quatre gestes pendant une demande d'authentification. Haut et bas
+appellent respectivement `overviewUi-<sortie> open` et `close` ; ils ne passent
+pas par `toggle`. Une fermeture annule aussi l'ouverture différée après la
+capture. Si l'Overview est ouverte, le dispatcher la ferme puis attend
+`overviewUi-<sortie> active=false` avant de naviguer. La navigation parcourt
+seulement les workspaces existants de la sortie, dans l'ordre et avec le
+bouclage natifs de Sway ; aucun workspace vide n'est
+créé et aucune fenêtre n'est déplacée. `Super+W` garde son `toggle`.
+
+Ces liaisons appartiennent seulement au mode `default` : en mode `resize`, elles
+ne s'exécutent pas et le mode n'est pas quitté automatiquement. Les gestes
+Sway ne sont pas garantis au-dessus d'une barre layer-shell : la barre
+QuickShell peut recevoir le swipe à la place du compositeur. Ce cas demande
+un essai physique distinct. Le focus exclusif de l'Overview reste nécessaire
+au clavier ; la réception du swipe au-dessus de ses cartes et de son fond doit
+également être confirmée sur le touchpad réel.
+
+Pour retirer uniquement ces gestes, supprimer les quatre lignes `bindgesture`
+marquées dans `~/.config/sway/bind`, puis lancer `swaymsg reload`. Le dispatcher
+et les opérations IPC explicites peuvent ensuite être supprimés s'ils ne sont
+plus utilisés ; les raccourcis clavier et le reste de l'Overview continuent de
+fonctionner.
+
 ## Provenance des miniatures
 
 `grim -o <sortie> -s 0.25 -t jpeg -q 72` prend un **snapshot réel de la sortie

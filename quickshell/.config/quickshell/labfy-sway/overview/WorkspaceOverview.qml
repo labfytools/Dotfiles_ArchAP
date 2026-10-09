@@ -21,6 +21,7 @@ PanelWindow {
     property string actionName: ""
     property var dirtyCaptures: []
     property bool skipDismissCaptures: false
+    property bool closing: false
     property var pendingWindowNumbers: []
     property var activeWindowNumbers: []
     property int windowCaptureCursor: 0
@@ -47,6 +48,10 @@ PanelWindow {
     color: "transparent"
 
     function dismiss() {
+        if (closing) return;
+        // INVARIANT: relâcher pendant la fermeture ne valide aucun glissement.
+        closing = true;
+        dropTarget = 0;
         visible = false;
         // WHY: grim inclurait cette surface overlay. Après sa disparition,
         // seules les sorties visibles dont l'arbre a changé sont recapturées.
@@ -576,6 +581,7 @@ PanelWindow {
                                                         overview.selectedWorkspace = workspaceCard.number;
                                                     }
                                                     onClicked: mouse => {
+                                                        if (overview.closing) return;
                                                         overview.selectedWindow = windowVisual.index + 1;
                                                         if (mouse.button === Qt.RightButton) {
                                                             overview.moveTarget = workspaceCard.number === 10 ? 1 : workspaceCard.number + 1;
@@ -590,6 +596,7 @@ PanelWindow {
                                                         overview.dropTarget = target !== workspaceCard.number ? target : 0;
                                                     }
                                                     onReleased: mouse => {
+                                                        if (overview.closing) return;
                                                         if (drag.active) {
                                                             const point = windowPointer.mapToItem(keyboardRoot, mouse.x, mouse.y);
                                                             const target = overview.workspaceAt(point.x, point.y);

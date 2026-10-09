@@ -4,24 +4,28 @@ import "../theme"
 
 Item {
     id: indicator
-    required property bool active
+    required property bool manualActive
+    required property bool automaticActive
     required property bool unlimited
     required property int remainingSeconds
     signal activated()
-    width: active ? 26 : 0
+    // CONTRACT: la tasse occupe toujours sa place ; sa couleur décrit l'état
+    // combiné sans modifier les deux propriétaires de l'inhibition Wayland.
+    readonly property bool active: manualActive || automaticActive
+    readonly property string detail: manualActive
+        ? "Maintien manuel · " + (unlimited ? "jusqu’à désactivation"
+            : Math.ceil(remainingSeconds / 60) + " min restantes")
+            + (automaticActive ? "\nMaintien automatique demandé par une application" : "")
+        : automaticActive ? "Maintien automatique demandé par une application"
+            : "Maintenir éveillé · désactivé"
+    width: 26
     height: 26
-    visible: active
 
-    Rectangle {
-        anchors.fill: parent
-        radius: 4
-        color: pointer.containsMouse ? Theme.buttonHover : Theme.emphasisBackground
-    }
     NerdIcon {
         anchors.centerIn: parent
         text: "󰅶"
         font.pixelSize: 22
-        color: Theme.accentForeground
+        color: indicator.active ? Theme.red : Theme.foreground
     }
     MouseArea {
         id: pointer
@@ -32,8 +36,6 @@ Item {
     StatusTooltip {
         target: indicator
         hovered: pointer.containsMouse
-        message: indicator.unlimited ? "Maintenir éveillé · jusqu’à désactivation"
-            : "Maintenir éveillé · " + Math.ceil(indicator.remainingSeconds / 60)
-                + " min restantes"
+        message: indicator.detail
     }
 }

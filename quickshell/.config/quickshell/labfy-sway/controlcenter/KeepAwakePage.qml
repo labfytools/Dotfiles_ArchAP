@@ -52,6 +52,21 @@ Item {
             font.pixelSize: 12
         }
 
+        Text {
+            width: parent.width
+            visible: page.controller.keepAwake
+            // CONTRACT: cette durée décrit seulement la sélection manuelle ;
+            // les demandes applicatives n'ont pas d'échéance connue ici.
+            text: page.controller.keepAwakeMinutes === 0
+                ? "Maintien manuel · jusqu’à désactivation"
+                : "Maintien manuel · "
+                    + Math.ceil(page.controller.keepAwakeRemainingSeconds / 60)
+                    + " min restantes"
+            wrapMode: Text.Wrap
+            color: Theme.secondaryForeground
+            font.pixelSize: 12
+        }
+
         Repeater {
             model: [
                 { label: "30 minutes", minutes: 30 },

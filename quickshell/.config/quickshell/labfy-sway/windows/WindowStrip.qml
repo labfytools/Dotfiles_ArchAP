@@ -8,6 +8,8 @@ Item {
     id: strip
 
     required property var screen
+    required property var drawerService
+    required property bool authenticationActive
     required property int maxWidth
     property var tree: null
     property bool componentReady: false
@@ -50,7 +52,7 @@ Item {
         function collect(container) {
             const appId = container.app_id
                 || (container.window_properties && container.window_properties.class) || "";
-            if (container.type === "con" && appId) {
+            if ((container.type === "con" || container.type === "floating_con") && appId) {
                 found.push({
                     id: container.id,
                     title: container.name || appId,
@@ -120,6 +122,7 @@ Item {
     }
 
     function showMenu(item, windowInfo) {
+        if (authenticationActive) return;
         if (windowMenu.visible && menuWindow && menuWindow.id === windowInfo.id) {
             windowMenu.visible = false;
             return;
@@ -240,5 +243,9 @@ Item {
         anchorItem: strip.menuAnchor
         selectedWindow: strip.menuWindow
         windows: strip.windows
+        onStoreRequested: id => {
+            strip.closeMenu();
+            strip.drawerService.act("store", id, strip.screen.name);
+        }
     }
 }

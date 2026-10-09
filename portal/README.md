@@ -143,8 +143,11 @@ installée et aucun portail ni `swayidle` n'a été redémarré.
 Firefox demande `org.freedesktop.portal.Inhibit`, le backend GTK relaie vers
 `org.freedesktop.ScreenSaver.Inhibit`, puis
 `labfy-idle-bridge.service` transmet le nombre de demandes valides à
-QuickShell. L'`IdleInhibitor` de la barre persistante est actif si la tasse
-manuelle **ou** au moins une demande applicative est active. Les deux sources
+QuickShell. L'`IdleInhibitor` de la barre persistante est actif si le maintien
+manuel **ou** au moins une demande applicative est actif. La tasse reste
+visible sans fond dans la barre : elle est rouge dès qu'une de ces sources est
+active, et neutre sinon. Son infobulle distingue les sources et la durée
+manuelle restante lorsqu'elle existe. Les deux sources
 restent indépendantes : désactiver ou laisser expirer la tasse ne libère pas
 une vidéo encore demandée ; une pause vidéo ne change ni la durée ni le
 minuteur manuels. La petite indication dans la sous-page Maintenir éveillé
@@ -175,6 +178,108 @@ L'expiration réelle d'une durée manuelle et Netflix au délai habituel de 300 
 restent à vérifier séparément. Les demandes applicatives peuvent provenir
 d'autres usages que d'une vidéo visible : le pont suit le portail, il ne
 classe pas le contenu de la fenêtre.
+
+Contrôle ciblé du 9 octobre 2026 : une activation manuelle de 30 minutes,
+Control Center fermé, a conservé la tasse et la surface de barre pendant
+130 secondes. Un observateur `swayidle` temporaire avec configuration vide,
+seul un marqueur privé à 8 s et aucune action de verrouillage ou d'extinction,
+ne s'est pas déclenché. Le même contrôle de 130 secondes en mode « Jusqu'à
+désactivation », avec un nouveau marqueur, a donné le même résultat. Les
+relevés à 0, 30, 55, 65, 90 et 130 secondes ont conservé le PID QuickShell
+2349 et un seul chargement de configuration. La sous-page confirmait le mode
+illimité après la seconde mesure. Ces contrôles établissent le fonctionnement
+au-delà d'une minute dans la session stable ; ils ne mesurent ni l'expiration
+complète à 30 minutes ni une demande applicative concurrente durant ces deux
+phases. Après désactivation manuelle, un contrôle négatif neuf à 6 s a fini
+par déclencher son marqueur ; les marqueurs des phases actives n'étaient donc
+pas simplement inopérants.
+
+Le journal utilisateur de la session précédente montre des rechargements
+QuickShell à 08:01:31 et 08:02:15 sous le même PID 14333. Les fichiers
+`WorkspaceOverview.qml` et `Bar.qml` portent des modifications à ces secondes.
+À cette date, un rechargement reconstruisait `ShellRoot` avec le maintien
+manuel initialisé à `false` ; il pouvait donc retirer la protection même si
+le PID ne changeait pas. Faute d'horodatage du constat initial, ce lien restait
+une explication plausible, sans attribution prouvée. La correction V5
+ci-dessous conserve désormais ce choix lors des rechargements QML ; un arrêt
+complet du processus reste distinct et libère l'inhibition.
+
+Un rechargement ultérieur, pendant la mise à jour de la tasse, a révélé un
+second défaut distinct : le nouveau `SocketServer` ouvrait le chemin fixe
+avant la destruction de l'ancien. L'ancien retirait ensuite ce chemin ; le
+helper ne pouvait plus se reconnecter et répondait `bridge unavailable or
+full` aux nouvelles demandes. `IdleBridgeReceiver.qml` diffère maintenant
+l'ouverture de la socket de 250 ms après le chargement QML. Une demande
+applicative temporaire a été acquise puis libérée avec succès ; la tasse est
+devenue rouge pendant la demande, et un observateur neuf à 6 s n'a déclenché
+qu'après sa libération. Le même résultat a été vérifié avec un rechargement
+pendant que la demande restait active : chemin de socket présent, demande
+retransmise, tasse rouge et inhibition effective. Ce défaut concernait la
+reconnexion automatique, pas l'échéance du minuteur manuel.
+
+Après ces changements QML, deux nouveaux contrôles réels de 130 secondes
+ont été effectués, l'un à 30 minutes et l'autre en mode illimité. À chacun
+des relevés 0, 30, 55, 65, 90 et 130 s, la tasse est restée rouge, la surface
+de barre était présente, le PID 2349 et le nombre de chargements étaient
+stables, et un observateur à 8 s avec marqueur neuf n'avait pas déclenché.
+Enfin, une demande D-Bus temporaire acquise puis libérée pendant le mode
+manuel illimité n'a ni masqué la tasse ni libéré l'inhibition manuelle. Après
+désactivation du mode illimité de test, la tasse est redevenue neutre et un
+dernier observateur à 6 s a déclenché son marqueur privé. L'état manuel a
+ainsi été ramené à sa valeur initiale.
+
+## Maintien manuel après rechargement QML (contrôle V5, 9 octobre 2026)
+
+Le signalement situait un nouveau verrouillage vers 13:36–13:40, sans heure
+exacte. Le processus QuickShell 2349, lancé à 09:23:01, avait rechargé sa
+configuration pour la dernière fois à 13:24:37 avant ce signalement.
+`swayidle.service` utilisait toujours 300 s pour `swaylock`, 360 s pour
+l'extinction, 420 s pour la pause média et `before-sleep` pour le verrouillage
+avant suspension. Aucun fichier de configuration implicite de `swayidle`
+n'était présent. Le journal contient deux succès `swaymsg` sous l'identifiant
+`swayidle` à 13:36:40 et 13:38:41, compatibles avec l'extinction et la reprise
+de sortie. Il ne consignait ni la sélection manuelle, ni l'état de
+l'inhibiteur au moment du verrouillage : la chaîne précise de cet incident
+reste donc non prouvée. L'état observé après déverrouillage n'a pas été traité
+comme une mesure rétroactive.
+
+Le code actif avant V5 plaçait le booléen manuel dans `ShellRoot` avec la
+valeur initiale `false`. V5 utilise `PersistentProperties` avec une identité
+stable pour conserver seulement l'activation, la durée choisie et l'échéance
+absolue. Une expiration pendant un rechargement est effacée au chargement.
+Les demandes applicatives restent resynchronisées depuis le pont, sans
+partager le stockage manuel. Les deux rechargements réels à 14:00:34 et
+14:01:09 ont restauré le mode illimité sous le même PID. Lors du second,
+le nouvel hôte de l'inhibiteur était mappé et `enabled=true` avant la
+destruction journalisée de l'ancien hôte, environ 24 ms après. Il n'existe
+pas d'accusé d'inhibition du compositeur ; ces transitions décrivent le
+cycle QML, et l'observation `swayidle` ci-dessous teste son effet réel.
+
+Le mode illimité a été activé depuis le bouton à 13:47:51, panneau fermé.
+Un observateur `swayidle` sur `wayland-1` et `seat0`, avec fichier de
+configuration vide, respect normal des inhibiteurs et seule action de
+création d'un marqueur privé à 8 s, n'a pas déclenché entre 13:48:55 et
+13:59:17, soit 10 min 22 s sans rechargement. Un nouvel observateur de même
+type n'a pas déclenché entre 13:59:34 et 14:11:28 ; son dernier rechargement
+réel était à 14:01:09, soit 10 min 19 s avant la fin de la mesure. Aucun
+`swaylock` n'était présent lors des relevés. Ces mesures dépassent 300 et
+360 s dans la session réelle ; elles ne transforment pas l'icône seule en
+preuve de protection. L'observateur ne sait pas mesurer les entrées humaines :
+la confirmation de leur absence pendant ces fenêtres reste à obtenir.
+
+Le contrôle de libération volontaire du mode manuel reste à terminer. À
+14:19:36, le diagnostic indiquait encore `manual: true` et zéro demande
+applicative ; aucun marqueur négatif n'avait donc pu être obtenu. Les deux
+observateurs temporaires ont été arrêtés sans modifier `swayidle.service`.
+
+Le mécanisme `PersistentProperties` ne sauvegarde rien après l'arrêt ou le
+crash du processus QuickShell ; une nouvelle session repart désactivée. Une
+échéance limitée est exprimée en temps civil, afin de survivre au
+rechargement : un changement manuel de l'horloge système peut donc modifier
+la durée effective. Le premier chargement de V5 depuis l'ancien code ne
+pouvait pas récupérer le booléen non conservé ; le mode a été réactivé
+volontairement pour les mesures ci-dessus. Le verrouillage manuel et celui
+avant suspension restent indépendants.
 
 Le helper envoie un état complet puis des mises à jour ordonnées sur la socket
 privée du répertoire `XDG_RUNTIME_DIR`. QuickShell confirme la prise en compte
