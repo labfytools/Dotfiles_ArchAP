@@ -60,11 +60,40 @@ Les responsabilités et dépendances sont détaillées dans
 
 ## ✦ Preview
 
+Captures actuelles de QuickShell et SwayFX avec **Kitty** et un **Firefox de
+test sur ArchWiki**, sur le workspace 5. La vue d'ensemble a été prise dans
+une session de démonstration isolée, également sur le workspace 5, pour ne pas
+montrer les aperçus des autres workspaces personnels.
+
 <p align="center">
-  <img src="docs/assets/screenshots/archasp.png" alt="Capture historique de l'environnement ArchASP sous Sway" width="100%">
+  <img src="docs/assets/screenshots/quickshell-workspaces.png" alt="Vue d'ensemble QuickShell avec les workspaces 2 et 5 et deux fenêtres de démonstration sur le workspace 5" width="100%">
 </p>
 
-<p align="center"><sub>Capture historique avant la migration SwayFX et QuickShell.</sub></p>
+<p align="center"><sub>Vue d'ensemble : prévisualisation des fenêtres, navigation et déplacement entre workspaces.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/quickshell-applications.png" alt="Menu Applications QuickShell avec favoris et catégories, devant Kitty et ArchWiki" width="100%">
+</p>
+
+<p align="center"><sub>Menu Applications : recherche, catégories et favoris.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/quickshell-keep-awake.png" alt="Sous-page Maintenir éveillé du Control Center QuickShell avec les quatre durées disponibles" width="100%">
+</p>
+
+<p align="center"><sub>Control Center : Maintenir éveillé, avec une demande manuelle distincte de l'inhibition automatique des applications.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/quickshell-appearance.png" alt="Sous-page Apparence du Control Center QuickShell" width="100%">
+</p>
+
+<p align="center"><sub>Apparence : fond d'écran, thème, lumière nocturne et localisation.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/quickshell-window-menu.png" alt="Menu de fenêtre QuickShell pour le Firefox de démonstration ouvert sur ArchWiki" width="100%">
+</p>
+
+<p align="center"><sub>Menu de fenêtre : accès aux fenêtres ouvertes et aux actions de l'application.</sub></p>
 
 ## ✦ Repository
 
