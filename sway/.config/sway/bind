@@ -235,6 +235,9 @@ bindsym Shift+Print exec grim - | wl-copy -t image/png
 # Print = zone -> presse-papier
 bindsym Print exec ~/.config/sway/scripts/screenshot-region
 
+# Ctrl+Print = zone -> annotation ; l'éditeur décide Copier/Enregistrer.
+bindsym Ctrl+Print exec ~/.config/sway/scripts/screenshot-region --annotate
+
 
 ###############################################
 #

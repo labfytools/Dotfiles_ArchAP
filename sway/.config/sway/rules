@@ -14,6 +14,12 @@ for_window [app_id="Proton Pass"] floating enable, resize set 40ppt 40ppt, move 
 # la bordure serveur garantit la même politique que les autres flottantes.
 for_window [app_id="labfy-yazi-filechooser"] floating enable, border pixel 2, move position center
 
+# WHY: l'identifiant GTK de Swappy 1.8.0 est me.jtheoof.swappy (source
+# application.c). La règle ne cible aucune autre fenêtre GTK.
+# CONTRACT: garder l'éditeur accessible sur la sortie active, redimensionnable,
+# avec la bordure serveur et les coins SwayFX déjà configurés globalement.
+for_window [app_id="me.jtheoof.swappy"] floating enable, resize set 70ppt 70ppt, move position center, border pixel 2
+
 #=================================================
 # Lardon
 #=================================================

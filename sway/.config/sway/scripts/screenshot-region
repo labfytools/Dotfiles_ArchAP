@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# CONTRACT: sans argument, le parcours Print historique reste inchangé.
+annotate=false
+if [[ $# -ne 0 ]]; then
+    [[ $# -eq 1 && $1 == --annotate ]] || { echo "Usage: screenshot-region [--annotate]" >&2; exit 2; }
+    annotate=true
+    command -v swappy >/dev/null || { echo "Swappy absent : installer le paquet Arch swappy (sudo pacman -S swappy)." >&2; exit 1; }
+fi
+
 # WHY: la surface plein écran du presse-papiers prend le focus exclusif et
 # peut faire échouer slurp sur SwayFX. La détruire avant de créer le sélecteur.
 output="$(swaymsg -t get_outputs -r | jq -r '.[] | select(.focused == true) | .name' | head -n 1)"
@@ -21,15 +29,59 @@ if [[ -n "$output" ]]; then
     fi
 fi
 
+if $annotate && [[ -n $output ]]; then
+    # WHY: Applications et Overview possèdent aussi un focus layer-shell
+    # exclusif. Leurs IPC existants libèrent ce focus avant la sélection.
+    # CONTRACT: ne toucher ni au workspace ni aux fenêtres utilisateur.
+    for panel in applicationsUi overviewUi; do
+        target="$panel-$output"
+        state="$(quickshell ipc -c labfy-sway call "$target" state 2>/dev/null || true)"
+        if [[ -n $state ]] && jq -e '.loaded == true or .requested == true' >/dev/null 2>&1 <<<"$state"; then
+            quickshell ipc -c labfy-sway call "$target" toggle >/dev/null
+            for ((attempt = 0; attempt < 40; attempt++)); do
+                state="$(quickshell ipc -c labfy-sway call "$target" state 2>/dev/null || true)"
+                if [[ -n $state ]] && jq -e '.loaded == false and (.requested != true)' >/dev/null 2>&1 <<<"$state"; then
+                    break
+                fi
+                sleep 0.05
+            done
+            [[ -n $state ]] && jq -e '.loaded == false and (.requested != true)' >/dev/null 2>&1 <<<"$state" || exit 1
+        fi
+    done
+fi
+
 # INVARIANT: Échap ou une géométrie vide ne lance ni grim ni wl-copy.
 selector="$HOME/.local/libexec/labfy-slurp"
 [[ -x "$selector" ]] || { echo "Sélecteur slurp corrigé absent : exécuter tools/build-slurp-keymap-guard" >&2; exit 1; }
 geometry="$("$selector")" || exit 0
 [[ -n "$geometry" ]] || exit 0
+if $annotate; then
+    # CONTRACT: seules des coordonnées et des dimensions positives atteignent grim.
+    [[ $geometry =~ ^-?[0-9]+,-?[0-9]+[[:space:]][1-9][0-9]*x[1-9][0-9]*$ ]] || { echo "Géométrie slurp invalide" >&2; exit 1; }
+fi
 runtime="${XDG_RUNTIME_DIR:?}"
-image="$(mktemp "$runtime/labfy-screenshot-XXXXXXXX.png")"
-chmod 600 "$image"
-trap 'rm -f -- "$image"' EXIT
+if $annotate; then
+    # INVARIANT: chaque invocation possède exclusivement son répertoire 0700.
+    umask 077
+    workdir="$(mktemp -d "$runtime/labfy-screenshot-annotate-XXXXXXXX")"
+    editor_pid=""
+    cleanup_annotation() {
+        if [[ -n $editor_pid ]]; then
+            kill "$editor_pid" 2>/dev/null || true
+            wait "$editor_pid" 2>/dev/null || true
+        fi
+        rm -rf -- "$workdir"
+    }
+    trap cleanup_annotation EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    image="$workdir/capture.png"
+else
+    image="$(mktemp "$runtime/labfy-screenshot-XXXXXXXX.png")"
+    chmod 600 "$image"
+    trap 'rm -f -- "$image"' EXIT
+fi
 grim -g "$geometry" "$image"
 # CONTRACT: seul un PNG complet et non vide peut remplacer le presse-papiers.
 [[ -s "$image" ]] || exit 1
@@ -39,4 +91,89 @@ with open(sys.argv[1], 'rb') as image:
     if image.read(8) != b'\x89PNG\r\n\x1a\n':
         raise SystemExit(1)
 PY
-wl-copy --type image/png < "$image"
+if ! $annotate; then
+    wl-copy --type image/png < "$image"
+    exit
+fi
+
+# CONTRACT: une signature seule ne prouve pas qu'un PNG est décodable.
+# Ce contrôle supplémentaire appartient au mode annotation ; Print garde son
+# traitement historique. Pillow est déjà présent sur cette machine.
+python3 - "$image" <<'PY'
+import sys
+from PIL import Image
+with Image.open(sys.argv[1]) as image:
+    if image.format != "PNG" or image.width < 1 or image.height < 1:
+        raise SystemExit(1)
+    image.verify()
+PY
+
+mkdir -m 700 -- "$workdir/config" "$workdir/config/swappy" "$workdir/saved"
+# WHY: isoler XDG_CONFIG_HOME pour Swappy masquait aussi dconf et GTK,
+# qui revenaient aux valeurs Adwaita claires au lieu du thème système.
+# CONTRACT: partager les répertoires de réglages, jamais une copie figée ni
+# un GTK_THEME forcé. Les liens suivent les changements de configuration ;
+# leur suppression au nettoyage ne supprime pas les données utilisateur.
+user_config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+for shared_config in dconf gtk-3.0; do
+    ln -s -- "$user_config_home/$shared_config" "$workdir/config/$shared_config"
+done
+# WHY: Swappy 1.8.0 écrit le dossier au démarrage et son nom horodaté peut
+# écraser un autre fichier. Le dossier privé isole le clic Enregistrer ; seul
+# un fichier issu de ce clic sera publié ensuite avec un nom exclusif.
+cat > "$workdir/config/swappy/config" <<'CONFIG'
+[Default]
+save_dir="$LABFY_SWAPPY_SAVE_DIR"
+save_filename_format=swappy-%Y%m%d-%H%M%S.png
+show_panel=true
+paint_mode=arrow
+early_exit=true
+auto_save=false
+fill_shape=false
+transparent=false
+CONFIG
+export LABFY_SWAPPY_SAVE_DIR="$workdir/saved"
+# WHY: Swappy est une GtkApplication à instance unique. Deux captures proches
+# doivent conserver chacune leur fichier et attendre leur propre édition.
+# Le verrou advisory porte sur le répertoire runtime privé, sans fichier
+# partagé à laisser ou à nettoyer. Le client ferme ce descripteur hérité.
+exec {editor_lock}< "$runtime"
+flock "$editor_lock"
+XDG_CONFIG_HOME="$workdir/config" swappy --file "$image" {editor_lock}<&- &
+editor_pid=$!
+wait "$editor_pid" || exit 1
+editor_pid=""
+exec {editor_lock}<&-
+
+# CONTRACT: Copier est entièrement natif (wl-copy image/png dans Swappy).
+# Fermer ne crée aucun fichier enregistré. Un code de sortie 0 ne prouve
+# aucune action ; seul le fichier issu du bouton Enregistrer est publié.
+shopt -s nullglob
+saved=("$workdir/saved"/*)
+[[ ${#saved[@]} -eq 0 ]] && exit 0
+[[ ${#saved[@]} -eq 1 && -f ${saved[0]} && -s ${saved[0]} ]] || exit 1
+python3 - "${saved[0]}" <<'PY'
+import sys
+from PIL import Image
+with Image.open(sys.argv[1]) as image:
+    if image.format != "PNG" or image.width < 1 or image.height < 1:
+        raise SystemExit(1)
+    image.verify()
+PY
+
+# CONTRACT: XDG_PICTURES_DIR est lu depuis la configuration utilisateur ;
+# aucun dossier Desktop/Bureau n'est créé. Le chemin peut contenir des espaces.
+pictures_dir="${XDG_PICTURES_DIR:-}"
+if [[ -z $pictures_dir && -f ${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs ]]; then
+    source "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+    pictures_dir="${XDG_PICTURES_DIR:-}"
+fi
+pictures_dir="${pictures_dir:-$HOME/Pictures}"
+save_dir="$pictures_dir/Screenshots"
+mkdir -p -- "$save_dir"
+destination="$(mktemp "$save_dir/Screenshot-$(date +%Y%m%d-%H%M%S)-XXXXXXXX.png")"
+chmod 600 "$destination"
+if ! cp -- "${saved[0]}" "$destination"; then
+    rm -f -- "$destination"
+    exit 1
+fi
