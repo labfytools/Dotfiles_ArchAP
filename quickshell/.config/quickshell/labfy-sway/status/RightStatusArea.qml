@@ -11,6 +11,7 @@ Row {
     required property bool controlCenterOpen
     required property bool clipboardOpen
     required property var audioBrightnessController
+    required property var keepAwakeController
     signal openPageRequested(int page)
     signal toggleControlCenterRequested()
     signal toggleRemovableMediaRequested()
@@ -61,6 +62,12 @@ Row {
     Row {
         spacing: 5
         height: 26
+        KeepAwakeIndicator {
+            active: area.keepAwakeController.keepAwake
+            remainingSeconds: area.keepAwakeController.keepAwakeRemainingSeconds
+            unlimited: area.keepAwakeController.keepAwakeMinutes === 0
+            onActivated: area.openPageRequested(16)
+        }
         UpdatesIndicator { }
         RemovableMediaIndicator {
             id: removableMediaIndicator

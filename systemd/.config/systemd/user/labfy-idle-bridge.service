@@ -1,0 +1,21 @@
+[Unit]
+Description=Session ScreenSaver inhibit bridge for QuickShell
+PartOf=wayland-session@sway.desktop.target
+After=wayland-session@sway.desktop.target quickshell-labfy-sway.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.config/quickshell/labfy-sway/idlebridge/bridge.py
+Restart=on-failure
+RestartPreventExitStatus=2
+RestartSec=3s
+UMask=0077
+MemoryMax=96M
+TasksMax=16
+LimitNOFILE=64
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=wayland-session@sway.desktop.target

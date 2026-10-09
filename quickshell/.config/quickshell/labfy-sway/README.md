@@ -26,6 +26,7 @@ Bar
 │   ├── Network
 │   ├── Bluetooth
 │   ├── Battery
+│   ├── Maintenir éveillé (si actif)
 │   ├── Updates
 │   ├── Supports amovibles
 │   ├── Presse-papiers
@@ -37,11 +38,33 @@ Bar
     ├── Volume
     ├── Brightness
     ├── Power Profile
+    ├── Maintenir éveillé
     ├── Apparence
     │   └── Fond d'écran
     ├── Battery limit
     └── Session
 ```
+
+Dans **Réglages rapides → Maintenir éveillé**, sélectionner 30 minutes,
+1 heure, 2 heures ou **Jusqu’à désactivation**. L’icône de la barre apparaît
+pendant l’inhibition ; son infobulle indique le temps restant et un clic rouvre
+la page pour changer la durée ou désactiver le mode. Une seule barre porte
+l’inhibiteur Wayland, même avec plusieurs écrans. Le mode empêche l’inactivité
+détectée par le compositeur, donc les actions automatiques de `swayidle`
+(verrouillage et extinction de l’écran) tant que l’inhibition est respectée.
+Il ne bloque pas le verrouillage manuel, la veille demandée explicitement ni
+le verrouillage avant mise en veille. L’état est propre au processus
+QuickShell : son arrêt ou redémarrage libère l’inhibition. La configuration et
+le cycle de vie de `swayidle.service` ne sont pas modifiés.
+
+Les demandes automatiques des applications arrivent séparément par le pont
+`org.freedesktop.ScreenSaver` décrit dans [portal/README.md](../../../../portal/README.md).
+Le même inhibiteur de la barre reste actif tant que la tasse manuelle ou au
+moins une demande applicative valide est présente. La sous-page indique une
+demande automatique sans changer la durée de la tasse ; désactiver la tasse
+ne retire pas la demande d'une vidéo encore en lecture. La disparition du
+helper efface sa seule contribution applicative, tandis que la tasse garde
+son propre état.
 
 L'icône **Presse-papiers** ouvre le panneau d'historique sous la zone droite de
 la barre ; `Mod+Alt+V` conserve le même basculement sur l'écran focalisé.

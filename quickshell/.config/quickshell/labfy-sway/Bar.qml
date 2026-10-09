@@ -25,7 +25,17 @@ PanelWindow {
     required property bool startupHost
     required property bool resizeMode
     required property var applicationCoordinator
+    required property var keepAwakeController
     screen: modelData
+
+    // INVARIANT: une seule surface de barre porte l'inhibiteur, même avec
+    // plusieurs sorties. La tasse et les demandes applicatives sont deux
+    // propriétaires indépendants ; la libération de l'un préserve l'autre.
+    IdleInhibitor {
+        window: bar
+        enabled: bar.startupHost && (bar.keepAwakeController.keepAwake
+                                     || bar.keepAwakeController.applicationRequestCount > 0)
+    }
 
     anchors {
         left: true
@@ -421,6 +431,7 @@ PanelWindow {
             adapter: controlCenter.adapter
             controlCenterOpen: controlCenter.visible
             audioBrightnessController: controlCenter
+            keepAwakeController: bar.keepAwakeController
             clipboardOpen: clipboardLoader.active && !!clipboardLoader.item && !clipboardLoader.item.closing
             onOpenPageRequested: page => {
                 bar.closeApplications();
@@ -460,6 +471,7 @@ PanelWindow {
     ControlCenter {
         id: controlCenter
         barWindow: bar
+        keepAwakeController: bar.keepAwakeController
         onThresholdApplied: rightStatusArea.refreshBatteryThreshold()
     }
 

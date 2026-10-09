@@ -12,12 +12,13 @@ PopupWindow {
     id: popup
 
     required property var barWindow
+    required property var keepAwakeController
     // CONTRACT: indices externes historiques conservés ; tout nouveau routage
     // passe par ces noms afin de ne pas multiplier les indices StackLayout.
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
         confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8,
         nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12,
-        checkpointFailure: 13, avatar: 14, audio: 15 })
+        checkpointFailure: 13, avatar: 14, audio: 15, keepAwake: 16 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -178,6 +179,31 @@ PopupWindow {
 
                 Rectangle {
                     width: parent.width; height: 38; radius: 4
+                    color: popup.keepAwakeController.keepAwake ? Theme.accent
+                        : keepAwakePointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+                    NerdIcon {
+                        anchors.left: parent.left; anchors.leftMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "󰅶"
+                        color: popup.keepAwakeController.keepAwake ? Theme.onAccent : Theme.accent
+                        font.pixelSize: 18
+                    }
+                    Text {
+                        anchors.left: parent.left; anchors.leftMargin: 42
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Maintenir éveillé"
+                        color: popup.keepAwakeController.keepAwake ? Theme.onAccent : Theme.foreground
+                        font.pixelSize: 13
+                    }
+                    MouseArea {
+                        id: keepAwakePointer
+                        anchors.fill: parent; hoverEnabled: true
+                        onClicked: popup.openPage("keepAwake")
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width; height: 38; radius: 4
                     color: appearancePointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
                     NerdIcon { anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; text: "󰸉"; color: Theme.accent; font.pixelSize: 18 }
                     Text { anchors.left: parent.left; anchors.leftMargin: 42; anchors.verticalCenter: parent.verticalCenter; text: "Apparence"; color: Theme.foreground; font.pixelSize: 13 }
@@ -334,6 +360,11 @@ PopupWindow {
             AudioMixerPage {
                 activePage: popup.visible && popup.currentPage === popup.pages.audio
                 volumeControl: volumeSlider
+                onBackRequested: popup.openPage("main")
+            }
+            // Append-only: les indices publics des pages précédentes restent stables.
+            KeepAwakePage {
+                controller: popup.keepAwakeController
                 onBackRequested: popup.openPage("main")
             }
         }

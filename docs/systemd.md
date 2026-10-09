@@ -19,7 +19,7 @@ mais il ne l'active pas. Les unités effectivement versionnées sous
 | session | `gnome-keyring-daemon.service`, `ssh-agent.service`, `wlsunset.service` | agents et services de session |
 | desktop | `quickshell-labfy-sway.service`, `labfy-quickshell-updates.service/.timer`, `labfy-removable-media.service` | barre, notifications, vérification des mises à jour et gestion des supports amovibles |
 | clipboard | `cliphist-text.service`, `cliphist-image.service` | collecte texte et images Wayland |
-| idle | `swayidle.service` | verrouillage, alimentation des sorties et pause média |
+| idle | `swayidle.service`, `labfy-idle-bridge.service` | verrouillage, alimentation des sorties et pause média ; relais des demandes applicatives d'inhibition vers QuickShell |
 | batterie | `battery-low-notify.service/.timer` | contrôle et notification périodiques |
 | maintenance | `clean-makepkg.service` | nettoyage du cache temporaire utilisateur |
 | Arch Sentinel | `arch-sentinel-sample.service/.timer` | collecte périodique légère |
@@ -32,6 +32,15 @@ Les liens versionnés dans `default.target.wants/`,
 et `timers.target.wants/` expriment les
 activations utilisateur retenues. `.assets/enabled-user-aux-units.txt` capture
 en complément les timers et sockets activés observés sur la machine.
+
+`labfy-idle-bridge.service` est une unité utilisateur voulue par
+`wayland-session@sway.desktop.target`, ordonnée après
+`quickshell-labfy-sway.service`. Elle fournit le destinataire
+`org.freedesktop.ScreenSaver` que le backend GTK du portail sollicite pour
+les demandes `Inhibit`. Le helper Python/Gio communique avec QuickShell par
+socket privée et ne modifie pas `swayidle.service`. Voir
+[portal/README.md](../portal/README.md) pour les cookies, la récupération
+après déconnexion et le retour arrière.
 
 ## Supports amovibles USB/SD et MTP
 
