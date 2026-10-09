@@ -9,9 +9,8 @@
 # Listener IPC démarré une fois par session ; exec ne se rejoue pas au reload.
 exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py --opacity $inactive_opacity
 
-# CONTRACT: l'agent Polkit affiche l'authentification standard de timedated.
-# exec n'est lancé qu'à l'ouverture de session, pas à chaque reload Sway.
-exec /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+# CONTRACT: QuickShell possède l'unique agent graphique Polkit de la session.
+# Aucun deuxième agent n'est lancé par Sway à la prochaine connexion.
 
 # =================================================
 # Règles d'assignation automatique

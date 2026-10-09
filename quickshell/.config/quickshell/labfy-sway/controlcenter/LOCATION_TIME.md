@@ -10,7 +10,14 @@ Une sélection propose **Appliquer les deux**, **Fuseau uniquement** et **Positi
 
 ## Privilèges et transaction
 
-`timedatectl set-timezone` est appelé directement, avec un tableau d'arguments, via l'authentification Polkit standard de la session. L'agent graphique `polkit-gnome` est lancé au démarrage Sway. QuickShell ne reçoit jamais le mot de passe, ne dispose d'aucune permission root permanente et ne modifie jamais `/etc/localtime` directement. Si l'authentification est annulée ou indisponible, l'opération échoue sans écrire la position solaire.
+`timedatectl set-timezone` est appelé directement, avec un tableau d'arguments,
+via l'authentification Polkit standard de la session. L'agent graphique natif
+QuickShell présente la demande locale : sa fenêtre reçoit temporairement la
+réponse masquée, la transmet à `AuthFlow.submit()` et efface le champ. Elle ne
+l'écrit ni dans un argument, ni dans un fichier, ni dans un journal. QuickShell
+ne dispose d'aucune permission root permanente et ne modifie jamais
+`/etc/localtime` directement. Si l'authentification est annulée ou
+indisponible, l'opération échoue sans écrire la position solaire.
 
 L'application combinée valide d'abord les entrées, mémorise l'état précédent, change le fuseau, écrit la position locale, réconcilie Night Light en Auto, puis vérifie le fuseau. Un échec de fuseau laisse la position intacte. Un échec ultérieur restaure la préférence et tente de restaurer le fuseau et le service. Un échec de rollback est affiché comme erreur explicite.
 

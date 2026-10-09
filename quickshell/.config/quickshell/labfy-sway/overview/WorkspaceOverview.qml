@@ -20,6 +20,7 @@ PanelWindow {
     property bool refreshPending: false
     property string actionName: ""
     property var dirtyCaptures: []
+    property bool skipDismissCaptures: false
     property var pendingWindowNumbers: []
     property var activeWindowNumbers: []
     property int windowCaptureCursor: 0
@@ -49,7 +50,7 @@ PanelWindow {
         visible = false;
         // WHY: grim inclurait cette surface overlay. Après sa disparition,
         // seules les sorties visibles dont l'arbre a changé sont recapturées.
-        for (const card of dirtyCaptures) {
+        for (const card of skipDismissCaptures ? [] : dirtyCaptures) {
             Quickshell.execDetached(["python3", "-B", backend, "capture", "--output", card.output,
                 "--number", String(card.number), "--workspace-id", String(card.workspaceId),
                 "--revision", card.revision,

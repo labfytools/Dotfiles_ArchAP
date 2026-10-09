@@ -3,12 +3,98 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.I3
+import Quickshell.Services.Polkit
 import "notifications"
 import "idlebridge"
 import "theme"
+import "polkit"
 
 ShellRoot {
     id: shell
+    // CONTRACT: one PolkitAgent owns the native request queue for the entire
+    // user session. A dialog is constructed only for its current flow.
+    PolkitAgent { id: polkitAgent }
+    property var polkitScreen: null
+    readonly property bool authenticationActive: polkitAgent.flow !== null
+    signal authenticationOpening()
+    function choosePolkitScreen(output) {
+        const screens = Quickshell.screens;
+        polkitScreen = screens.find(screen => screen.name === output)
+            || (screens.length ? screens[0] : null);
+    }
+    function beginPolkitPresentation() {
+        polkitScreen = null;
+        if (!polkitAgent.flow) {
+            polkitOutput.running = false;
+            return;
+        }
+        authenticationOpening();
+        // WHY: the focused Sway workspace identifies the output at request
+        // start. Later focus changes do not move the authentication surface.
+        if (!polkitOutput.running) polkitOutput.running = true;
+        else choosePolkitScreen("");
+    }
+    Connections {
+        target: polkitAgent
+        function onFlowChanged() { shell.beginPolkitPresentation(); }
+        function onAuthenticationRequestStarted() {
+            if (!polkitOutput.running && !shell.polkitScreen)
+                shell.beginPolkitPresentation();
+        }
+    }
+    Timer {
+        // WHY: a missing or disconnected Sway IPC must not leave an active
+        // Polkit request with no visible way to cancel it.
+        interval: 500
+        running: !!polkitAgent.flow && !shell.polkitScreen
+        onTriggered: {
+            shell.choosePolkitScreen("");
+            polkitOutput.running = false;
+        }
+    }
+    Process {
+        id: polkitOutput
+        command: ["swaymsg", "-t", "get_workspaces", "-r"]
+        stdout: StdioCollector { id: polkitOutputData; waitForEnd: true }
+        onExited: (code, status) => {
+            if (!polkitAgent.flow || shell.polkitScreen) return;
+            let output = "";
+            if (code === 0) {
+                try {
+                    const focused = JSON.parse(polkitOutputData.text).find(item => item.focused);
+                    output = focused ? focused.output : "";
+                } catch (_) {}
+            }
+            shell.choosePolkitScreen(output);
+        }
+    }
+    // INVARIANT: a vanished output moves the same flow to a surviving screen;
+    // it never creates a second PolkitAgent or another request queue.
+    Connections {
+        target: Quickshell
+        function onScreensChanged() {
+            if (polkitAgent.flow && Quickshell.screens.indexOf(shell.polkitScreen) < 0)
+                shell.choosePolkitScreen("");
+        }
+    }
+    LazyLoader {
+        id: polkitDialog
+        active: !!polkitAgent.flow && !!shell.polkitScreen
+        PolkitDialog { requestFlow: polkitAgent.flow; hostScreen: shell.polkitScreen }
+    }
+    IpcHandler {
+        target: "polkitUi"
+        function state(): string {
+            return JSON.stringify({ registered: polkitAgent.isRegistered,
+                active: polkitAgent.isActive, dialog: polkitDialog.active,
+                screen: shell.polkitScreen ? shell.polkitScreen.name : "",
+                queryRunning: polkitOutput.running });
+        }
+    }
+    Component.onCompleted: {
+        modeSnapshot.running = true;
+        if (polkitAgent.flow) beginPolkitPresentation();
+    }
     property bool resizeMode: false
     // CONTRACT: une seule sélection pour toutes les barres. L'inhibition est
     // volontairement éphémère : un redémarrage de QuickShell la libère.
@@ -51,6 +137,7 @@ ShellRoot {
     property string applicationsOutput: ""
     signal applicationsOpening(string output)
     function toggleApplications(output) {
+        if (authenticationActive) return;
         if (applicationsOutput === output) { applicationsOutput = ""; return; }
         applicationsOpening(output);
         applicationsOutput = output;
@@ -81,7 +168,6 @@ ShellRoot {
             catch (error) { console.warn("État mode Sway invalide", error); }
         }
     }
-    Component.onCompleted: modeSnapshot.running = true
     Connections {
         target: I3
         function onConnected() { if (!modeSnapshot.running) modeSnapshot.running = true; }
@@ -115,6 +201,7 @@ ShellRoot {
 
         Bar {
             applicationCoordinator: shell
+            authenticationActive: shell.authenticationActive
             keepAwakeController: shell
             resizeMode: shell.resizeMode
             notificationService: rootNotificationService

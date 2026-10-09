@@ -25,6 +25,7 @@ PanelWindow {
     required property bool startupHost
     required property bool resizeMode
     required property var applicationCoordinator
+    required property bool authenticationActive
     required property var keepAwakeController
     screen: modelData
 
@@ -64,6 +65,7 @@ PanelWindow {
         (Quickshell.env("HOME") + "/.config")) + "/quickshell/labfy-sway/applications/backend.py"
     function closeApplications() { applicationCoordinator.applicationsOutput = ""; }
     function toggleApplications() {
+        if (authenticationActive) return false;
         if (applicationCoordinator.applicationsOutput !== screen.name) applicationsError = "";
         applicationCoordinator.toggleApplications(screen.name);
         return true;
@@ -100,6 +102,19 @@ PanelWindow {
     }
     Connections {
         target: bar.applicationCoordinator
+        function onAuthenticationOpening() {
+            bar.closeApplications();
+            // INVARIANT: no Overview screenshot may contain the auth surface.
+            overviewCapture.running = false;
+            overviewCaptureRefresh.stop();
+            if (overviewLoader.item) overviewLoader.item.skipDismissCaptures = true;
+            bar.closeOverview();
+            bar.closeClipboard();
+            controlCenter.visible = false;
+            dateCenter.requestClose();
+            windowStrip.closeMenu();
+            rightStatusArea.closeRemovableMedia();
+        }
         function onApplicationsOpening(output) {
             bar.closeOverview();
             bar.closeClipboard();
@@ -145,6 +160,7 @@ PanelWindow {
     }
     // CONTRACT: clic et IPC suivent la même exclusion que les panneaux de barre.
     function toggleClipboard() {
+        if (authenticationActive) return false;
         if (clipboardLoader.active) {
             closeClipboard();
         } else {
@@ -166,6 +182,7 @@ PanelWindow {
         if (overviewLoader.item) overviewLoader.item.dismiss();
     }
     function toggleOverview() {
+        if (authenticationActive) return false;
         if (overviewRequested || overviewLoader.active) { closeOverview(); return true; }
         closeApplications();
         closeClipboard();
@@ -201,7 +218,7 @@ PanelWindow {
         id: overviewCapture
         command: ["python3", "-B", bar.overviewBackend, "capture", "--output", bar.screen.name]
         onExited: (code, status) => {
-            if (bar.overviewRequested) overviewLoader.active = true;
+            if (bar.overviewRequested && !bar.authenticationActive) overviewLoader.active = true;
             else if (code !== 0) console.warn("Capture du workspace impossible");
         }
     }
@@ -217,7 +234,7 @@ PanelWindow {
         id: overviewCaptureRefresh
         interval: 350; repeat: false
         onTriggered: {
-            if (!overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
+            if (!bar.authenticationActive && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
                     && !applicationsLoader.active
                     && !controlCenter.visible && !dateCenter.visible)
                 overviewCapture.running = true;
@@ -228,7 +245,7 @@ PanelWindow {
     Timer {
         interval: 15000; repeat: true; running: true; triggeredOnStart: true
         onTriggered: {
-            if (!overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
+            if (!bar.authenticationActive && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
                     && !applicationsLoader.active
                     && !controlCenter.visible && !dateCenter.visible)
                 overviewCapture.running = true;
@@ -248,6 +265,7 @@ PanelWindow {
     IpcHandler {
         target: "appearanceUi-" + bar.screen.name
         function openPage(page: string): bool {
+            if (bar.authenticationActive) return false;
             if (controlCenter.pages[page] === undefined) return false;
             bar.closeApplications();
             bar.closeClipboard();
@@ -258,8 +276,12 @@ PanelWindow {
             return true;
         }
         function close(): bool { controlCenter.visible = false; return true; }
-        function openDateCenter(): bool { bar.toggleDateCenter(); return true; }
+        function openDateCenter(): bool {
+            if (bar.authenticationActive) return false;
+            bar.toggleDateCenter(); return true;
+        }
         function openWindowMenu(): bool {
+            if (bar.authenticationActive) return false;
             bar.closeApplications();
             bar.closeClipboard();
             controlCenter.visible = false;
@@ -296,6 +318,7 @@ PanelWindow {
 
     // CONTRACT: toute la capsule centrale partage le même popup et la même exclusion XOR.
     function toggleDateCenter() {
+        if (authenticationActive) return;
         const opening = !dateCenter.visible && !dateCenter.opening;
         closeApplications();
         closeOverview();

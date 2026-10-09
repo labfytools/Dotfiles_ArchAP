@@ -87,9 +87,9 @@ Le package
 SwayFX 0.6 est un paquet foreign/local à reconstruire depuis sa source
 vérifiée ; `scenefx` et `quickshell` sont présents dans la liste Pacman
 officielle de cette machine. Voir les inventaires `.assets/`.
-`polkit-gnome` fournit l'agent graphique requis pour authentifier les
-changements de fuseau effectués par `timedatectl` depuis QuickShell. Le package
-`sway` le lance une seule fois à l'ouverture de session via `autostart` ;
+QuickShell fournit l'agent graphique Polkit requis pour authentifier les
+changements de fuseau effectués par `timedatectl`. Le service utilisateur
+`quickshell-labfy-sway.service` le lance une seule fois par session ;
 aucune règle `sudoers` propre au fuseau n'est nécessaire.
 Le backend batterie exige TLP et `/usr/local/sbin/batlimit-set`, déployé
 séparément avec les droits root selon `bin/root/README.md`.

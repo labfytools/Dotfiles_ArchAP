@@ -133,7 +133,6 @@ pipewire-alsa
 pipewire-jack
 pipewire-libcamera
 pipewire-pulse
-polkit-gnome
 podman
 powertop
 protonmail-bridge
