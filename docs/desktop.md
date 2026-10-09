@@ -58,6 +58,6 @@ leurs règles existantes restent en vigueur.
 installer de paquet. `cliphist-text.service`, `cliphist-image.service`,
 `swayidle.service`, `wlsunset.service`, les agents SSH et keyring restent des
 unités utilisateur distinctes. Les raccourcis Sway utilisent notamment
-`pactl`, `brightnessctl`, `grim`, `slurp`, `wl-copy`, `wofi`, `swaylock` et
+`pactl`, `brightnessctl`, `grim`, `slurp`, `wl-copy`, `wofi`, `labfy-lock` et
 `yazi`. Le détail de QuickShell et des dépendances figure dans son
 [README](../quickshell/.config/quickshell/labfy-sway/README.md).

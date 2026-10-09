@@ -43,7 +43,7 @@ PopupWindow {
         + "/quickshell/labfy-sway/session-v2.py"
     // Une seule table associe les libellés, confirmations et commandes de session.
     readonly property var sessionActions: [
-        { id: "lock", label: "Verrouiller", icon: "", accent: Theme.accent, command: ["swaylock"] },
+        { id: "lock", label: "Verrouiller", icon: "", accent: Theme.accent, command: ["/home/fy59/.local/bin/labfy-lock"] },
         { id: "suspend", label: "Veille", icon: "", accent: Theme.accent,
             confirmTitle: "Mettre l'ordinateur en veille ?",
             description: "La session sera verrouillée avant la veille.",

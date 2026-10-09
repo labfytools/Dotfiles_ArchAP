@@ -42,6 +42,15 @@ socket privée et ne modifie pas `swayidle.service`. Voir
 [portal/README.md](../portal/README.md) pour les cookies, la récupération
 après déconnexion et le retour arrière.
 
+`swayidle.service` utilise `/home/fy59/.local/bin/labfy-lock` pour le délai
+de verrouillage de 300 s et `before-sleep`, après la pause média. Le wrapper
+attend la confirmation `secure` avant de rendre la main à `swayidle -w`.
+Les autres délais et commandes d'inactivité sont conservés. La politique
+PAM dédiée provient de `system/pam.d/labfy-lock` et s'installe en tant que
+`/etc/pam.d/labfy-lock` avant un nouveau déploiement du verrou. La procédure
+historique de retour à `swaylock` est documentée dans
+[labfy-lock/README.md](../quickshell/.config/quickshell/labfy-lock/README.md).
+
 ## Supports amovibles USB/SD et MTP
 
 `labfy-removable-media.service` appartient au package Stow `systemd` et son

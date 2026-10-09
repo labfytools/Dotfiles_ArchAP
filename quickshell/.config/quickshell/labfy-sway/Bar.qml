@@ -30,6 +30,19 @@ PanelWindow {
     required property var drawerService
     required property var osdService
     screen: modelData
+    FileView {
+        id: lockCaptureGuardFile
+        path: (Quickshell.env("XDG_RUNTIME_DIR") || "") + "/labfy-lock.capture-guard"
+        printErrors: false
+    }
+    readonly property bool lockCaptureGuard: lockCaptureGuardFile.text().trim() === "active"
+    onLockCaptureGuardChanged: {
+        if (lockCaptureGuard) {
+            overviewCapture.running = false;
+            overviewCaptureRefresh.stop();
+            closeOverview();
+        }
+    }
 
     function closeDrawer() { drawerIndicator.close(false) }
     function toggleDrawer() { drawerIndicator.toggle() }
@@ -215,7 +228,7 @@ PanelWindow {
         return true;
     }
     function openOverview() {
-        if (authenticationActive) return false;
+        if (authenticationActive || lockCaptureGuard) return false;
         // INVARIANT: deux ouvertures ne créent ni une seconde capture ni une fermeture.
         if (overviewRequested || overviewLoader.active) return true;
         closeApplications();
@@ -230,7 +243,7 @@ PanelWindow {
         return true;
     }
     function toggleOverview() {
-        if (authenticationActive) return false;
+        if (authenticationActive || lockCaptureGuard) return false;
         if (overviewRequested || overviewLoader.active) return closeOverview();
         return openOverview();
     }
@@ -265,7 +278,7 @@ PanelWindow {
         id: overviewCapture
         command: ["python3", "-B", bar.overviewBackend, "capture", "--output", bar.screen.name]
         onExited: (code, status) => {
-            if (bar.overviewRequested && !bar.authenticationActive) overviewLoader.active = true;
+            if (bar.overviewRequested && !bar.authenticationActive && !bar.lockCaptureGuard) overviewLoader.active = true;
             else if (code !== 0) console.warn("Capture du workspace impossible");
         }
     }
@@ -281,7 +294,7 @@ PanelWindow {
         id: overviewCaptureRefresh
         interval: 350; repeat: false
         onTriggered: {
-            if (!bar.authenticationActive && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
+            if (!bar.authenticationActive && !bar.lockCaptureGuard && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
                     && !applicationsLoader.active
                     && !controlCenter.visible && !dateCenter.visible)
                 overviewCapture.running = true;
@@ -292,7 +305,7 @@ PanelWindow {
     Timer {
         interval: 15000; repeat: true; running: true; triggeredOnStart: true
         onTriggered: {
-            if (!bar.authenticationActive && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
+            if (!bar.authenticationActive && !bar.lockCaptureGuard && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
                     && !applicationsLoader.active
                     && !controlCenter.visible && !dateCenter.visible)
                 overviewCapture.running = true;

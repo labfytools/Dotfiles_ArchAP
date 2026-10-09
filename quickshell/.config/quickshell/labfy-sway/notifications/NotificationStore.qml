@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import "LockProjection.js" as LockProjection
 
 QtObject {
     id: store
@@ -23,6 +24,17 @@ QtObject {
         onLoaded: store.load()
         onLoadFailed: store.load()
         onSaveFailed: error => console.warn("Historique notifications : écriture échouée", error)
+    }
+    // CONTRACT: the lock process receives only a bounded public projection.
+    // Summary, body, image, sender, actions and record identifiers never cross.
+    property FileView lockFile: FileView {
+        path: (Quickshell.env("XDG_RUNTIME_DIR") || "") + "/labfy-lock-notifications.json"
+        blockWrites: true
+        atomicWrites: true
+        printErrors: false
+    }
+    function publishLockProjection() {
+        lockFile.setText(JSON.stringify(LockProjection.project(records)));
     }
 
     function load() {
@@ -50,6 +62,7 @@ QtObject {
             return;
         }
         ready = true;
+        publishLockProjection();
         // INVARIANT: la migration conserve chaque champ utilisateur et persiste le schéma v2.
         if (migrationNeeded) save();
     }
@@ -58,6 +71,7 @@ QtObject {
     function save() {
         if (!ready) return;
         file.setText(JSON.stringify({ version: 2, nextId: nextId, records: records }));
+        publishLockProjection();
     }
 
     function upsert(record) {

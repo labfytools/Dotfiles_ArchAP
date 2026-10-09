@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Lance le verrou QuickShell dédié et attend la confirmation du compositeur."""
+
+import fcntl
+import json
+import os
+import pwd
+from pathlib import Path
+import secrets
+import stat
+import subprocess
+import sys
+import time
+
+
+TIMEOUT = 8.0
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "quickshell/labfy-lock"
+
+
+def live(pid):
+    try:
+        os.kill(pid, 0)
+        # Orphaned lockers may stay as zombies until the parent reaps them.
+        stat = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1]
+        return not stat.startswith("Z ")
+    except (OSError, ValueError):
+        return False
+
+
+def start_ticks(pid):
+    try:
+        # /proc stat comm is parenthesized and may itself contain spaces.
+        return int(Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def avatar_path(username):
+    path = Path("/var/lib/AccountsService/icons") / username
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or not 0 < info.st_size <= 2 * 1024 * 1024:
+            return ""
+        with path.open("rb") as stream:
+            header = stream.read(24)
+        if header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+            return ""
+        width = int.from_bytes(header[16:20], "big")
+        height = int.from_bytes(header[20:24], "big")
+        return str(path) if 0 < width <= 512 and 0 < height <= 512 else ""
+    except OSError:
+        return ""
+
+
+def state(pid):
+    try:
+        result = subprocess.run(
+            ["quickshell", "ipc", "--pid", str(pid), "call", "lock", "state"],
+            capture_output=True, text=True, timeout=0.8, check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip().strip('"')
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
+def main():
+    if not CONFIG.joinpath("shell.qml").is_file():
+        print("Configuration labfy-lock absente.", file=sys.stderr)
+        return 1
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", ""))
+    if not runtime.is_dir() or runtime.stat().st_uid != os.getuid():
+        print("Répertoire runtime privé indisponible.", file=sys.stderr)
+        return 1
+    lockfile = runtime / "labfy-lock.launch"
+    capture_guard = runtime / "labfy-lock.capture-guard"
+    fd = os.open(lockfile, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "r+", encoding="utf-8") as guard:
+            fcntl.flock(guard, fcntl.LOCK_EX)
+            try:
+                record = json.load(guard)
+            except (ValueError, OSError):
+                record = {}
+            pid = record.get("pid")
+            generation = record.get("generation")
+            ticks = record.get("start_ticks")
+            if (not isinstance(pid, int) or pid <= 0 or not isinstance(generation, str)
+                    or not isinstance(ticks, int) or not live(pid) or start_ticks(pid) != ticks):
+                generation = secrets.token_hex(16)
+                # WHY: Overview must stop scheduled captures before any lock
+                # surface, including the authentication field, can be mapped.
+                capture_guard.write_text("active\n")
+                capture_guard.chmod(0o600)
+                account = pwd.getpwuid(os.getuid())
+                env = dict(os.environ, LABFY_LOCK_GENERATION=generation,
+                           LABFY_LOCK_USER=account.pw_name,
+                           LABFY_LOCK_DISPLAY=account.pw_gecos.split(",", 1)[0] or account.pw_name,
+                           LABFY_LOCK_AVATAR=avatar_path(account.pw_name))
+                # CONTRACT: the locker survives the wrapper; no secret goes in argv,
+                # environment, output, or a persistent file.
+                process = subprocess.Popen(
+                    ["quickshell", "--path", str(CONFIG)], env=env,
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, start_new_session=True,
+                    close_fds=True,
+                )
+                pid = process.pid
+                guard.seek(0)
+                guard.truncate()
+                json.dump({"pid": pid, "generation": generation,
+                           "start_ticks": start_ticks(pid)}, guard)
+                guard.flush()
+                os.fsync(guard.fileno())
+            deadline = time.monotonic() + TIMEOUT
+            expected = generation + ":secure"
+            while time.monotonic() < deadline:
+                if not live(pid):
+                    print("Le verrouilleur s’est arrêté avant confirmation.", file=sys.stderr)
+                    return 1
+                if state(pid) == expected:
+                    return 0
+                time.sleep(0.08)
+            print("Verrouillage non confirmé par le compositeur.", file=sys.stderr)
+            return 1
+    except OSError as error:
+        print(f"Démarrage du verrou impossible : {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

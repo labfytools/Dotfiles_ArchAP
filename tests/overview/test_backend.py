@@ -14,6 +14,15 @@ spec.loader.exec_module(backend)
 
 
 class OverviewBackendTests(unittest.TestCase):
+    def test_lock_guard_blocks_all_capture_entrypoints(self):
+        # CONTRACT: no compositor read or grim call follows an active lock
+        # guard, including the window-preview path.
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"XDG_RUNTIME_DIR": directory}):
+            (Path(directory) / "labfy-lock.capture-guard").write_text("active\n")
+            with patch.object(backend, "state", side_effect=AssertionError("capture reached state")):
+                self.assertEqual(backend.capture("HEADLESS-1"), {"captured": False})
+                self.assertEqual(backend.capture_windows({1}), {"captured": [], "nextCursor": 0})
+
     def test_state_keeps_floating_and_excludes_layer_shell(self):
         rect = {"x": 0, "y": 0, "width": 1000, "height": 700}
         tiled = {"type": "con", "id": 10, "app_id": "native-app", "name": "Native",

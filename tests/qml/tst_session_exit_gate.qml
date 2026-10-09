@@ -9,7 +9,7 @@ TestCase {
         id: gateComponent
         SessionExitGate {
             actions: [
-                { id: "lock", label: "Verrouiller", command: ["swaylock"] },
+                { id: "lock", label: "Verrouiller", command: ["/home/fy59/.local/bin/labfy-lock"] },
                 { id: "suspend", label: "Veille", command: ["systemctl", "suspend"] },
                 { id: "logout", label: "Déconnexion", confirmTitle: "Se déconnecter ?",
                     description: "La session SwayFX en cours sera fermée.", checkpointReason: "logout",
@@ -128,7 +128,7 @@ TestCase {
         const commandSpy = createSpy(gate, "commandRequested");
         gate.requestAction("lock");
         compare(commandSpy.count, 1);
-        compare(commandSpy.signalArguments[0][0], ["swaylock"]);
+        compare(commandSpy.signalArguments[0][0], ["/home/fy59/.local/bin/labfy-lock"]);
         compare(checkpointSpy.count, 0);
         gate.requestAction("suspend");
         compare(gate.pendingAction.id, "suspend");

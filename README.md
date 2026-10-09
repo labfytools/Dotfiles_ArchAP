@@ -120,7 +120,7 @@ cd "$HOME/.dotfiles"
 
 packages=(atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock \
   hyprwhspr icons kitty mako nvim opencode portal qt5ct qt6ct \
-  quickshell starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi \
+  quickshell starship sway systemd themes tmux uwsm wallpapers wofi yazi \
   ytmusic-tui zsh)
 
 stow --no --verbose=2 --target="$HOME" "${packages[@]}"

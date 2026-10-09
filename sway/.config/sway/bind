@@ -215,7 +215,7 @@ bindsym $mod+Alt+a exec AppFlowy
 bindsym $mod+Alt+g exec gimp
 bindsym $mod+Alt+m exec limusic-app
 bindsym $mod+Alt+b exec blueman-manager
-bindsym $mod+Alt+o exec swaylock
+bindsym $mod+Alt+o exec /home/fy59/.local/bin/labfy-lock
 bindsym $mod+Alt+l exec ~/.config/sway/scripts/applications-quickshell
 bindsym $mod+Alt+p exec proton-pass
 bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton

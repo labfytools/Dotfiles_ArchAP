@@ -1,0 +1,6 @@
+#%PAM-1.0
+# WHY: conserver la même politique auth que le verrou validé sans dépendre
+# du fichier PAM fourni par le paquet swaylock.
+# CONTRACT: PamContext utilise uniquement la phase auth ; login inclut
+# system-local-login, system-login et system-auth pour cette phase.
+auth include login

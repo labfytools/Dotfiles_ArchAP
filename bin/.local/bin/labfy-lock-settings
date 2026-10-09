@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Préférence média du verrouilleur, à lancer depuis le bureau déverrouillé."""
+
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] != "media" or sys.argv[2] not in ("hidden", "generic", "metadata"):
+        print("Usage : labfy-lock-settings media hidden|generic|metadata", file=sys.stderr)
+        return 2
+    directory = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "quickshell/labfy-lock"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target = directory / "preferences.json"
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory,
+                                     prefix=".preferences-", delete=False) as stream:
+        temporary = Path(stream.name)
+        os.fchmod(stream.fileno(), 0o600)
+        json.dump({"version": 1, "media": sys.argv[2]}, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, target)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

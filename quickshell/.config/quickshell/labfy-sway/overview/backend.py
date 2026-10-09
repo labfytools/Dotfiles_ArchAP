@@ -13,6 +13,18 @@ import tempfile
 import time
 
 
+def lock_capture_guard_active():
+    # CONTRACT: capture is denied while the dedicated lock may render an auth
+    # surface. A crash leaves the guard active until authenticated recovery.
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime:
+        return False
+    try:
+        return (Path(runtime) / "labfy-lock.capture-guard").read_text() == "active\n"
+    except OSError:
+        return False
+
+
 def sway(kind):
     result = subprocess.run(["swaymsg", "-t", kind, "-r"], capture_output=True,
                             text=True, timeout=5, check=True)
@@ -224,6 +236,8 @@ def state():
 
 def capture(output, expected_number=None, expected_workspace_id=None,
             expected_revision=None, settle_ms=0):
+    if lock_capture_guard_active():
+        return {"captured": False}
     if settle_ms < 0 or settle_ms > 1000:
         raise ValueError("Délai de capture invalide")
     if settle_ms:
@@ -242,6 +256,8 @@ def capture(output, expected_number=None, expected_workspace_id=None,
     with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".jpg", delete=False) as temp:
         temporary = Path(temp.name)
     try:
+        if lock_capture_guard_active():
+            return {"captured": False}
         subprocess.run(["grim", "-o", output, "-s", "0.25", "-t", "jpeg", "-q", "72",
                         str(temporary)], check=True, timeout=8, capture_output=True)
         if not temporary.is_file() or temporary.stat().st_size == 0:
@@ -250,7 +266,7 @@ def capture(output, expected_number=None, expected_workspace_id=None,
         updated = next((card for card in after["cards"] if card["number"] == current["number"]), None)
         # INVARIANT: un changement pendant grim ou la présence de l'Overview
         # interdit de publier une image associée au mauvais arbre.
-        if (output in after["overlayOutputs"] or not updated or not updated["visible"]
+        if (lock_capture_guard_active() or output in after["overlayOutputs"] or not updated or not updated["visible"]
                 or updated["output"] != output or updated["workspaceId"] != current["workspaceId"]
                 or updated["revision"] != current["revision"]):
             return {"captured": False}
@@ -275,6 +291,8 @@ def capture(output, expected_number=None, expected_workspace_id=None,
 
 
 def capture_windows(numbers, cursor=0):
+    if lock_capture_guard_active():
+        return {"captured": [], "nextCursor": 0}
     if cursor < 0:
         raise ValueError("Curseur de capture invalide")
     before = state()
@@ -287,6 +305,8 @@ def capture_windows(numbers, cursor=0):
     captures = []
     try:
         for window in batch:
+            if lock_capture_guard_active():
+                break
             with tempfile.NamedTemporaryFile(dir=cache_dir(), suffix=".jpg", delete=False) as temp:
                 temporary = Path(temp.name)
             captures.append((window, temporary))
@@ -302,6 +322,8 @@ def capture_windows(numbers, cursor=0):
         current = {window["id"]: window for card in after["cards"] for window in card["windows"]}
         published = []
         for window, temporary in captures:
+            if lock_capture_guard_active():
+                break
             if not temporary.is_file() or current.get(window["id"], {}).get("foreignId") != window["foreignId"]:
                 continue
             path = window_preview_path(window["id"])

@@ -4,7 +4,8 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/swayidle -w timeout 300 'swaylock -f -c 000000' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' timeout 420 'playerctl -a pause 2>/dev/null || true' idlehint 420 before-sleep 'playerctl -a pause 2>/dev/null || true; swaylock -f -c 000000'
+# CONTRACT: -w attend la fin de la commande before-sleep ; labfy-lock rend la main uniquement après confirmation secure.
+ExecStart=/usr/bin/swayidle -w timeout 300 '/home/fy59/.local/bin/labfy-lock' timeout 360 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' timeout 420 'playerctl -a pause 2>/dev/null || true' idlehint 420 before-sleep 'playerctl -a pause 2>/dev/null || true; /home/fy59/.local/bin/labfy-lock'
 Restart=on-failure
 
 [Install]

@@ -85,7 +85,7 @@ MIME et ne remplace pas les portails d'autres interfaces.
 
 ## Vidéo Firefox et inhibition de l'inactivité (diagnostic du 9 octobre 2026)
 
-Dans cette session SwayFX, `swayidle.service` lance `swaylock` après 300 s,
+Lors de ce diagnostic, `swayidle.service` lançait `swaylock` après 300 s,
 éteint les sorties après 360 s et met les lecteurs en pause après 420 s. Le
 verrouillage manuel et la protection `before-sleep` sont indépendants. Le
 symptôme historique n'a pas été observé à l'instant exact du verrouillage ;

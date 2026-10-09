@@ -71,7 +71,7 @@ Les commandes suivantes sont destinées à Bash :
 packages=(
   atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock
   hyprwhspr icons kitty mako nvim opencode portal qt5ct qt6ct
-  quickshell starship sway swaylock systemd themes tmux uwsm wallpapers wofi yazi
+  quickshell starship sway systemd themes tmux uwsm wallpapers wofi yazi
   ytmusic-tui zsh
 )
 
@@ -93,6 +93,10 @@ changements de fuseau effectués par `timedatectl`. Le service utilisateur
 aucune règle `sudoers` propre au fuseau n'est nécessaire.
 Le backend batterie exige TLP et `/usr/local/sbin/batlimit-set`, déployé
 séparément avec les droits root selon `bin/root/README.md`.
+Avant le premier verrouillage par `labfy-lock`, installer la politique
+`system/pam.d/labfy-lock` dans `/etc/pam.d/labfy-lock` avec les droits root,
+selon [la procédure PAM](../system/pam.d/README.md). Le package Stow
+historique `swaylock` n'est pas requis.
 
 ## 6. Effectuer le dry-run
 

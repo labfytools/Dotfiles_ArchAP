@@ -93,7 +93,8 @@ est 60 % ; le helper root est documenté dans `bin/root/README.md`.
 
 Dépendances essentielles : `quickshell`, SwayFX 0.6, `scenefx`, une Nerd Font,
 NetworkManager, BlueZ, PipeWire, TLP/`tlpctl`, `checkupdates`, `yay`, `df`,
-`python3`, `swaylock` et le helper batterie pour le réglage du seuil. Le
+`python3`, la politique `/etc/pam.d/labfy-lock` et le helper batterie pour le
+réglage du seuil. Le
 backlight utilise le noeud machine `amdgpu_bl1` dans `BrightnessSlider.qml`.
 Les scans Wi-Fi et Bluetooth
 ne sont possédés que par les pages ouvertes.

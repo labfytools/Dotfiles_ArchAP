@@ -180,7 +180,6 @@ strace
 sudo
 swaybg
 swayidle
-swaylock
 swaync
 system-config-printer
 tcpdump
