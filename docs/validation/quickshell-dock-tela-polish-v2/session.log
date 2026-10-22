@@ -1,0 +1,152 @@
+test_absent_last_existing_directory (test_bootstrap.BootstrapTests.test_absent_last_existing_directory) ... ok
+test_absent_no_creation (test_bootstrap.BootstrapTests.test_absent_no_creation) ... ok
+test_allowlist_denied (test_bootstrap.BootstrapTests.test_allowlist_denied) ... ok
+test_checkpoint_created_between_observations (test_bootstrap.BootstrapTests.test_checkpoint_created_between_observations) ... ok
+test_empty_sessions_with_or_without_automatic_allows_without_creation (test_bootstrap.BootstrapTests.test_empty_sessions_with_or_without_automatic_allows_without_creation) ... ok
+test_envelope_and_framing_rejected (test_bootstrap.BootstrapTests.test_envelope_and_framing_rejected) ... ok
+test_home_fallback_matches_canonical_location (test_bootstrap.BootstrapTests.test_home_fallback_matches_canonical_location) ... ok
+test_interleaved_operations_map_unchanged (test_bootstrap.BootstrapTests.test_interleaved_operations_map_unchanged) ... ok
+test_last_with_sessions_absent_refuses (test_bootstrap.BootstrapTests.test_last_with_sessions_absent_refuses) ... ok
+test_named_only_without_automatic_refuses (test_bootstrap.BootstrapTests.test_named_only_without_automatic_refuses) ... ok
+test_os_error_is_not_absence (test_bootstrap.BootstrapTests.test_os_error_is_not_absence) ... ok
+test_present_and_corrupt_always_refuse (test_bootstrap.BootstrapTests.test_present_and_corrupt_always_refuse) ... ok
+test_sessions_any_entry_refuses_without_content_read (test_bootstrap.BootstrapTests.test_sessions_any_entry_refuses_without_content_read) ... ok
+test_sessions_list_error_refuses (test_bootstrap.BootstrapTests.test_sessions_list_error_refuses) ... ok
+test_sessions_unsafe_directory_refuses (test_bootstrap.BootstrapTests.test_sessions_unsafe_directory_refuses) ... ok
+test_socket_authority_failure_refuses_absence (test_bootstrap.BootstrapTests.test_socket_authority_failure_refuses_absence) ... ok
+test_state_symlink_and_relative_state_refuse (test_bootstrap.BootstrapTests.test_state_symlink_and_relative_state_refuse) ... ok
+test_symlinks_and_special_last_refuse_without_open (test_bootstrap.BootstrapTests.test_symlinks_and_special_last_refuse_without_open) ... ok
+test_unreadable_and_nonprivate_directory_refuse (test_bootstrap.BootstrapTests.test_unreadable_and_nonprivate_directory_refuse) ... ok
+test_valid_store_checkpoint_and_unreadable_file_refuse (test_bootstrap.BootstrapTests.test_valid_store_checkpoint_and_unreadable_file_refuse) ... ok
+test_equivalent_unary_paths_are_not_identity_changes (test_focus_recovery.FocusRecoveryTests.test_equivalent_unary_paths_are_not_identity_changes) ... ok
+test_firefox_command_proven_then_kitty_late_conflict_is_preserved (test_focus_recovery.FocusRecoveryTests.test_firefox_command_proven_then_kitty_late_conflict_is_preserved) ... ok
+test_interrupted_intention_preserves_all_evidence (test_focus_recovery.FocusRecoveryTests.test_interrupted_intention_preserves_all_evidence) ... ok
+test_layout_change_with_identical_raw_paths_still_refuses (test_focus_recovery.FocusRecoveryTests.test_layout_change_with_identical_raw_paths_still_refuses) ... ok
+test_path_evidence_limit_refuses_without_overwriting_history (test_focus_recovery.FocusRecoveryTests.test_path_evidence_limit_refuses_without_overwriting_history) ... ok
+test_real_identity_order_workspace_and_branch_changes_still_refuse (test_focus_recovery.FocusRecoveryTests.test_real_identity_order_workspace_and_branch_changes_still_refuse) ... ok
+test_prepare_quits_before_resume_and_finish_has_no_delayed_exit (test_guard_protocol.GuardProtocolTests.test_prepare_quits_before_resume_and_finish_has_no_delayed_exit) ... ok
+test_resume_without_prepare_refuses_and_still_cleans_owned_helper (test_guard_protocol.GuardProtocolTests.test_resume_without_prepare_refuses_and_still_cleans_owned_helper) ... ok
+test_actual_dbus_states (test_keyring.KeyringTests.test_actual_dbus_states) ... /usr/lib/python3.14/site-packages/gi/events.py:803: DeprecationWarning: 'asyncio.AbstractEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+  AbstractEventLoopPolicy = getattr(asyncio, "AbstractEventLoopPolicy", object)
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+ok
+test_apply_is_excluded_during_unlock (test_keyring.KeyringTests.test_apply_is_excluded_during_unlock) ... ok
+test_apply_last_cannot_bypass_gate (test_keyring.KeyringTests.test_apply_last_cannot_bypass_gate) ... /usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+ok
+test_ready_preserves_executor_result_and_recovery_required (test_keyring.KeyringTests.test_ready_preserves_executor_result_and_recovery_required) ... /usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+ok
+test_remote_error_text_is_never_logged_or_persisted (test_keyring.KeyringTests.test_remote_error_text_is_never_logged_or_persisted) ... ok
+test_transaction_prevents_prompt (test_keyring.KeyringTests.test_transaction_prevents_prompt) ... /usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+ok
+test_two_processes_and_restart (test_keyring.KeyringTests.test_two_processes_and_restart) ... ok
+test_unlock_never_restores (test_keyring.KeyringTests.test_unlock_never_restores) ... /usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+/usr/lib/python3.14/site-packages/gi/events.py:890: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  if not isinstance(_get_event_loop_policy(), GLibEventLoopPolicy):
+ok
+test_complete_refuses_full_identity_placement_and_pending (test_p0_boundaries.BoundaryTests.test_complete_refuses_full_identity_placement_and_pending) ... ok
+test_extra_after_first_move_refuses_before_second_staging (test_p0_boundaries.BoundaryTests.test_extra_after_first_move_refuses_before_second_staging) ... ok
+test_guard_replacement_and_extra_refuse_before_any_mutation (test_p0_boundaries.BoundaryTests.test_guard_replacement_and_extra_refuse_before_any_mutation) ... ok
+test_last_provider_capture_cannot_hide_structure_or_identity_change (test_p0_boundaries.BoundaryTests.test_last_provider_capture_cannot_hide_structure_or_identity_change) ... ok
+test_layout_change_in_second_split_focus_observation_refuses (test_p0_boundaries.BoundaryTests.test_layout_change_in_second_split_focus_observation_refuses) ... ok
+test_unary_parent_normalization_preserves_canonical_layout (test_p0_boundaries.BoundaryTests.test_unary_parent_normalization_preserves_canonical_layout) ... ok
+test_unchanged_final_observation_completes (test_p0_boundaries.BoundaryTests.test_unchanged_final_observation_completes) ... ok
+test_changement_apres_capture_canonique_refuse_avant_deplacement (test_path_stability.PathTests.test_changement_apres_capture_canonique_refuse_avant_deplacement) ... ok
+test_guard_refuse_les_divergences_avant_tout_ipc (test_path_stability.PathTests.test_guard_refuse_les_divergences_avant_tout_ipc) ... ok
+test_ack_requires_verified_current_transaction (test_phase3b.DeploymentTests.test_ack_requires_verified_current_transaction) ... ok
+test_limusic_never_launched (test_phase3b.DeploymentTests.test_limusic_never_launched) ... ok
+test_async_mapping_completes_before_apply_and_focus_proof (test_prewarm.PrewarmTests.test_async_mapping_completes_before_apply_and_focus_proof) ... ok
+test_deferred_marker_and_cli_preserve_cause_for_explicit_retry (test_prewarm.PrewarmTests.test_deferred_marker_and_cli_preserve_cause_for_explicit_retry) ... ok
+test_existing_required_journal_refuses_before_launch (test_prewarm.PrewarmTests.test_existing_required_journal_refuses_before_launch) ... ok
+test_focus_change_after_proof_refuses_without_publication (test_prewarm.PrewarmTests.test_focus_change_after_proof_refuses_without_publication) ... ok
+test_intruder_extra_identity_session_and_owner_refuse_without_publication (test_prewarm.PrewarmTests.test_intruder_extra_identity_session_and_owner_refuse_without_publication) ... ok
+test_launch_failure_preserves_clients_and_retry_does_not_duplicate (test_prewarm.PrewarmTests.test_launch_failure_preserves_clients_and_retry_does_not_duplicate) ... ok
+test_missing_managed_autostart_refuses_before_launch (test_prewarm.PrewarmTests.test_missing_managed_autostart_refuses_before_launch) ... ok
+test_missing_collision_and_live_publisher (test_provider.ProviderTests.test_missing_collision_and_live_publisher) ... ok
+test_capture_is_deterministic_for_a_stable_tree (test_scratchpad.ScratchpadTests.test_capture_is_deterministic_for_a_stable_tree) ... ok
+test_capture_store_reload_and_no_internal_workspace (test_scratchpad.ScratchpadTests.test_capture_store_reload_and_no_internal_workspace) ... ok
+test_change_between_reads_and_ambiguous_focus_refuse (test_scratchpad.ScratchpadTests.test_change_between_reads_and_ambiguous_focus_refuse) ... ok
+test_empty_focus_workspace_is_persisted (test_scratchpad.ScratchpadTests.test_empty_focus_workspace_is_persisted) ... ok
+test_group_ancestor_is_not_admitted_by_leaf_identity (test_scratchpad.ScratchpadTests.test_group_ancestor_is_not_admitted_by_leaf_identity) ... ok
+test_hidden_focus_is_rejected_before_command (test_scratchpad.ScratchpadTests.test_hidden_focus_is_rejected_before_command) ... ok
+test_initial_scratchpad_add_predicts_source_workspace_focus (test_scratchpad.ScratchpadTests.test_initial_scratchpad_add_predicts_source_workspace_focus) ... ok
+test_journal_detects_identity_output_scratchpad_and_interruption (test_scratchpad.ScratchpadTests.test_journal_detects_identity_output_scratchpad_and_interruption) ... ok
+test_layer_shell_can_leave_no_sway_focus (test_scratchpad.ScratchpadTests.test_layer_shell_can_leave_no_sway_focus) ... ok
+test_legacy_journal_not_reinterpreted (test_scratchpad.ScratchpadTests.test_legacy_journal_not_reinterpreted) ... ok
+test_multiple_focused_nodes_are_still_refused (test_scratchpad.ScratchpadTests.test_multiple_focused_nodes_are_still_refused) ... ok
+test_runtime_visibility_assignment_never_exposes_hidden_peer (test_scratchpad.ScratchpadTests.test_runtime_visibility_assignment_never_exposes_hidden_peer) ... ok
+test_shown_and_multiple_hidden (test_scratchpad.ScratchpadTests.test_shown_and_multiple_hidden) ... ok
+test_strict_versions_and_scratchpad_references (test_scratchpad.ScratchpadTests.test_strict_versions_and_scratchpad_references) ... ok
+test_checkpoint_failed_validation_preserves_old (test_unit.BackendTests.test_checkpoint_failed_validation_preserves_old) ... ok
+test_checkpoint_permissions (test_unit.BackendTests.test_checkpoint_permissions) ... ok
+test_cli_execute_required (test_unit.BackendTests.test_cli_execute_required) ... ok
+test_cli_storage_checkpoint_and_startup_mock (test_unit.BackendTests.test_cli_storage_checkpoint_and_startup_mock) ... ok
+test_coexistence_and_migration (test_unit.BackendTests.test_coexistence_and_migration) ... ok
+test_command_injection (test_unit.BackendTests.test_command_injection) ... ok
+test_counts (test_unit.BackendTests.test_counts) ... ok
+test_exact_inverted (test_unit.BackendTests.test_exact_inverted) ... ok
+test_interchangeable_best_effort (test_unit.BackendTests.test_interchangeable_best_effort) ... ok
+test_intermediate_directory_permissions (test_unit.BackendTests.test_intermediate_directory_permissions) ... ok
+test_json_schema_matches_fixture (test_unit.BackendTests.test_json_schema_matches_fixture) ... ok
+test_json_strict (test_unit.BackendTests.test_json_strict) ... ok
+test_launch_policy (test_unit.BackendTests.test_launch_policy) ... ok
+test_lock (test_unit.BackendTests.test_lock) ... ok
+test_multi_output_preflight_synthetic (test_unit.BackendTests.test_multi_output_preflight_synthetic) ... ok
+test_native_strict (test_unit.BackendTests.test_native_strict) ... ok
+test_paths_links (test_unit.BackendTests.test_paths_links) ... ok
+test_plan_pure (test_unit.BackendTests.test_plan_pure) ... ok
+test_references (test_unit.BackendTests.test_references) ... ok
+test_report_rejects_private_fields_and_bool_version (test_unit.BackendTests.test_report_rejects_private_fields_and_bool_version) ... ok
+test_resume_attempts_all_owned_helpers (test_unit.BackendTests.test_resume_attempts_all_owned_helpers) ... ok
+test_schema_exact (test_unit.BackendTests.test_schema_exact) ... ok
+test_types_version_and_identity (test_unit.BackendTests.test_types_version_and_identity) ... ok
+test_unsupported_states (test_unit.BackendTests.test_unsupported_states) ... ok
+
+----------------------------------------------------------------------
+Ran 93 tests in 8.405s
+
+OK

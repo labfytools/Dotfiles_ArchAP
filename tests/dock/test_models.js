@@ -24,8 +24,15 @@ input.held=false; assert.equal(event(),'waiting');
 assert.equal(event('deadline'),'hidden');
 input.held=true; event(); input.suppressed=true; assert.equal(event(),'hidden');
 assert.equal(hide.influence(0),1);
-assert.ok(hide.influence(55)>hide.influence(100));
-assert.equal(hide.influence(115),0);
+assert.ok(hide.influence(25)>hide.influence(55));
+assert.equal(hide.influence(76),0);
+assert.equal(hide.influence(-76),0);
+assert.equal(hide.influence(-35),hide.influence(35));
+for (let cursor=0; cursor<570; ++cursor) {
+    const affected=Array.from({length:10},(_,i)=>i).filter(i=>hide.influence(i*57-cursor)>0);
+    assert.ok(affected.length<=3);
+    assert.ok(affected.length===0 || affected.at(-1)-affected[0]<=2);
+}
 const model=load('applications/WindowModel.js');
 const apps=[{id:'kitty.desktop',aliases:['kitty'],iconSource:'file:///tela/kitty.svg'},
     {id:'org.app.desktop',aliases:['startup-class','executable']},

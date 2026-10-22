@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "base": "d4e2a0013e7a9452add80dddc110e036ebe4ee96",
+  "backendTests": {
+    "applications": 7,
+    "dock": 6,
+    "sessionV2": 93
+  },
+  "javascript": [
+    "ApplicationsModel: PASS",
+    "Dock state and window models: PASS"
+  ],
+  "graphical": [
+    "private Sway dock scenario",
+    "complete shell load",
+    "Session V2 and Keyring with dock"
+  ],
+  "keyring": {
+    "backend": 0,
+    "focus": 0,
+    "qml-unit": 0,
+    "qml-qt": 0,
+    "keyring-ui": 0,
+    "keyring-runtime": 0,
+    "scratchpad-runtime": 0,
+    "phase3b-ui": 0,
+    "p0-runtime": 0,
+    "path-runtime": 0,
+    "diff-check": 0
+  },
+  "finalChecks": [
+    "git diff --check: PASS",
+    "git apply --check against unchanged main checkout: PASS",
+    "no Binding loop, assignment, ReferenceError or TypeError in final dock lab logs",
+    "main checkout git status --short: empty"
+  ],
+  "finalShellLab": "/tmp/labfy-session-v2-TEST_ONLY-ywdppzn5",
+  "activeSessionModified": false
+}

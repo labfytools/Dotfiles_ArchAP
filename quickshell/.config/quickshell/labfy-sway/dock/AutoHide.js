@@ -17,5 +17,9 @@ function next(state, event, input) {
 }
 
 function influence(distance) {
-    return Math.max(0, 1 - Math.abs(distance) / 115);
+    // CONTRACT: 57 px resting pitch; a radius below 1.5 pitches affects
+    // at most the nearest slot and its immediate neighbours. Smoothstep has
+    // zero slope at both ends, avoiding a kink as an icon enters the halo.
+    const t = Math.max(0, 1 - Math.abs(distance) / 76);
+    return t * t * (3 - 2 * t);
 }

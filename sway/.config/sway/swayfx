@@ -27,10 +27,11 @@ layer_effects "labfy-sway-bar" {
     corner_radius 4
 }
 
-# CONTRACT: only the dock's layer surface receives blur; no window rule or
-# focus/restore policy is changed. Its transparent input strip stays clear.
+# CONTRACT: dock glass uses a light tint and analytic QML shadow. Disabling
+# backdrop blur avoids compositor blur work on every magnification frame.
+# No window rule or focus/restore policy is changed.
 layer_effects "labfy-sway-dock" {
-    blur $bar_blur
+    blur disable
     blur_xray disable
     blur_ignore_transparent enable
     shadows disable

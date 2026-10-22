@@ -1,0 +1,12 @@
+test_bad_state_does_not_get_overwritten (test_backend.FavoritesTests.test_bad_state_does_not_get_overwritten) ... ok
+test_seed_order_atomic_update_and_missing_entry (test_backend.FavoritesTests.test_seed_order_atomic_update_and_missing_entry) ... ok
+test_graphical_uses_desktop_id_and_uwsm_service (test_backend.LaunchTests.test_graphical_uses_desktop_id_and_uwsm_service) ... ok
+test_invalid_id_and_missing_entry (test_backend.LaunchTests.test_invalid_id_and_missing_entry) ... ok
+test_nodisplay_entry_is_refused_before_launch (test_backend.LaunchTests.test_nodisplay_entry_is_refused_before_launch) ... ok
+test_terminal_entry_already_running_kitty_is_not_wrapped_twice (test_backend.LaunchTests.test_terminal_entry_already_running_kitty_is_not_wrapped_twice) ... ok
+test_terminal_preserves_desktop_exec_fields_and_kitty (test_backend.LaunchTests.test_terminal_preserves_desktop_exec_fields_and_kitty) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.004s
+
+OK

@@ -13,7 +13,7 @@ from headless import Lab
 from ipc_proxy import IpcProxy
 
 SOURCE = REPO / 'quickshell/.config/quickshell/labfy-sway'
-ARTIFACTS = REPO / 'docs/validation/quickshell-dock-tela'
+ARTIFACTS = REPO / 'docs/validation/quickshell-dock-tela-polish-v2'
 NINE = ['firefox.desktop', 'kitty.desktop', 'yazi.desktop', 'nvim.desktop',
         'org.darktable.darktable.desktop', 'orca-slicer.desktop', 'org.freecad.FreeCAD.desktop',
         'org.kde.digikam.desktop', 'AppFlowy.desktop']
@@ -23,8 +23,8 @@ class DockLab(Lab):
         super().__init__()
         self.config=self.directory/'dock-sway.conf'
         base=(REPO/'tests/session_v2/fixtures/headless.conf').read_text()
-        effects=(REPO/'sway/.config/sway/swayfx').read_text().split('# CONTRACT: only the dock')[1]
-        effects=effects[effects.index('layer_effects'):]
+        effects=(REPO/'sway/.config/sway/swayfx').read_text().split('layer_effects "labfy-sway-dock"')[1]
+        effects='layer_effects "labfy-sway-dock"'+effects
         self.config.write_text(base+'\noutput HEADLESS-1 bg #11111b solid_color\nset $bar_blur enable\n'+effects)
     def start(self, argv):
         if argv[0]==os.environ.get('LABFY_TEST_SWAY','sway'):
@@ -49,6 +49,31 @@ ShellRoot {
  D.Dock { id: dock; modelData: Quickshell.screens[0] }
  PanelWindow { id: bar; implicitWidth: 100; implicitHeight: 30; anchors.top: true; color: "transparent" }
  LazyLoader { id: menu; active: false; A.ApplicationsMenu { barWindow: bar } }
+ // TEST_ONLY: one pointer move per animation frame avoids measuring IPC
+ // process startup instead of continuous production hover. These are Qt
+ // animation intervals, not hardware presentation timestamps.
+ FrameAnimation {
+  id: sweepFrames
+  property var intervals: []
+  property real origin: 0
+  property bool geometryChanged: false
+  property bool imageChanged: false
+  property var baseline: []
+  running: false
+  onTriggered: {
+   if (currentFrame > 1) intervals.push(frameTime * 1000);
+   const cycle = (elapsedTime * 0.7) % 2;
+   input.mouseMove(dock.surfaceBody, 51 + 420 * (cycle <= 1 ? cycle : 2 - cycle), 70);
+   const tiles=Array.from(dock.contentItemRow.children).filter(t => t.modelData);
+   for (let i=0; i<tiles.length; ++i) {
+    const t=tiles[i], b=baseline[i];
+    if (t.x!==b.x || t.width!==b.width || t.children[1].width!==46 || dock.width!==origin)
+     geometryChanged=true;
+    if (t.children[1].children[0].status!==b.status) imageChanged=true;
+   }
+   if (elapsedTime >= 4.5) running=false;
+  }
+ }
  TestCase { id: input; name: "DockInput"; when: false }
  IpcHandler {
   target: "dockTest"
@@ -64,10 +89,30 @@ ShellRoot {
     bodyY:dock.surfaceBody.y, width:dock.width, pointerX:dock.pointerX,
 
     tileWidth:dock.contentItemRow.children[0] ? dock.contentItemRow.children[0].width : 0,
+    tiles:Array.from(dock.contentItemRow.children).filter(t => t.modelData).map(t => ({
+      x:t.x, width:t.width, growth:t.growth, scale:t.children[1].scale,
+      visualLeft:t.children[1].mapToItem(dock.contentItemRow.parent.parent,0,0).x,
+      visualRight:t.children[1].mapToItem(dock.contentItemRow.parent.parent,46,0).x,
+      iconWidth:t.children[1].width, imageStatus:t.children[1].children[0].status})),
     context:!!dock.contextEntry});
+  }
+  function startFrames(): void {
+   sweepFrames.intervals=[]; sweepFrames.origin=dock.width;
+   sweepFrames.baseline=Array.from(dock.contentItemRow.children).filter(t => t.modelData)
+    .map(t => ({x:t.x,width:t.width,status:t.children[1].children[0].status}));
+   sweepFrames.start();
+  }
+  function frames(): string {
+   return JSON.stringify({running:sweepFrames.running, intervals:sweepFrames.intervals,
+    geometryChanged:sweepFrames.geometryChanged,imageChanged:sweepFrames.imageChanged});
   }
   function edge(): void { input.mouseMove(dock.edgeArea, dock.edgeArea.width/2, 2); }
   function body(): void { input.mouseMove(dock.surfaceBody, 35, 70); }
+  function sweep(x:real): void { input.mouseMove(dock.surfaceBody, x, 70); }
+  function scrollEnd(): void {
+   const v=dock.contentItemRow.parent.parent; v.contentX=Math.max(0,v.contentWidth-v.width);
+  }
+  function scrollStart(): void { dock.contentItemRow.parent.parent.contentX=0; }
   function leave(): void { input.mouseMove(dock.contentItem, 1, 1); }
   function menuToggle(id:string): void { if (!menu.active) menu.active=true; menu.item.toggleFavorite(id); }
   function dockToggle(id:string): void { A.FavoritesService.toggle(id); }
@@ -120,8 +165,33 @@ ShellRoot {
     capture('closed')
     call('edge'); wait(lambda s:s['revealed']); time.sleep(.35)
     capture('open')
+    resting=call('state')
     call('body'); time.sleep(.3); zoom=call('state'); capture('zoom')
-    assert zoom['tileWidth']>54, zoom
+    lab.command('output HEADLESS-1 bg #aab4c8 solid_color')
+    time.sleep(.2); capture('zoom-light')
+    lab.command('output HEADLESS-1 bg #11111b solid_color')
+    assert zoom['tileWidth']==54 and zoom['tiles'][0]['scale']>1, zoom
+    assert zoom['tiles'][0]['visualLeft']>=0,zoom
+    # Exercise production hover across slot boundaries. Layout and image
+    # readiness must remain stable while visual transforms change.
+    samples=[]
+    for x in range(45, 480, 6):
+        call('sweep',x)
+        state=call('state')
+        assert state['phase']=='shown',state
+        assert state['width']==resting['width'],state
+        assert [(t['x'],t['width'],t['iconWidth']) for t in state['tiles']]==[(t['x'],t['width'],t['iconWidth']) for t in resting['tiles']],state
+        assert sum(t['growth']>0 for t in state['tiles'])<=3,state
+        assert [t['imageStatus'] for t in state['tiles']]==[t['imageStatus'] for t in resting['tiles']],state
+        samples.append({'pointerX':state['pointerX'],'scales':[t['scale'] for t in state['tiles']]})
+    call('startFrames')
+    time.sleep(4.8)
+    frames=call('frames')
+    assert not frames['running'] and len(frames['intervals'])>30,frames
+    assert not frames['geometryChanged'] and not frames['imageChanged'],frames
+    intervals=sorted(frames['intervals'])
+    timing={'frames':len(intervals),'meanMs':sum(intervals)/len(intervals),
+            'p95Ms':intervals[int((len(intervals)-1)*.95)],'maxMs':max(intervals)}
     call('leave'); wait(lambda s:s['phase']=='hidden')
     call('edge'); wait(lambda s:s['revealed']); time.sleep(.3)
     call('rightClick'); wait(lambda s:s['phase']=='held'); time.sleep(.7)
@@ -199,6 +269,16 @@ ShellRoot {
     lab.command('output HEADLESS-1 mode 800x600')
     resized=wait(lambda s:s['screenWidth']==800)
     assert resized['width']<=776,resized
+    # Magnified end icons keep their visual margin at both scroll limits.
+    lab.command('output HEADLESS-1 mode 400x600')
+    wait(lambda s:s['screenWidth']==400)
+    call('edge'); wait(lambda s:s['revealed']); time.sleep(.3)
+    call('scrollEnd'); call('sweep',325); time.sleep(.15)
+    end=call('state')
+    assert end['tiles'][-1]['scale']>1 and end['tiles'][-1]['visualRight']<=end['width']-24,end
+    call('scrollStart'); call('sweep',51); time.sleep(.15)
+    start=call('state')
+    assert start['tiles'][0]['scale']>1 and start['tiles'][0]['visualLeft']>=0,start
     lab.command('output HEADLESS-1 mode 1280x720')
     wait(lambda s:s['screenWidth']==1280)
     # Existing empty state must stay empty, including a bridge restart.
@@ -208,9 +288,9 @@ ShellRoot {
     process=lab.start(['quickshell','-p',str(qml)])
     time.sleep(1)
     assert wait(lambda s:s['ready'])['ids']==[]
-    (ARTIFACTS/'result.json').write_text(json.dumps(dict(status='PASS',initial=initial,
+    (ARTIFACTS/'result.json').write_text(json.dumps(dict(status='PASS',initial=initial,hoverSamples=samples,animationTiming=timing,frameSweep=frames,
         reordered=reordered['ids'],checks=['shared favorites','menu and dock mutations','durable reorder',
         'empty restart','autohide','context hold','kitty multi-window','floating scratchpad explicit focus',
-        'window close','no hover focus','real pointer drag','zoom growth','IPC reconnect','Firefox private profile','desktop install/remove monitoring','external writer','keyboard menu navigation','resolution change','SwayFX dock blur rule']),indent=2)+'\n')
+        'window close','no hover focus','real pointer drag','fixed layout transform hover', 'stable SVG readiness', 'lateral sweep 73 samples','IPC reconnect','Firefox private profile','desktop install/remove monitoring','external writer','keyboard menu navigation','resolution change','SwayFX dock blur disabled']),indent=2)+'\n')
     proxy.close()
     print('Dock headless: PASS',lab.directory)

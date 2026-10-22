@@ -1,0 +1,10 @@
+********* Start testing of qmltestrunner *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), arch unknown
+PASS   : qmltestrunner::SessionExitGateV2::initTestCase()
+PASS   : qmltestrunner::SessionExitGateV2::test_backend_reason_is_visible_and_logout_stays_gated()
+PASS   : qmltestrunner::SessionExitGateV2::test_error_or_legacy_success_never_exits()
+PASS   : qmltestrunner::SessionExitGateV2::test_quit_without_saving_requires_explicit_call()
+PASS   : qmltestrunner::SessionExitGateV2::test_saved_releases_only_confirmed_action()
+PASS   : qmltestrunner::SessionExitGateV2::cleanupTestCase()
+Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 5ms
+********* Finished testing of qmltestrunner *********

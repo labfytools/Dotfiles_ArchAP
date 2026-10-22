@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import "../applications"
@@ -21,7 +22,7 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.namespace: "labfy-sway-dock"
     color: "transparent"
-    implicitWidth: Math.max(96, Math.min(screen.width - 24, items.width + 28))
+    implicitWidth: Math.max(96, Math.min(screen.width - 24, items.width + 52))
     implicitHeight: 360
     property string phase: "hidden"
     readonly property bool revealed: phase === "shown" || phase === "waiting" || phase === "held"
@@ -96,27 +97,33 @@ PanelWindow {
             onHoveredChanged: { dock.reconcile(); if (!hovered) dock.pointerX = -1000; }
             onPointChanged: dock.pointerX = point.position.x
         }
-        Rectangle {
-            // Discreet local shadow, no screen capture or blur sampling.
-            x: 2; y: 34; width: parent.width - 4; height: 70
-            radius: 26; color: Theme.shadow
+        // WHY: an analytic shadow needs neither a captured backdrop nor a
+        // moving blur source. Its geometry stays fixed throughout hover.
+        RectangularShadow {
+            x: 16; y: 43; width: parent.width - 32; height: 48
+            radius: 20; blur: 24; spread: 2
+            color: Qt.rgba(0, 0, 0, 0.32)
         }
         Rectangle {
-            x: 0; y: 29; width: parent.width; height: 70
-            radius: 25
-            color: Qt.rgba(Theme.base.r, Theme.base.g, Theme.base.b, Theme.highContrast ? 1 : 0.89)
-            border.color: Theme.strongBorder; border.width: 1
+            x: 14; y: 36; width: parent.width - 28; height: 58
+            radius: 20
+            color: Qt.rgba(Theme.base.r, Theme.base.g, Theme.base.b, Theme.highContrast ? 0.94 : 0.16)
+            border.color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, Theme.highContrast ? 0.5 : 0.09)
+            border.width: 1
         }
         Flickable {
             id: viewport
             x: 12; y: 0; width: parent.width - 24; height: 105
-            contentWidth: items.width; contentHeight: height
+            // CONTRACT: reserve visual overflow inside the clipped viewport,
+            // including at both scroll limits, for the 1.39x end icons.
+            contentWidth: items.width + 24; contentHeight: height
             clip: true
             interactive: dock.draggingId === ""
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
             Row {
                 id: items
+                x: 12
                 height: viewport.height
                 spacing: 3
                 move: Transition { NumberAnimation { properties: "x"; duration: 110; easing.type: Easing.OutCubic } }
@@ -128,29 +135,32 @@ PanelWindow {
                         required property var modelData
                         required property int index
                         readonly property bool separator: index === dock.pinnedCount && dock.pinnedCount > 0
-                        readonly property real center: viewport.x + x + width / 2 - viewport.contentX
-                        // WHY: measuring against the animated x/width feeds
-                        // scale back into its own binding. Stable resting slots
-                        // keep magnification deterministic and free of loops.
-                        readonly property real baseCenter: viewport.x + index * 57 + 27
+                        readonly property real center: viewport.x + items.x + x + width / 2 - viewport.contentX
+                        // INVARIANT: pointer influence uses fixed layout slots.
+                        // Only the visual transform changes: Row, hit targets,
+                        // window width and SVG raster size never follow hover.
+                        readonly property real baseCenter: viewport.x + items.x + index * 57 + 27
                             + (index >= dock.pinnedCount && dock.pinnedCount > 0 ? 13 : 0) - viewport.contentX
                         readonly property real growth: dock.revealed && bodyHover.hovered
                             ? AutoHide.influence(baseCenter - dock.pointerX) : 0
-                        width: 54 + growth * 19 + (separator ? 13 : 0)
+                        width: 54 + (separator ? 13 : 0)
                         height: 105
-                        Behavior on width { NumberAnimation { duration: 95; easing.type: Easing.OutCubic } }
                         Rectangle {
                             visible: tile.separator
                             x: 2; y: 45; width: 1; height: 32; color: Theme.strongBorder
                         }
                         ApplicationIcon {
                             id: icon
-                            width: 46 + tile.growth * 21; height: width
+                            // WHY: ApplicationIcon derives sourceSize from width.
+                            // Fixed dimensions avoid async SVG reload/fallback flashes.
+                            width: 46; height: 46
                             x: (parent.width - width + (tile.separator ? 12 : 0)) / 2
-                            y: 83 - height
+                            y: 37
+                            transformOrigin: Item.Bottom
+                            scale: 1 + tile.growth * 0.39
+                            Behavior on scale { NumberAnimation { duration: 80; easing.type: Easing.OutCubic } }
                             iconSource: tile.modelData.iconSource || ""
                             opacity: dock.draggingId === tile.modelData.id ? 0.5 : 1
-                            Behavior on width { NumberAnimation { duration: 95; easing.type: Easing.OutCubic } }
                         }
                         Rectangle {
                             anchors.horizontalCenter: icon.horizontalCenter

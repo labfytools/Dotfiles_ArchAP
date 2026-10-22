@@ -1,0 +1,11 @@
+test_inheritance_from_a_private_test_theme (test_shared.Icons.test_inheritance_from_a_private_test_theme) ... ok
+test_tela_desktop_icon_and_absolute (test_shared.Icons.test_tela_desktop_icon_and_absolute) ... ok
+test_nine_move_missing_anchor_and_empty (test_shared.Persistence.test_nine_move_missing_anchor_and_empty) ... ok
+test_real_concurrent_processes_keep_all_additions_during_moves (test_shared.Persistence.test_real_concurrent_processes_keep_all_additions_during_moves) ... ok
+test_toggle_is_atomic_and_does_not_depend_on_a_stale_ui_list (test_shared.Persistence.test_toggle_is_atomic_and_does_not_depend_on_a_stale_ui_list) ... ok
+test_wayland_xwayland_scratchpad_and_explicit_focus (test_shared.Sway.test_wayland_xwayland_scratchpad_and_explicit_focus) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.735s
+
+OK
