@@ -28,8 +28,31 @@ PanelWindow {
     property int windowCount: 0
     property int workspaceCount: 0
     readonly property bool busy: SessionV2Service.busy || watchingBackend
+    property bool unlockingRequested: false
+    readonly property bool keyringReady: SessionV2Service.keyringReady
+    function unlockRequested() {
+        if (!interactionArmed || busy || SessionV2Service.keyringBusy || unlockingRequested) return;
+        // CONTRACT: release exclusive keyboard before presenting the native
+        // prompt. Keep New session clickable throughout the unlock operation.
+        unlockingRequested = true;
+        unlockRelease.start();
+    }
+    Timer {
+        id: unlockRelease
+        interval: 50; repeat: true
+        onTriggered: {
+            if (popup.focusable) return;
+            stop(); popup.unlockingRequested = false;
+            SessionV2Service.checkKeyring(true);
+        }
+    }
+    Timer {
+        interval: 2000; repeat: true
+        running: popup.visible && SessionV2Service.keyringState === "KEYRING_UNLOCKING" && !popup.releasing && !popup.unlockingRequested
+        onTriggered: SessionV2Service.checkKeyring(false)
+    }
     function restoreRequested() {
-        if (!interactionArmed || busy || releasing || (attempted && !retryAllowed)) return;
+        if (!keyringReady || !interactionArmed || busy || releasing || (attempted && !retryAllowed)) return;
         if (!SessionV2Service.prepareRestore(popup)) return;
         attempted = true;
         failed = false;
@@ -44,7 +67,11 @@ PanelWindow {
         releasePoll.start();
     }
     function newSessionRequested() {
-        if (interactionArmed && !busy) SessionV2Service.run("ack-new", "", "", popup);
+        if (interactionArmed && !busy) {
+            unlockRelease.stop(); unlockingRequested = false;
+            SessionV2Service.cancelKeyring();
+            SessionV2Service.run("ack-new", "", "", popup);
+        }
     }
     function releaseFailed() {
         releasePoll.stop();
@@ -59,6 +86,12 @@ PanelWindow {
     }
     function fail(value) {
         inProgress = false;
+        if (value && /^KEYRING_/.test(value.reason)) {
+            // Admission failed before Executor: preserve the explicit retry
+            // path without fabricating a restore attempt or clearing Recovery.
+            attempted = false; failed = false; restored = false;
+            visible = true; SessionV2Service.checkKeyring(false); return;
+        }
         failed = true;
         restored = false;
         retryAllowed = !!value && value.status === "DEFERRED";
@@ -138,6 +171,7 @@ PanelWindow {
                     SessionV2Service.run("restore-status", "", "", popup);
                 }
                 if (popup.visible) {
+                    SessionV2Service.checkKeyring(false);
                     popup.windowCount = value.windows || 0;
                     popup.workspaceCount = value.workspaces || 0;
                 }
@@ -167,7 +201,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
     aboveWindows: true
-    focusable: visible && !awaitingUserFocus && !releasing && !inProgress && !restored
+    focusable: visible && !unlockingRequested && !SessionV2Service.keyringBusy && SessionV2Service.keyringState !== "KEYRING_UNLOCKING" && !awaitingUserFocus && !releasing && !inProgress && !restored
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "labfy-session-startup-v2"
     visible: false
@@ -224,7 +258,11 @@ PanelWindow {
                     text: popup.failed ? popup.failureMessage
                         : popup.restored ? "Session restaurée"
                         : popup.busy && popup.attempted ? "Restauration en cours…"
-                        : popup.windowCount + " fenêtres • " + popup.workspaceCount + " espaces"
+                        : popup.keyringReady ? "Une session précédente est disponible."
+                        : SessionV2Service.keyringState === "KEYRING_CANCELLED" ? "Déverrouillage annulé. Réessayez ou choisissez Nouvelle session."
+                        : SessionV2Service.keyringState === "KEYRING_UNAVAILABLE" ? "Trousseau indisponible. Réessayez ou choisissez Nouvelle session. (" + SessionV2Service.keyringReason + ")"
+                        : SessionV2Service.keyringState === "KEYRING_UNLOCKING" ? "Déverrouillage du trousseau en cours…"
+                        : "Le trousseau doit être déverrouillé avant la restauration de votre session."
                     color: Theme.foreground
                     wrapMode: Text.Wrap
                 }
@@ -250,9 +288,15 @@ PanelWindow {
                         onClicked: popup.newSessionRequested()
                     }
                     ActionButton {
-                        visible: !popup.failed || popup.retryAllowed
+                        visible: !popup.keyringReady
+                        label: "Déverrouiller le trousseau"
+                        enabled: popup.interactionArmed && !popup.busy && !SessionV2Service.keyringBusy && !popup.unlockingRequested
+                        onClicked: popup.unlockRequested()
+                    }
+                    ActionButton {
+                        visible: popup.keyringReady && (!popup.failed || popup.retryAllowed)
                         label: popup.retryAllowed ? "Réessayer" : "Restaurer"
-                        enabled: popup.interactionArmed && !popup.busy && (!popup.attempted || popup.retryAllowed)
+                        enabled: popup.keyringReady && popup.interactionArmed && !popup.busy && (!popup.attempted || popup.retryAllowed)
                         onClicked: popup.restoreRequested()
                     }
                 }

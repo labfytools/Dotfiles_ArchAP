@@ -23,6 +23,12 @@ Item {
             if (owner !== page) return;
             if (kind === "list") { if (okay) page.sessions = value.sessions; return; }
             if (kind === "apply") {
+                if (value && /^KEYRING_/.test(value.reason)) {
+                    // Admission precedes Attempt: never show an older report
+                    // as the explanation for a refused keyring precondition.
+                    page.feedback = "Déverrouillez le trousseau, puis cliquez à nouveau Restaurer. (" + value.reason + ")";
+                    return;
+                }
                 if (okay && Protocol.restoreSucceeded(value)) page.feedback = "Session restaurée";
                 else {
                     page.restoreFailed = true;

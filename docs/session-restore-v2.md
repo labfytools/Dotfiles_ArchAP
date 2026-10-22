@@ -338,3 +338,18 @@ sans sauvegarder restent nécessaires. Aucun code d’erreur n’autorise le log
 
 Validation et limites détaillées :
 [rapport scratchpad](session-v2-scratchpad-save-and-restore-v1.md).
+
+
+## Précondition Secret Service avant restauration — 22 octobre 2026
+
+Le parcours utilisateur ajoute une barrière D-Bus indépendante du checkpoint.
+Les CLI `apply-last` et `apply` exigent la collection default attendue réellement
+déverrouillée ; le chooser propose son déverrouillage officiel et conserve le
+clic explicite Restaurer après READY. Nouvelle session reste disponible sans
+trousseau. Cette précondition ne modifie aucune postcondition de l'Executor,
+aucun schéma de checkpoint/Recovery et ne résout pas automatiquement un
+`RECOVERY_REQUIRED`. Une activation tardive garde les refus de focus existants.
+
+Implémentation, audit PAM (aucun patch applicable établi), tests isolés,
+installation et rollback :
+[trousseau avant restauration](session-v2-keyring-before-restore-v1.md).

@@ -56,7 +56,7 @@ def migration(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Backend de restauration de session V2")
-    parser.add_argument("command", choices=("capture", "save", "list", "show", "delete", "plan", "apply", "checkpoint-last", "startup-status", "acknowledge-startup", "apply-last", "restore-status", "recovery-status", "analyze-v1-migration"))
+    parser.add_argument("command", choices=("keyring-status", "keyring-unlock", "capture", "save", "list", "show", "delete", "plan", "apply", "checkpoint-last", "startup-status", "acknowledge-startup", "apply-last", "restore-status", "recovery-status", "analyze-v1-migration"))
     parser.add_argument("name", nargs="?")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--stdout", action="store_true")
@@ -67,13 +67,18 @@ def main(argv=None):
     parser.add_argument("--anchor-binary", default=str(Path(__file__).parent / "libexec/labfy-v2-anchor"))
     args = parser.parse_args(argv)
     try:
-        if args.command in ("capture", "save", "delete", "apply", "checkpoint-last", "apply-last", "acknowledge-startup"):
+        if args.command in ("keyring-unlock", "capture", "save", "delete", "apply", "checkpoint-last", "apply-last", "acknowledge-startup"):
             require(args.execute, "EXECUTE_REQUIRED")
         if args.command == "recovery-status":
             from .recovery import recovery_status
             print(json.dumps(recovery_status(readonly_runtime()), ensure_ascii=False))
             return 0
         state, runtime = paths()
+        if args.command in ("keyring-status", "keyring-unlock"):
+            from .keyring import command as keyring_command
+            value = keyring_command(runtime, args.command == "keyring-unlock")
+            print(json.dumps(value))
+            return 0
         store = Store(state)
         command = args.command
         if command == "list": result = {"sessions": store.list()}
@@ -105,7 +110,13 @@ def main(argv=None):
                     result = data if command == "capture" else {"status": "saved"}
             else:
                 data = store.last() if command == "apply-last" else store.load(args.name)
-                result = Executor(sway, catalog, provider, runtime, args.anchor_binary).apply(data, execute=True)
+                from .keyring import admission, require_ready
+                # WHY: QML readiness is advisory and can be stale after restart.
+                # INVARIANT: gate failure creates no restore/recovery attempt;
+                # the unchanged Executor still proves every postcondition.
+                with admission(runtime):
+                    require_ready()
+                    result = Executor(sway, catalog, provider, runtime, args.anchor_binary).apply(data, execute=True)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except Failure as exc:

@@ -21,6 +21,7 @@ log = Path(os.environ['LABFY_UI_LOG'])
 with log.open('a') as s: s.write(cmd + '\\n')
 mode = os.environ['LABFY_UI_MODE']
 if cmd == 'startup-status': r = {'eligible': mode != 'claimed', 'claimed': mode != 'claimed', 'windows': 3, 'workspaces': 2}
+elif cmd == 'keyring-status': r = {'state': 'KEYRING_READY', 'reason': 'KEYRING_UNLOCKED'}
 elif cmd == 'apply-last':
  r = {'schema':'labfy.sway.session-v2-restore-attempt', 'version':1, 'status':'success', 'transaction_id':'a'*32, 'identity_level':'exact', 'final_tree_verified':mode != 'invalid', 'final_focus_verified':True, 'slots_expected':3, 'slots_filled':3, 'applications_expected':2, 'applications_observed':2, 'anchors_created':3, 'anchors_cleaned':3, 'helpers_suspended':1, 'helpers_resumed':1}
  if mode == 'failure': r = {'status':'failed', 'reason':'APPLICATION_WINDOWS_INCOMPLETE'}
@@ -86,7 +87,9 @@ ShellRoot {
 
 def main():
     rows = []
-    with Lab() as lab:
+    from test_keyring import KeyringTests
+    with KeyringTests().service('ready') as (busenv, _), Lab() as lab:
+        lab.env['DBUS_SESSION_BUS_ADDRESS'] = busenv['DBUS_SESSION_BUS_ADDRESS']
         for mode in ('success', 'failure', 'invalid', 'new', 'claimed', 'real', 'deferred-real'):
             config = lab.directory / mode / 'config'
             base = config / 'quickshell/labfy-sway'

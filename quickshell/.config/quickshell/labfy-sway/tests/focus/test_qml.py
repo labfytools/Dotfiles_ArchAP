@@ -60,6 +60,14 @@ QtObject {
     property QtObject stdout
     property QtObject stderr
     signal exited(int exitCode, int exitStatus)
+    // This focus fixture models only an already unlocked service. Private-bus
+    // and headless keyring tests exercise the real transport/prompt lifecycle.
+    onRunningChanged: {
+        if (running && command.indexOf("keyring-status") >= 0) Qt.callLater(() => {
+            stdout.text = JSON.stringify({state:"KEYRING_READY", reason:"KEYRING_UNLOCKED"});
+            running = false; exited(0, 0);
+        });
+    }
 }''')
         (self.dir / 'sessionui/StdioCollector.qml').write_text('import QtQuick\nQtObject { property bool waitForEnd; property string text: "" }')
         (self.dir / 'sessionui/IpcHandler.qml').write_text('import QtQuick\nQtObject { property string target }')
@@ -85,6 +93,8 @@ Item {
         self.assertIsNotNone(self.root, '\n'.join(e.toString() for e in self.component.errors()))
         self.prompt = self.root.findChild(QObject, 'prompt')
         self.service = self.root.property('service')
+        QTest.qWait(5)  # finish the asynchronous fixture's initial D-Bus check
+        self.service.setProperty('keyringState', 'KEYRING_READY')
     def tearDown(self):
         self.root.deleteLater(); self.engine.deleteLater(); QTest.qWait(1); self.tmp.cleanup()
     def call(self, name): QMetaObject.invokeMethod(self.prompt, name, Qt.DirectConnection)
@@ -239,5 +249,25 @@ Item {
         self.assertEqual([x['kind'] for x in self.calls()], ['apply-last', 'startup-status'])
         self.finish('startup-status', dict(eligible=True, claimed=True, interrupted=True))
         self.assertEqual(self.calls()[-1]['kind'], 'restore-status')
+
+    def test_keyring_gate_requires_ready_and_explicit_click(self):
+        self.service.setProperty('keyringState', 'KEYRING_LOCKED')
+        self.open(); self.call('restoreRequested'); QTest.qWait(100)
+        self.assertFalse(self.prompt.property('attempted'))
+        self.assertEqual(self.calls(), [])
+        self.service.setProperty('keyringState', 'KEYRING_READY')
+        QTest.qWait(150)
+        self.assertEqual(self.calls(), [])
+        self.call('restoreRequested'); QTest.qWait(100)
+        self.assertEqual([x['kind'] for x in self.calls()], ['apply-last'])
+
+    def test_new_session_during_keyring_unlock_remains_accessible(self):
+        self.service.setProperty('keyringState', 'KEYRING_LOCKED')
+        self.open(); self.call('unlockRequested'); QTest.qWait(100)
+        self.assertTrue(self.service.property('keyringBusy'))
+        self.assertFalse(self.prompt.property('focusable'))
+        self.call('newSessionRequested')
+        self.assertEqual([x['kind'] for x in self.calls()], ['ack-new'])
+        self.assertFalse(self.service.property('keyringBusy'))
 
 if __name__ == '__main__': unittest.main()

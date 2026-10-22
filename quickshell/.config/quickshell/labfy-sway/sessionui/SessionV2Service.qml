@@ -11,6 +11,37 @@ QtObject {
     property var client: null
     property bool startupChooserVisible: false
     readonly property bool busy: operation !== "" || backendProcess.running
+    // WHY: state is reconstructed from Secret Service, never persisted in QML.
+    // CONTRACT: readiness only enables a click; CLI rechecks under admission.
+    property string keyringState: "KEYRING_CHECKING"
+    property string keyringReason: ""
+    readonly property bool keyringBusy: keyringProcess.running
+    readonly property bool keyringReady: keyringState === "KEYRING_READY" && !keyringBusy
+    function checkKeyring(unlock) {
+        if (keyringBusy || busy) return false;
+        keyringState = unlock ? "KEYRING_UNLOCKING" : "KEYRING_CHECKING";
+        const argv = ["python3", "-B", backend, unlock ? "keyring-unlock" : "keyring-status"];
+        if (unlock) argv.push("--execute");
+        keyringProcess.command = argv;
+        keyringProcess.running = true;
+        return true;
+    }
+    Component.onCompleted: checkKeyring(false)
+    function cancelKeyring() { keyringProcess.running = false; keyringState = "KEYRING_CHECKING"; }
+    property Process keyringProcess: Process {
+        running: false
+        stdout: StdioCollector { id: keyringOutput; waitForEnd: true }
+        // No remote errors or arbitrary stderr are displayed or journaled.
+        stderr: StdioCollector { waitForEnd: true }
+        onExited: (exitCode, exitStatus) => {
+            let value = null;
+            try { value = JSON.parse(keyringOutput.text); } catch (_) {}
+            const states = ["KEYRING_READY", "KEYRING_LOCKED", "KEYRING_CANCELLED", "KEYRING_UNAVAILABLE", "KEYRING_UNLOCKING"];
+            service.keyringState = exitCode === 0 && exitStatus === 0 && value && states.indexOf(value.state) >= 0
+                ? value.state : "KEYRING_UNAVAILABLE";
+            service.keyringReason = value && /^KEYRING_[A-Z_]{1,48}$/.test(value.reason) ? value.reason : "KEYRING_BACKEND_ERROR";
+        }
+    }
     signal completed(var owner, string kind, var value, bool okay)
 
     // Diagnostic lecture seule ; aucun endpoint IPC ne peut cliquer Restore.
@@ -18,14 +49,14 @@ QtObject {
         target: "sessionV2"
         function status(): string {
             return JSON.stringify({backend: "v2", busy: service.busy,
-                operation: service.operation, startupChooserCount: service.startupChooserVisible ? 1 : 0});
+                operation: service.operation, keyringState: service.keyringState, keyringReason: service.keyringReason, startupChooserCount: service.startupChooserVisible ? 1 : 0});
         }
     }
 
     // Réserver la sérialisation avant de retirer la surface. Le Timer du
     // dialogue n'est pas propriétaire d'une seconde commande backend.
     function prepareRestore(owner) {
-        if (busy || !owner) return false;
+        if (busy || !owner || !keyringReady) return false;
         client = owner;
         operation = "release-focus";
         return true;
@@ -46,6 +77,7 @@ QtObject {
     // INVARIANT : un unique Process sérialise les commandes V2 de QuickShell.
     function run(kind, name, extra, owner) {
         if (busy) return false;
+        if (kind === "apply-last" && !keyringReady) return false;
         const allowed = ["startup-status", "ack-new", "ack-restored", "apply-last", "apply", "list", "show", "save", "delete", "plan", "restore-status", "checkpoint-last"];
         if (allowed.indexOf(kind) < 0) return false;
         const argv = ["python3", "-B", backend];

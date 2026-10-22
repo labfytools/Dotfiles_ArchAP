@@ -105,6 +105,7 @@ class PrewarmTests(unittest.TestCase):
         self.assertEqual(seen['deferred_reason'], 'APPLICATION_LAUNCH_FAILED')
         output = io.StringIO()
         with patch('session_v2.cli.paths', return_value=(self.runtime/'state', self.runtime)), \
+             patch('session_v2.keyring.require_ready'), \
              patch('session_v2.cli.Store'), patch('session_v2.cli.Sway'), patch('session_v2.cli.FirefoxProvider'), \
              patch('session_v2.cli.Executor.apply', side_effect=Deferred('APPLICATION_LAUNCH_FAILED')), redirect_stdout(output):
             self.assertEqual(main(['apply-last', '--execute', '--socket', '/TEST_ONLY']), 2)
