@@ -1,0 +1,3 @@
+#!/bin/sh
+# EXPERIMENTAL; fixed authenticated-session helper, no shell command interpolation.
+exec /usr/bin/python3 -B /home/fy59/.config/swayfx-mosaic-test/session.py launch

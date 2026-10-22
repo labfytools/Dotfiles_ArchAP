@@ -8,6 +8,24 @@
 #include <stdio.h>
 #include <string.h>
 
+static void create_window(const char *identity) {
+    GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(window), "TEST_ONLY");
+    gtk_window_set_default_size(GTK_WINDOW(window), 120, 80);
+    gtk_widget_set_size_request(window, 1, 1);
+    gtk_widget_realize(window);
+    gtk_widget_show_all(window);
+    /* GTK publie son app_id lors du mapping ; l'identité de test suit ce mapping. */
+    gdk_wayland_window_set_application_id(gtk_widget_get_window(window), identity);
+    gdk_display_flush(gtk_widget_get_display(window));
+    printf("created %s\n", identity); fflush(stdout);
+}
+
+static gboolean delayed_window(gpointer data) {
+    create_window(data);
+    return G_SOURCE_REMOVE;
+}
+
 static gboolean input(GIOChannel *channel, GIOCondition condition, gpointer data) {
     (void)channel;
     (void)data;
@@ -20,16 +38,7 @@ static gboolean input(GIOChannel *channel, GIOCondition condition, gpointer data
         !g_regex_match_simple("^[A-Za-z0-9_.-]{1,180}$", identity, 0, 0)) {
         fprintf(stderr, "Commande TEST_ONLY invalide\n"); return TRUE;
     }
-    GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), "TEST_ONLY");
-    gtk_window_set_default_size(GTK_WINDOW(window), 120, 80);
-    gtk_widget_set_size_request(window, 1, 1);
-    gtk_widget_realize(window);
-    gtk_widget_show_all(window);
-    /* GTK publie son app_id lors du mapping ; l'identité de test suit ce mapping. */
-    gdk_wayland_window_set_application_id(gtk_widget_get_window(window), identity);
-    gdk_display_flush(gtk_widget_get_display(window));
-    printf("created %s\n", identity); fflush(stdout);
+    create_window(identity);
     return TRUE;
 }
 
@@ -37,6 +46,16 @@ int main(int argc, char **argv) {
     g_set_prgname("TEST_ONLY_SURFACES");
     gtk_init(&argc, &argv);
     setvbuf(stdin, NULL, _IONBF, 0);
+    /* Catalogue TEST_ONLY : vrai Popen de production, map asynchrone privé.
+     * Aucun chemin utilisateur, app réelle ou interpréteur de commandes. */
+    if (argc == 4 && strcmp(argv[1], "--app-id") == 0 &&
+        g_regex_match_simple("^[A-Za-z0-9_.-]{1,180}$", argv[2], 0, 0) &&
+        (strcmp(argv[3], "50") == 0 || strcmp(argv[3], "150") == 0)) {
+        g_timeout_add((guint)g_ascii_strtoull(argv[3], NULL, 10), delayed_window, argv[2]);
+        gtk_main();
+        return 0;
+    }
+    if (argc != 1) return 2;
     GIOChannel *channel = g_io_channel_unix_new(0);
     g_io_add_watch(channel, G_IO_IN | G_IO_HUP | G_IO_ERR, input, NULL);
     gtk_main();

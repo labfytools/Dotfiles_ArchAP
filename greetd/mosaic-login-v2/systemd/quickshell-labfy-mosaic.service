@@ -1,0 +1,24 @@
+[Unit]
+Description=QuickShell Labfy pour le smoke Mosaic expérimental
+# CONTRACT: le WM notify n'est prêt qu'après uwsm finalize et export de ses sockets.
+Requisite=wayland-session@swayfx\x2dmosaic\x2dtest.desktop.target wayland-wm@swayfx\x2dmosaic\x2dtest.desktop.service
+After=wayland-session@swayfx\x2dmosaic\x2dtest.desktop.target wayland-wm@swayfx\x2dmosaic\x2dtest.desktop.service
+PartOf=wayland-session@swayfx\x2dmosaic\x2dtest.desktop.target
+BindsTo=wayland-session@swayfx\x2dmosaic\x2dtest.desktop.target
+# WHY: la garde refuse Stable encore actif ; elle ne doit jamais l'arrêter.
+
+[Service]
+Type=simple
+# INVARIANT: les variables finalize viennent du manager ; la garde valide leur propriétaire.
+Environment=LABFY_MOSAIC_SMOKE=1 QT_QPA_PLATFORM=wayland
+UnsetEnvironment=DISPLAY GREETD_SOCK QS_CONFIG_PATH QS_CONFIG_NAME QS_MANIFEST
+ExecStartPre=/usr/bin/python3 -B /home/fy59/.config/swayfx-mosaic-test/quickshell-guard.py
+ExecStart=/usr/bin/qs -c labfy-sway --no-color
+Restart=no
+TimeoutStartSec=20
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=wayland-session@swayfx\x2dmosaic\x2dtest.desktop.target

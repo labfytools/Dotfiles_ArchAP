@@ -28,8 +28,10 @@ def main():
                 try: Executor(Sway(lab.socket), catalog(data), None, runtime, binary, lab.env).apply(data, True, timeout=.3)
                 except Failure as exc: assert exc.code == reason, (exc.code, reason)
                 else: raise AssertionError(mode)
-                report = read(runtime / "session-v2-restore-attempt.json")
-                assert report["status"] == "failed" and report["reason"] == reason, report
+                # Les refus de PHASE 0 ne publient aucune tentative ni Recovery.
+                assert not (runtime / "session-v2-restore-attempt.json").exists()
+                assert not (runtime / "session-v2-recovery.json").exists()
+                report = {"status": "prewarm-refused", "reason": reason}
                 assert set(ids).issubset(n["id"] for n in lab.windows())
                 assert not any(n.get("app_id", "").startswith("labfy-v2-anchor-") for n in lab.windows())
                 assert Path(f"/proc/{helper.pid}/status").read_text().split("State:\t", 1)[1][0] not in ("T", "t")

@@ -13,6 +13,16 @@ Le bouton Arch **Applications**, premier élément à gauche même en mode Resiz
 ouvre le [menu d'applications](applications/README.md) sous la barre.
 `Mod+Alt+L` ouvre ce menu sur la sortie focalisée.
 
+
+Les boutons de workspaces conservent les cinq emplacements **1–5** et ajoutent
+les autres workspaces présents sur la sortie de la barre. `Workspaces.qml`
+réconcilie l'inventaire I3 avec `get_workspaces` au chargement, à la connexion
+IPC et après les événements `workspace`/`output`, sans interrogation périodique.
+Le filtrage utilise le nom de sortie IPC ; l'état actif vient des champs
+`focused`/`visible` du relevé, pour éviter les références d'objets natives
+périmées. Le diagnostic en lecture seule est accessible par
+`qs ipc -c labfy-sway call workspacesUi-eDP-1 state` (adapter le nom de sortie).
+
 ```text
 Bar
 ├── Applications
@@ -113,6 +123,13 @@ contrat le permet. Ouvrir lance Yazi dans Kitty via UWSM en utilisant le
 véritable point de montage UDisks pour USB/SD ou le chemin du `GMount` pour
 MTP. Le popup participe à la même exclusion mutuelle que le Date Center, le
 menu des fenêtres et le Control Center.
+
+Le popup ouvert reste affiché lorsque la liste devient vide (« Aucun support
+amovible »), puis accueille les supports qui réapparaissent. Avec Qt 6.12,
+le service utilise la compilation locale corrigée via `labfy-quickshell` :
+[diagnostic, compilation et validation Wayland](../../../../docs/quickshell-removable-media-geometry-v1.md).
+Le binaire doit être recompilé après une mise à jour Qt ; le lanceur vérifie
+la version avant son exécution.
 
 QuickShell lit exclusivement le snapshot JSON V2
 `$XDG_RUNTIME_DIR/labfy-removable-media.json`. Il refuse intégralement un
@@ -304,6 +321,26 @@ attente reste neutre. Les couleurs du tray et les fonds existants ne changent
 pas. Les états rares sont vérifiés avec des données isolées par
 `tests/quickshell/test_status_color_roles.js`, sans agir sur le matériel.
 
+## Impression CUPS
+
+`PrintingIndicator` est placé après les supports amovibles dans la barre. Son
+popup montre l'imprimante par défaut, toutes les imprimantes configurées et les
+travaux non terminés. Le backend ponctuel `printing/backend.py` lit les
+attributs IPP structurés avec `pycups` et renvoie sur stdout le schéma JSON
+`labfy.printing` version 1 (`scheduler`, `default_printer`, `printers`, `jobs`).
+Les états inconnus restent « Indisponible ». Le nom d'un document ne figure
+que dans la réponse éphémère et dans le popup ouvert ; aucun snapshot n'est
+écrit. `cancel` reçoit uniquement un identifiant décimal validé via argv
+direct, puis le panneau rafraîchit son état.
+
+Le rafraîchissement a lieu à l'ouverture, après une annulation, toutes les
+5 secondes si la file est occupée ou le popup ouvert, sinon toutes les
+30 secondes. Un service CUPS indisponible laisse une icône atténuée et un
+popup explicite. `LABFY_PRINTING_TEST_STATE=empty|jobs|unavailable` alimente
+la fixture visuelle `PrintingVisualFixture.qml` sans contacter CUPS ni pouvoir
+annuler un vrai travail. Le backend se teste avec
+`python3 -B -m unittest discover -s printing -p 'test_*.py'` depuis ce dossier.
+
 ## Parité avec i3status-rs
 
 | Ancien bloc | QuickShell |
@@ -320,3 +357,35 @@ pas. Les états rares sont vérifiés avec des données isolées par
 | packages | Updates |
 | time | Clock / Date Center |
 | menu | page Session |
+
+
+## Session V2 au démarrage
+
+Limusic reste possédé par l’autostart Sway (`managed-autostart`, aucun lancement
+par Session V2). Après un clic explicite sur **Restaurer**, le dialogue retire
+sa surface focusable et attend deux observations de son retrait, avec un délai
+maximal de 1,5 seconde. Un reçu passif affiche ensuite la progression sans
+reprendre le clavier. Le backend vérifie séparément deux observations cohérentes
+du focus et l’identité de session avant toute reprise, mutation ou création de
+journal de restauration. Un focus réellement inconnu ou instable produit
+`DEFERRED` ; **Réessayer** et **Nouvelle session** restent accessibles.
+Une interruption ou un redémarrage conserve le claim et présente l’état sans
+relancer automatiquement la restauration ; un journal ambigu reste protégé.
+Le focus final d’un client tiers présent au début du lot est rétabli avec son
+identité et son emplacement vérifiés ; les transitions intermédiaires restent
+prédites et contrôlées avant et après IPC. Les intentions exactes précèdent chaque IPC autorisée, jamais un refus préalable.
+
+État actuel : **phase 0 prewarm validée sur SwayFX 0.6 headless ; prochain
+login réel encore à tester**. Le premier login du 17 octobre a échoué avec
+l’ancienne séquence et a nécessité une récupération manuelle. Le moteur ouvre
+désormais les applications absentes avant les mutations, puis vérifie
+arbre et focus final ; une divergence durant la transaction reste un refus.
+Les tests focus Python et Qt/QML avec fixtures simulées sont complétés par
+`tests/session_v2/phase3b_ui.py` sur un compositeur privé et le vrai QuickShell,
+dont le refus avec focus nul puis activation utilisateur explicite et retry.
+Après DEFERRED, le dialogue ne capte plus le clavier : activez vous-même une
+fenêtre ou un espace avec vos raccourcis Sway puis cliquez **Réessayer** ; aucune
+relance n’est automatique, y compris après redémarrage QuickShell.
+Voir [Session Restore V2](../../../../docs/session-restore-v2.md) pour les
+commandes, les preuves et les limites de l’environnement. La recette réussie
+du 7 octobre est historique ; elle ne valide pas cette révision au login réel.

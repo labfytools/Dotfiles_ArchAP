@@ -16,7 +16,16 @@ def worker(path):
         if [phase, count] == config["point"]:
             atomic(Path(config["runtime"]) / "kill-ready.json", {"phase": phase, "count": count})
             while True: time.sleep(1)
-    Executor(Sway(config["socket"]), catalog(config["data"]), None, config["runtime"], config["binary"],
+    class CommandCrashSway(Sway):
+        def command(self, text):
+            result = super().command(text)
+            if config["point"] == ["mid-command", 1]:
+                # L'IPC a réellement muté Sway, mais Recovery n'a encore reçu
+                # ni réponse ni postcondition : l'intention doit rester ambiguë.
+                atomic(Path(config["runtime"]) / "kill-ready.json", {"command": text})
+                while True: time.sleep(1)
+            return result
+    Executor(CommandCrashSway(config["socket"]), catalog(config["data"]), None, config["runtime"], config["binary"],
              os.environ.copy(), progress).apply(config["data"], True)
 
 
@@ -24,7 +33,7 @@ def main():
     cases = []
     with Lab() as lab:
         binary, helper_binary = build(lab.directory), build_helper(lab.directory)
-        for i, point in enumerate((("anchor", 1), ("all-anchors", 4), ("swap", 1), ("swap", 3),
+        for i, point in enumerate((("mid-command", 1), ("anchor", 1), ("all-anchors", 4), ("swap", 1), ("swap", 3),
                                     ("before-cleanup", 0), ("cleanup", 1), ("after-resume", 4), ("normal", 0), ("initial-stopped", 0))):
             runtime = private_dir(lab.directory / f"crash-{i}")
             data = fixture({"splitv": [{"splith": ["A", "B"]}, {"splith": ["C", "D"]}]})
@@ -62,6 +71,13 @@ def main():
                 assert row["apps_preserved"] and row["foreign_preserved"] and row["state_preserved"] and row["anchors_remaining"] == 0, row
                 assert result["status"] == ("interrupted" if killed else "success"), row
                 if killed: assert row["kill_to_recovery_ms"] < 3000
+                if point[0] == "mid-command":
+                    from session_v2.recovery import JOURNAL, recovery_status
+                    journal = read(runtime / JOURNAL)
+                    assert journal["operations"] == 1 and journal["windows"][0]["pending"], journal
+                    assert journal["intention"]["command"] == read(runtime / "kill-ready.json")["command"]
+                    assert recovery_status(runtime)["status"] == "RECOVERY_REQUIRED"
+                    row["ambiguous_intention_preserved"] = True
                 cases.append(row)
                 print(point, "PASS", flush=True)
             finally:

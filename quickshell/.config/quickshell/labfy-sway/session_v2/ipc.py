@@ -29,12 +29,12 @@ class Sway:
         st = os.lstat(path)
         require(stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid(), "SWAY_SOCKET_INVALID")
         self.path = path
-        self.identity = (st.st_dev, st.st_ino)
+        self.identity = (st.st_dev, st.st_ino, st.st_ctime_ns)
         self.session = hashlib.sha256(f"{path}:{st.st_dev}:{st.st_ino}:{st.st_ctime_ns}".encode()).hexdigest()
 
     def request(self, kind, payload=b""):
         st = os.lstat(self.path)
-        require((st.st_dev, st.st_ino) == self.identity and st.st_uid == os.getuid(), "SWAY_SESSION_CHANGED")
+        require((st.st_dev, st.st_ino, st.st_ctime_ns) == self.identity and st.st_uid == os.getuid(), "SWAY_SESSION_CHANGED")
         with socket.socket(socket.AF_UNIX) as connection:
             end = time.monotonic() + 3
             connection.settimeout(3)

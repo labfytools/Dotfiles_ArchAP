@@ -7,6 +7,7 @@ from session_v2.executor import Executor
 from session_v2.ipc import Sway
 from session_v2.storage import private_dir, atomic
 from session_v2.snapshot import capture
+from session_v2.errors import Failure
 
 
 def main():
@@ -25,9 +26,34 @@ def main():
             snap = capture(Sway(lab.socket), Catalog(), None)
             assert snap['applications'][0]['managed_by'] == 'sway-autostart'
             assert result['status'] == 'success'
-            atomic(private_dir(EVIDENCE) / 'limusic-test-only.json', {'result': result, 'launches': 0, 'capture_owner': 'sway-autostart'})
+            # Absente ou dupliquée : aucun lancement/kill Limusic, même en erreur.
+            apps.close()
+            cases = []
+            for count, reason in ((0, 'APPLICATION_WINDOWS_INCOMPLETE'), (2, 'UNEXPECTED_EXTRA_WINDOW')):
+                lab.command('workspace TEST_ONLY_SOURCE')
+                if count:
+                    apps = Surfaces(lab, build_helper(lab.directory))
+                    for _ in range(count): apps.create('limusic-app')
+                before = {n['id'] for n in lab.windows()}
+                commands = []
+                sway = Sway(lab.socket)
+                raw_command = sway.command
+                def command(text):
+                    commands.append(text)
+                    return raw_command(text)
+                sway.command = command
+                with patch('session_v2.executor.launch', side_effect=lambda spec, n, env: [] if n == 0 else (_ for _ in ()).throw(AssertionError('DUPLICATE_LIMUSIC'))):
+                    try:
+                        Executor(sway, Catalog(), None, private_dir(lab.directory / f'runtime-{count}'), build(lab.directory), lab.env).apply(data, True, timeout=.3)
+                    except Failure as exc: assert exc.code == reason, exc.code
+                    else: raise AssertionError('ERREUR_ATTENDUE')
+                assert {n['id'] for n in lab.windows() if n['app_id'] == 'limusic-app'} == before
+                if count == 2: assert commands == []
+                cases.append({'windows': count, 'reason': reason, 'launches': 0, 'preserved': True})
+            atomic(private_dir(EVIDENCE) / 'limusic-test-only.json', {'result': result, 'launches': 0, 'capture_owner': 'sway-autostart', 'refusals': cases})
             print('LIMUSIC_TEST_ONLY=PASS')
-        finally: apps.close()
+        finally:
+            if apps.proc.poll() is None: apps.close()
 
 
 if __name__ == '__main__': main()

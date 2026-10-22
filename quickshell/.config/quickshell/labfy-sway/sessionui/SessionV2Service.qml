@@ -22,6 +22,26 @@ QtObject {
         }
     }
 
+    // Réserver la sérialisation avant de retirer la surface. Le Timer du
+    // dialogue n'est pas propriétaire d'une seconde commande backend.
+    function prepareRestore(owner) {
+        if (busy || !owner) return false;
+        client = owner;
+        operation = "release-focus";
+        return true;
+    }
+    function cancelRestore(owner) {
+        if (operation !== "release-focus" || client !== owner) return;
+        operation = "";
+        client = null;
+    }
+    function startRestore(owner) {
+        if (operation !== "release-focus" || client !== owner
+                || owner.visible || owner.focusable || owner.backingWindowVisible) return false;
+        cancelRestore(owner);
+        return run("apply-last", "", "", owner);
+    }
+
     // WHY : toutes les barres, le chooser et le power menu partagent un owner.
     // INVARIANT : un unique Process sérialise les commandes V2 de QuickShell.
     function run(kind, name, extra, owner) {

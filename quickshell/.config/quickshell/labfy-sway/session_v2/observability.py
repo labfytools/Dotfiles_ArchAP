@@ -30,7 +30,7 @@ def validate(value):
 
 
 class Attempt:
-    def __init__(self, path, tx, data):
+    def __init__(self, path, tx, data, publish=True):
         self.path = path
         self.data = {"schema": "labfy.sway.session-v2-restore-attempt", "version": 1,
                      "transaction_id": tx, "phase": "validate", "status": "running", "reason": "NONE",
@@ -41,7 +41,8 @@ class Attempt:
                      "identity_level": "best-effort" if any(s["identity_requirement"] == "best-effort" for s in data["window_slots"]) else
                                        "interchangeable" if any(s["identity_requirement"] == "interchangeable" for s in data["window_slots"]) else "exact",
                      "final_tree_verified": False, "final_focus_verified": False, "timings_ms": {}}
-        self.publish()
+        # La tentative reste en mémoire tant que la preuve preflight peut refuser.
+        if publish: self.publish()
 
     def publish(self): atomic(self.path, self.data, validate)
     def update(self, **values):

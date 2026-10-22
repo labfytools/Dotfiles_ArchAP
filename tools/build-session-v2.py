@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 """Construire les candidats locaux, sans installer ni signer ni accéder au réseau."""
+import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tarfile
 import tempfile
 import zipfile
@@ -14,18 +14,34 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "quickshell/.config/quickshell/labfy-sway"
 
 
-def build(output):
+# Explicit allowlist: no profile data or generated files enter the extension.
+EXTENSION_FILES = ("manifest.json", "background.js")
+
+
+def build_extension(output):
+    xpi = output / "labfy-session-v2-unsigned.xpi"
+    with zipfile.ZipFile(xpi, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in EXTENSION_FILES:
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, (ROOT / "firefox-extension/session-v2" / name).read_bytes())
+    return xpi
+
+
+def build(output, extension_only=False):
     output = Path(output).resolve()
     if not output.is_relative_to(ROOT): raise ValueError("OUTPUT_MUST_BE_IN_ISOLATED_WORKTREE")
     output.mkdir(parents=True, exist_ok=True)
+    if extension_only:
+        xpi = build_extension(output)
+        manifest = {"signed": False, "installed": False, "files": {xpi.name: hashlib.sha256(xpi.read_bytes()).hexdigest()}}
+        (output / "extension-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        print(json.dumps(manifest))
+        return
     binary = output / "labfy-v2-anchor"
     flags = subprocess.check_output(["pkg-config", "--cflags", "--libs", "gtk+-3.0", "gdk-wayland-3.0"], text=True).split()
     subprocess.run(["cc", "-std=c17", "-O2", "-Wall", "-Wextra", "-Werror", str(SOURCE / "session_v2/anchor_helper.c"), "-o", str(binary), *flags], check=True)
-    xpi = output / "labfy-session-v2-unsigned.xpi"
-    with zipfile.ZipFile(xpi, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name in ("manifest.json", "background.js"):
-            info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)); info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, (ROOT / "firefox-extension/session-v2" / name).read_bytes())
+    xpi = build_extension(output)
     bundle = output / "labfy-session-v2-backend.tar.gz"
     with tarfile.open(bundle, "w:gz") as archive:
         for name in ("session-v2.py", "session-v2-native-host.py"):
@@ -39,4 +55,9 @@ def build(output):
     print(json.dumps(manifest))
 
 
-if __name__ == "__main__": build(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/session-v2")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("output", nargs="?", default=ROOT / "build/session-v2")
+    parser.add_argument("--extension-only", action="store_true", help="XPI seul, sans compilation GTK ni bundle backend")
+    args = parser.parse_args()
+    build(args.output, extension_only=args.extension_only)

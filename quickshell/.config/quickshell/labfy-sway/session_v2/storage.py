@@ -94,10 +94,16 @@ def lock(directory, name="transaction.lock"):
     finally: os.close(fd)
 
 
+def state_path():
+    """CONTRACT : même autorité persistante que Store, sans création ni I/O."""
+    state = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+    require(state.is_absolute() and ".." not in state.parts, "XDG_PATH_INVALID")
+    return state / "labfy-sway/session-v2"
+
+
 def paths():
-    home = Path.home()
-    state = Path(os.environ.get("XDG_STATE_HOME", str(home / ".local/state")))
+    state = state_path()
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", ""))
     require(state.is_absolute() and runtime.is_absolute(), "XDG_PATH_INVALID")
     private_dir(runtime)
-    return private_dir(state / "labfy-sway/session-v2"), private_dir(runtime / "labfy-sway")
+    return private_dir(state), private_dir(runtime / "labfy-sway")

@@ -1,9 +1,24 @@
 # Labfy Greeter GTK4 V1
 
+La récupération de connexion Mosaic + QuickShell V2 est préparée séparément,
+sans installation : voir [LOGIN_RECOVERY_V2.md](LOGIN_RECOVERY_V2.md). Le runtime
+du sélecteur V1 est conservé ; le greeter installé reste l'ancienne version.
+
 ## Contrat
 
 `greetd` ouvre la session PAM. Le client IPC envoie exclusivement
-`["/usr/bin/uwsm", "start", "default"]` dans `start_session`, avec `env=[]`.
+un des deux argv allowlistés dans `start_session`, avec exactement `env=[]` :
+
+| Choix non persistant | argv transmis à greetd |
+| --- | --- |
+| SwayFX — Stable (défaut et secours) | `["/usr/bin/uwsm", "start", "sway.desktop"]` |
+| SwayFX Mosaic — Expérimental | `["/usr/bin/uwsm", "start", "swayfx-mosaic-test.desktop"]` |
+
+Le choix est figé au début de la tentative PAM. Changer compte/session entre
+les invites annule celle-ci ; pendant une requête les contrôles sont bloqués.
+Le greeter redémarre toujours sur Stable, sans lire/écrire `uwsm/default-id`.
+Une erreur de lancement reste explicite, sans repli automatique.
+
 Le greeter GTK termine ensuite, `run-ui` demande la sortie du Sway greeter,
 et `greetd` démarre alors la session authentifiée. Aucun code du greeter ne
 lance Sway utilisateur ou Session Restore V2. `/etc/pam.d/greetd` reste intact.
@@ -43,7 +58,8 @@ versionne aucune image personnelle.
 GDK_BACKEND=wayland python3 greetd/src/labfy_greeter.py --preview
 ```
 
-Dans ce mode, le sélecteur est de démonstration, le champ et les actions sont
+Dans ce mode, le compte est de démonstration ; le sélecteur Session fonctionne
+avec Stable par défaut, le champ et les actions sont
 inactifs, le slider ne peut pas écrire et aucun `GREETD_SOCK` n'est requis.
 La date utilise la locale système de `/etc/locale.conf`.
 
@@ -60,7 +76,18 @@ Pour prouver l'accès à la luminosité sans variation visible, un membre du
 groupe `video` peut écrire la valeur courante dans `brightness` puis la relire.
 Le test automatique n'écrit que dans un sysfs fictif temporaire.
 
-## Installation
+## Mise à jour du choix de session
+
+Voir [SESSION_SELECTOR.md](SESSION_SELECTOR.md) pour le contrat, les prérequis,
+les captures, la mise à jour ciblée et son rollback. Le changement reste non
+activé ; la recette physique de cette version est NOT_RUN.
+
+## Installation initiale historique
+
+Les commandes ci-dessous décrivent l'installation initiale complète. Pour la
+mise à jour du sélecteur, utiliser exclusivement la procédure ciblée ci-dessus.
+`--prepare` est mutant et ne constitue pas une validation en lecture seule.
+
 
 Depuis la copie source, avec les droits root :
 

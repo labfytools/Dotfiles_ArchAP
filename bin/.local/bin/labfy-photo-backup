@@ -1,0 +1,602 @@
+#!/usr/bin/env python3
+"""Sauvegarde vérifiée de la photothèque vers un volume exFAT identifié."""
+import argparse
+from contextlib import closing
+import ctypes
+import datetime as dt
+import errno
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import select
+import signal
+import sqlite3
+import stat
+import subprocess
+import sys
+import time
+import unicodedata
+import uuid
+
+SCHEMA = 'labfy.photo-backup'
+ACTIVE = {'planning', 'copying', 'verifying'}
+CANCELLED = False
+CHUNK = 8 * 1024 * 1024
+
+
+def utcnow():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+
+
+def atomic_write(path, content):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Conserver les chemins relatifs : mkstemp renvoie un chemin absolu,
+    # qui pourrait désigner le répertoire local après débranchement du SSD.
+    temporary = path.parent / ('.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        fd = os.open(path.parent, os.O_DIRECTORY | os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def json_write(path, value):
+    atomic_write(path, (json.dumps(value, ensure_ascii=False, indent=2) + '\n').encode())
+
+
+def load_json(path, fallback=None):
+    try:
+        return json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        return fallback
+
+
+def load_config(path):
+    config = load_json(path)
+    if not isinstance(config, dict) or config.get('version') != 1:
+        raise ValueError('Configuration de sauvegarde absente ou invalide.')
+    if not re.fullmatch(r'[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}', config.get('uuid', '')):
+        raise ValueError('UUID exFAT invalide.')
+    source = Path(config.get('source', ''))
+    if not source.is_absolute() or source == Path('/'):
+        raise ValueError('Le dossier source doit être un chemin absolu distinct de /.')
+    config['source'] = str(source)
+    config['uuid'] = config['uuid'].upper()
+    config['label'] = config.get('label', 'PHOTO_BAK')
+    config['state_dir'] = str(Path(config.get('state_dir',
+        Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) /
+        'labfy-photo-backup')).absolute())
+    return config
+
+
+def unescape_mount(text):
+    return re.sub(r'\\([0-7]{3})', lambda m: chr(int(m.group(1), 8)), text)
+
+
+def probe(config):
+    """Lecture seule, notamment quand le SSD manque : aucun mkdir ici."""
+    result = {'disk_present': False, 'mounted': False, 'mountpoint': None,
+              'usb_speed_mbps': None}
+    link = Path('/dev/disk/by-uuid') / config['uuid']
+    try:
+        device = link.stat()
+    except FileNotFoundError:
+        return result
+    if not stat.S_ISBLK(device.st_mode):
+        raise ValueError('L’UUID ne désigne pas un périphérique bloc.')
+    result['disk_present'] = True
+    major_minor = f'{os.major(device.st_rdev)}:{os.minor(device.st_rdev)}'
+    sysdev = (Path('/sys/dev/block') / major_minor).resolve()
+    for parent in (sysdev, *sysdev.parents):
+        if (parent / 'idVendor').is_file() and (parent / 'speed').is_file():
+            try:
+                result['usb_speed_mbps'] = float((parent / 'speed').read_text().strip())
+            except (OSError, ValueError):
+                pass
+            break
+    matches = []
+    for line in Path('/proc/self/mountinfo').read_text().splitlines():
+        left, right = line.split(' - ', 1)
+        fields, fs = left.split(), right.split()
+        if fields[2] == major_minor and fields[3] == '/' and fs[0] == 'exfat':
+            matches.append({'mount_id': int(fields[0]),
+                            'mountpoint': unescape_mount(fields[4]),
+                            'rw': 'rw' in fields[5].split(','),
+                            'device_number': device.st_rdev})
+    if len(matches) == 1 and matches[0]['rw']:
+        result.update(matches[0])
+        result['mounted'] = True
+    elif matches:
+        result['reason'] = 'Le montage est ambigu ou en lecture seule.'
+    return result
+
+
+def process_token(pid):
+    try:
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+
+
+RSYNC_PROGRESS = re.compile(rb'^\s*([\d,]+)B\s+(\d+)%\s+([\d,]+)B/s')
+
+
+def read_rsync_progress(path):
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return None
+    # Les lignes progress2 sont séparées par CR et peuvent être très nombreuses.
+    for line in reversed(re.split(rb'[\r\n]', data[-512 * 1024:])):
+        match = RSYNC_PROGRESS.match(line)
+        if match:
+            return {
+                'bytes': int(match.group(1).replace(b',', b'')),
+                'percent': int(match.group(2)),
+                'speed_bps': int(match.group(3).replace(b',', b'')),
+            }
+    return None
+
+
+def get_status(config):
+    state_dir = Path(config['state_dir'])
+    saved = load_json(state_dir / 'status.json', {})
+    if not isinstance(saved, dict):
+        saved = {}
+    value = {'schema': SCHEMA, 'version': 1, 'phase': 'idle',
+             'progress_bytes': 0, 'total_bytes': 0, 'progress_percent': 0,
+             'error': None, 'last_success': None, 'message': 'Prêt à sauvegarder.'}
+    value.update(saved)
+    value.update({k: v for k, v in probe(config).items()
+                  if k in {'disk_present', 'mounted', 'mountpoint', 'usb_speed_mbps', 'reason'}})
+    value['source'] = config['source']
+    value['label'] = config['label']
+    if value['phase'] in ACTIVE and (
+            process_token(value.get('pid', -1)) != value.get('process_token') or
+            value.get('process_token') is None):
+        value.update(phase='error', error='La sauvegarde précédente a été interrompue.',
+                     message='Sauvegarde incomplète ; relancer lorsque le SSD est disponible.')
+    elif value['phase'] == 'copying' and value.get('run_id'):
+        run_dir = state_dir / 'runs' / value['run_id']
+        # Le catalogue est minuscule par rapport à la photothèque. Tant que son
+        # log n'existe pas, afficher exactement le progress2 de la grosse copie.
+        progress = read_rsync_progress(run_dir / 'Phototheque.rsync.log')
+        if progress:
+            done = progress['bytes']
+            percent = progress['percent']
+            estimated = max(done, round(done * 100 / percent)) if percent else value['total_bytes']
+            value.update(progress_bytes=done, total_bytes=estimated,
+                         progress_percent=float(percent),
+                         speed_bps=progress['speed_bps'])
+    return value
+
+
+class State:
+    def __init__(self, config):
+        self.path = Path(config['state_dir']) / 'status.json'
+        self.value = get_status(config)
+        self.value.update(pid=os.getpid(), process_token=process_token(os.getpid()))
+        self.last_write = 0.0
+
+    def update(self, force=False, **values):
+        self.value.update(values)
+        total = self.value.get('total_bytes', 0)
+        self.value['progress_percent'] = min(100, round(
+            100 * self.value.get('progress_bytes', 0) / total, 1)) if total else 0
+        if force or time.monotonic() - self.last_write >= 1:
+            self.value['updated_at'] = utcnow()
+            json_write(self.path, self.value)
+            self.last_write = time.monotonic()
+
+
+def cancellation_check():
+    if CANCELLED:
+        raise InterruptedError('Sauvegarde arrêtée ; les originaux sont conservés.')
+
+
+def component_key(name):
+    if (not name or re.search(r'[<>:"\\|?*\x00-\x1f]', name) or
+            name.endswith((' ', '.')) or len(name.encode('utf-16-le')) // 2 > 255):
+        raise ValueError('Nom incompatible avec le SSD exFAT : ' + repr(name))
+    stem = name.split('.', 1)[0].upper()
+    if stem in {'CON', 'PRN', 'AUX', 'NUL'} or re.fullmatch(r'(COM|LPT)[1-9]', stem):
+        raise ValueError('Nom réservé sous Windows : ' + repr(name))
+    return unicodedata.normalize('NFC', name).casefold()
+
+
+def file_identity(info):
+    return (info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_ino, info.st_dev)
+
+
+def inventory(root, allow_empty=False):
+    root = Path(root)
+    info = root.lstat()
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError('Le dossier source est absent, spécial ou symbolique : ' + str(root))
+    files = {}
+    def fail(exc):
+        raise exc
+    for directory, dirs, names in os.walk(root, followlinks=False, onerror=fail):
+        cancellation_check()
+        folded = {}
+        for name in dirs + names:
+            key = component_key(name)
+            if key in folded:
+                raise ValueError('Collision de noms exFAT : ' + str(Path(directory) / name))
+            folded[key] = name
+            p = Path(directory) / name
+            entry = p.lstat()
+            if stat.S_ISDIR(entry.st_mode):
+                continue
+            if not stat.S_ISREG(entry.st_mode):
+                raise ValueError('Lien ou fichier spécial non sauvegardé : ' + str(p))
+            files[p.relative_to(root).as_posix()] = file_identity(entry)
+    if not files and not allow_empty:
+        raise ValueError('La photothèque est vide ; vérifier le chemin source.')
+    return files
+
+
+def safe_directory(path):
+    """Chemin relatif au cwd du SSD épinglé, sans traversée symbolique."""
+    p = Path(path)
+    if p.is_absolute() or '..' in p.parts:
+        raise ValueError('Chemin de destination non relatif.')
+    current = Path('.')
+    for component in p.parts:
+        current /= component
+        try:
+            os.mkdir(current)
+        except FileExistsError:
+            if not stat.S_ISDIR(current.lstat().st_mode):
+                raise ValueError('Destination occupée par un lien ou fichier : ' + str(current))
+
+
+def check_destination(root, source_files):
+    existing = inventory(root, allow_empty=True)
+    # Un nom déjà présent avec une casse différente ne doit pas être réutilisé.
+    paths = {}
+    all_existing = []
+    def fail(exc):
+        raise exc
+    for directory, dirs, names in os.walk(root, followlinks=False, onerror=fail):
+        all_existing.extend((Path(directory) / name).relative_to(root).as_posix()
+                            for name in dirs + names)
+    for relative in all_existing + list(source_files):
+        parts = Path(relative).parts
+        for n in range(1, len(parts) + 1):
+            prefix = '/'.join(parts[:n])
+            key = '/'.join(component_key(x) for x in parts[:n])
+            prior = paths.setdefault(key, prefix)
+            if prior != prefix:
+                raise ValueError('Collision avec un nom existant sur le SSD : ' + prefix)
+    return existing
+
+
+def mount_id_for_fd(fd):
+    for line in Path(f'/proc/self/fdinfo/{fd}').read_text().splitlines():
+        if line.startswith('mnt_id:'):
+            return int(line.split(':', 1)[1])
+    raise RuntimeError('Identité du montage indisponible.')
+
+
+def open_destination(config):
+    detected = probe(config)
+    if not detected['mounted']:
+        raise OSError('SSD PHOTO_BAK absent ou non monté en écriture.')
+    fd = os.open(detected['mountpoint'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        if (os.fstat(fd).st_dev != detected['device_number'] or
+                mount_id_for_fd(fd) != detected['mount_id']):
+            raise OSError('Le montage du SSD a changé pendant sa vérification.')
+        check = probe(config)
+        if not check['mounted'] or check.get('mount_id') != detected['mount_id']:
+            raise OSError('Le SSD a été débranché pendant sa vérification.')
+        return fd, detected
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def sync_filesystem(fd):
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.syncfs(fd) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
+
+
+def snapshot_catalogues(target):
+    home = Path.home()
+    databases = {
+        'digiKam/digikam4.db': home / '.local/share/digikam/digikam4.db',
+        'digiKam/recognition.db': home / '.local/share/digikam/recognition.db',
+        'darktable/library.db': home / '.config/darktable/library.db',
+        'darktable/data.db': home / '.config/darktable/data.db',
+    }
+    for relative, original in databases.items():
+        if not original.is_file():
+            continue
+        destination = target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + 60
+        def progress(status, remaining, total):
+            cancellation_check()
+            if time.monotonic() > deadline:
+                raise TimeoutError('Catalogue occupé trop longtemps : ' + original.name)
+        with closing(sqlite3.connect(original.resolve().as_uri() + '?mode=ro', uri=True,
+                                     timeout=3)) as source, closing(sqlite3.connect(destination)) as copy:
+            source.backup(copy, pages=1024, progress=progress, sleep=0.1)
+            if copy.execute('PRAGMA quick_check').fetchone() != ('ok',):
+                raise OSError('Vérification du catalogue échouée : ' + original.name)
+    for relative, original in {
+        'digiKam/digikamrc': home / '.config/digikamrc',
+        'darktable/darktablerc': home / '.config/darktable/darktablerc',
+    }.items():
+        if original.is_file():
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            resolved = original.resolve()
+            fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                before = file_identity(os.fstat(fd))
+                data = bytearray()
+                while block := os.read(fd, CHUNK):
+                    cancellation_check()
+                    data.extend(block)
+                if (file_identity(os.fstat(fd)) != before or original.resolve() != resolved or
+                        file_identity(original.stat()) != before):
+                    raise OSError('Configuration modifiée pendant la sauvegarde : ' + original.name)
+            finally:
+                os.close(fd)
+            atomic_write(destination, data)
+    return inventory(target, allow_empty=True)
+
+
+def rsync_copy(source, destination, files, run_dir, run_id, state, base, total):
+    filelist = run_dir / (destination + '.files0')
+    atomic_write(filelist, b''.join(os.fsencode(name) + b'\0' for name in sorted(files)))
+    args = ['rsync', '-rt', '--checksum', '--modify-window=1', '--backup',
+            '--backup-dir=../Historique/' + run_id + '/' + destination,
+            '--partial-dir=.rsync-partial', '--fsync', '--info=progress2',
+            '--outbuf=L', '--from0', '--files-from=' + str(filelist), '--',
+            str(source) + '/', './' + destination + '/']
+    env = dict(os.environ, LC_ALL='C')
+    pattern = re.compile(rb'^\s*([\d,]+)B\s+(\d+)%\s+')
+    with (run_dir / (destination + '.rsync.log')).open('wb') as log:
+        child = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=log,
+                                 stdin=subprocess.DEVNULL, env=env, bufsize=0)
+        pending = b''
+        try:
+            while True:
+                cancellation_check()
+                ready, _, _ = select.select([child.stdout], [], [], 1)
+                if ready:
+                    data = os.read(child.stdout.fileno(), 16384)
+                    if not data:
+                        break
+                    log.write(data)
+                    pending += data
+                    lines = re.split(rb'[\r\n]', pending)
+                    pending = lines.pop()
+                    for line in lines:
+                        match = pattern.match(line)
+                        if match:
+                            done = int(match.group(1).replace(b',', b''))
+                            state.update(progress_bytes=min(base + total, base + done))
+                elif child.poll() is not None:
+                    break
+            code = child.wait()
+            if code:
+                raise OSError(f'Copie interrompue (rsync {code}). Le journal est dans {run_dir}.')
+        except BaseException:
+            if child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+            raise
+        finally:
+            child.stdout.close()
+    state.update(force=True, progress_bytes=base + total)
+
+
+def digest(path, expected=None, reread=False, progress=None):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError('Fichier spécial rencontré pendant la vérification : ' + str(path))
+        if expected is not None and file_identity(before) != expected:
+            raise OSError('La source a changé : ' + str(path))
+        if reread and hasattr(os, 'posix_fadvise'):
+            try:
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+            except OSError as exc:
+                if exc.errno not in (errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP):
+                    raise
+        result = hashlib.sha256()
+        while True:
+            cancellation_check()
+            block = os.read(fd, CHUNK)
+            if not block:
+                break
+            result.update(block)
+            if progress:
+                progress(len(block))
+        if file_identity(os.fstat(fd)) != file_identity(before):
+            raise OSError('Un fichier a changé pendant sa lecture : ' + str(path))
+        return result.hexdigest(), before.st_size
+    finally:
+        os.close(fd)
+
+
+def notify(title, message, critical=False):
+    try:
+        subprocess.run(['notify-send', '--app-name=Sauvegarde photos',
+                        '--icon=drive-removable-media',
+                        '--urgency=' + ('critical' if critical else 'normal'),
+                        title, message], check=False, timeout=5,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def run_backup(config):
+    state_dir = Path(config['state_dir'])
+    state_dir.mkdir(parents=True, exist_ok=True)
+    lock = (state_dir / 'backup.lock').open('a+b')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        print('Une sauvegarde est déjà en cours.', file=sys.stderr)
+        return 0
+    state = State(config)
+    old_cwd = os.open('.', os.O_RDONLY | os.O_DIRECTORY)
+    destination_fd = None
+    try:
+        state.update(force=True, phase='planning', progress_bytes=0, total_bytes=0,
+                     error=None, message='Préparation et contrôle du SSD…')
+        destination_fd, mounted = open_destination(config)
+        # Tous les chemins SSD ci-dessous sont relatifs à ce montage épinglé.
+        os.fchdir(destination_fd)
+        source = Path(config['source'])
+        if source.stat().st_dev == os.fstat(destination_fd).st_dev:
+            raise ValueError('La source ne doit pas se trouver sur le SSD de sauvegarde.')
+        photos = inventory(source)
+        run_id = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
+        run_dir = state_dir / 'runs' / run_id
+        run_dir.mkdir(parents=True)
+        catalogue_stage = run_dir / 'Catalogues'
+        catalogue_stage.mkdir()
+        catalogues = snapshot_catalogues(catalogue_stage)
+        roots = [(source, 'Phototheque', photos), (catalogue_stage, 'Catalogues', catalogues)]
+        total = sum(info[0] for _, _, entries in roots for info in entries.values())
+        count = sum(len(entries) for _, _, entries in roots)
+        required = 0
+        largest = 0
+        for _, destination, entries in roots:
+            safe_directory(destination)
+            old = check_destination(destination, entries)
+            for relative, info in entries.items():
+                largest = max(largest, info[0])
+                previous = old.get(relative)
+                if previous is None or previous[0] != info[0] or abs(previous[1] - info[1]) > 1_000_000_000:
+                    required += info[0]
+        # Estimation de place ; un changement conservant date/taille peut aussi
+        # consommer de l'espace et fera échouer proprement rsync si nécessaire.
+        available = os.fstatvfs(destination_fd).f_bavail * os.fstatvfs(destination_fd).f_frsize
+        if available < max(required, largest) + 512 * 1024 * 1024:
+            raise OSError('Espace disponible insuffisant pour la sauvegarde et ses anciennes versions.')
+        safe_directory('Historique/' + run_id)
+        safe_directory('Verifications')
+        state.update(force=True, phase='copying', total_bytes=total, files_total=count,
+                     files_done=0, run_id=run_id, message='Copie des photos et des catalogues…')
+        base = 0
+        for directory, destination, entries in roots:
+            size = sum(info[0] for info in entries.values())
+            if entries:
+                rsync_copy(directory, destination, entries, run_dir, run_id, state, base, size)
+            base += size
+        sync_filesystem(destination_fd)
+        state.update(force=True, phase='verifying', progress_bytes=0, files_done=0,
+                     message='Relecture et vérification SHA-256 du SSD…')
+        manifest = []
+        done = 0
+        for directory, destination, entries in roots:
+            for relative, identity in sorted(entries.items()):
+                expected_hash, size = digest(directory / relative, expected=identity)
+                def advance(amount):
+                    state.update(progress_bytes=state.value['progress_bytes'] + amount)
+                actual_hash, actual_size = digest(Path(destination) / relative,
+                                                  reread=True, progress=advance)
+                if actual_hash != expected_hash or actual_size != size:
+                    raise OSError('Vérification différente de la source : ' + destination + '/' + relative)
+                manifest.append({'path': destination + '/' + relative,
+                                 'size': size, 'sha256': expected_hash})
+                done += 1
+                state.update(files_done=done)
+        if inventory(source) != photos:
+            raise OSError('La photothèque a changé pendant la sauvegarde. Relancer pour la compléter.')
+        identity_now = probe(config)
+        if not identity_now['mounted'] or identity_now.get('mount_id') != mounted['mount_id']:
+            raise OSError('Le SSD a été débranché avant la validation finale.')
+        manifest_data = ''.join(json.dumps(row, ensure_ascii=False) + '\n' for row in manifest).encode()
+        local_manifest = run_dir / 'sha256.jsonl'
+        atomic_write(local_manifest, manifest_data)
+        atomic_write(Path('Verifications') / (run_id + '.sha256.jsonl'), manifest_data)
+        finished = utcnow()
+        report = {'schema': SCHEMA, 'version': 1, 'run_id': run_id, 'completed_at': finished,
+                  'source': str(source), 'uuid': config['uuid'], 'files': count, 'bytes': total,
+                  'manifest_sha256': hashlib.sha256(manifest_data).hexdigest(),
+                  'verification': 'SHA-256 source et destination après syncfs ; cache évincé au mieux',
+                  'policy': 'PC vers SSD ; fichiers retirés conservés ; anciennes versions dans Historique'}
+        json_write(Path('Verifications') / (run_id + '.json'), report)
+        json_write(Path('Verifications') / 'derniere-sauvegarde.json', report)
+        sync_filesystem(destination_fd)
+        identity_now = probe(config)
+        if not identity_now['mounted'] or identity_now.get('mount_id') != mounted['mount_id']:
+            raise OSError('Le SSD a été débranché avant l’enregistrement du résultat.')
+        json_write(run_dir / 'result.json', report)
+        state.update(force=True, phase='success', progress_bytes=total, files_done=count,
+                     last_success=finished, error=None, message='Sauvegarde terminée et vérifiée.')
+        notify('Sauvegarde photos terminée', f'{count:,} fichiers vérifiés sur {config["label"]}.')
+        return 0
+    except Exception as exc:
+        state.update(force=True, phase='error', error=str(exc), message='Sauvegarde incomplète.')
+        notify('Sauvegarde photos incomplète', str(exc), critical=True)
+        print(str(exc), file=sys.stderr)
+        return 1
+    finally:
+        os.fchdir(old_cwd)
+        os.close(old_cwd)
+        if destination_fd is not None:
+            os.close(destination_fd)
+        lock.close()
+
+
+def main():
+    default = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'labfy-photo-backup/config.json'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('status', 'run'))
+    parser.add_argument('--config', type=Path, default=default)
+    args = parser.parse_args()
+    def cancel(signum, frame):
+        global CANCELLED
+        CANCELLED = True
+    signal.signal(signal.SIGTERM, cancel)
+    signal.signal(signal.SIGINT, cancel)
+    try:
+        config = load_config(args.config)
+        if args.action == 'status':
+            print(json.dumps(get_status(config), ensure_ascii=False))
+            return 0
+        return run_backup(config)
+    except Exception as exc:
+        if args.action == 'status':
+            print(json.dumps({'schema': SCHEMA, 'version': 1, 'disk_present': False,
+                              'mounted': False, 'phase': 'error', 'error': str(exc),
+                              'message': 'Configuration indisponible.', 'last_success': None,
+                              'progress_bytes': 0, 'total_bytes': 0, 'progress_percent': 0},
+                             ensure_ascii=False))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -15,12 +15,22 @@ Row {
     signal openPageRequested(int page)
     signal toggleControlCenterRequested()
     signal toggleRemovableMediaRequested()
+    signal togglePrintingRequested()
+    signal togglePhotoBackupRequested()
     signal toggleClipboardRequested()
     signal adjustedFromBar(string kind)
     function refreshBatteryThreshold() { batteryIndicator.refreshThreshold() }
     function closeRemovableMedia() { removableMediaIndicator.popupOpen = false }
     function setRemovableMediaOpen(open) { removableMediaIndicator.popupOpen = open }
     readonly property bool removableMediaOpen: removableMediaIndicator.popupOpen
+    function closePrinting() { printingIndicator.popupOpen = false }
+    function setPrintingOpen(open) { printingIndicator.popupOpen = open }
+    readonly property bool printingOpen: printingIndicator.popupOpen
+    function closePhotoBackup() { photoBackupIndicator.popupOpen = false }
+    function setPhotoBackupOpen(open) { photoBackupIndicator.popupOpen = open }
+    function photoBackupState() { return photoBackupIndicator.diagnostics() }
+    readonly property bool photoBackupOpen: photoBackupIndicator.popupOpen
+    readonly property bool photoBackupVisible: photoBackupIndicator.visible
     // INVARIANT: huit pixels de part et d'autre des deux séparateurs identiques.
     spacing: 8
     height: 26
@@ -80,6 +90,14 @@ Row {
         RemovableMediaIndicator {
             id: removableMediaIndicator
             onToggleRequested: area.toggleRemovableMediaRequested()
+        }
+        PhotoBackupIndicator {
+            id: photoBackupIndicator
+            onToggleRequested: area.togglePhotoBackupRequested()
+        }
+        PrintingIndicator {
+            id: printingIndicator
+            onToggleRequested: area.togglePrintingRequested()
         }
         ClipboardIndicator { open: area.clipboardOpen; onToggled: area.toggleClipboardRequested() }
         ControlCenterButton { open: area.controlCenterOpen; onToggled: area.toggleControlCenterRequested() }

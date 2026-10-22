@@ -15,12 +15,18 @@
 entry, dropdown > button { background: #313244; color: #cdd6f4; border: 1px solid #585b70; border-radius: 8px; padding: 10px; min-height: 26px; }
 entry:focus, dropdown > button:focus, button:focus-visible { outline: 2px solid #b4befe; outline-offset: 2px; border-color: #b4befe; }
 /* Le popover du GtkDropDown a ses propres nœuds CSS : la palette du bouton ne s'y propage pas. */
-dropdown.user-selector popover > contents { background: #181825; border: 1px solid #585b70; border-radius: 8px; box-shadow: 0 8px 22px alpha(#11111b, 0.45); }
-dropdown.user-selector popover listview { background: transparent; color: #cdd6f4; }
-dropdown.user-selector popover listview row { background: transparent; color: #cdd6f4; border-radius: 6px; }
-dropdown.user-selector popover listview row:hover { background: #45475a; }
-dropdown.user-selector popover listview row:selected { background: #b4befe; color: #11111b; }
-dropdown.user-selector popover listview row:selected label { color: #11111b; }
+dropdown.user-selector popover > contents,
+dropdown.session-selector popover > contents { background: #181825; border: 1px solid #585b70; border-radius: 8px; box-shadow: 0 8px 22px alpha(#11111b, 0.45); }
+dropdown.user-selector popover listview,
+dropdown.session-selector popover listview { background: transparent; color: #cdd6f4; }
+dropdown.user-selector popover listview row,
+dropdown.session-selector popover listview row { background: transparent; color: #cdd6f4; border-radius: 6px; }
+dropdown.user-selector popover listview row:hover,
+dropdown.session-selector popover listview row:hover { background: #45475a; }
+dropdown.user-selector popover listview row:selected,
+dropdown.session-selector popover listview row:selected { background: #b4befe; color: #11111b; }
+dropdown.user-selector popover listview row:selected label,
+dropdown.session-selector popover listview row:selected label { color: #11111b; }
 button { background: #45475a; border: 1px solid #585b70; border-radius: 8px; padding: 10px 15px; }
 button:hover { background: #585b70; }
 button:active { background: #313244; }
@@ -31,3 +37,7 @@ button:disabled { opacity: 0.55; }
 scale trough { background: #45475a; border-radius: 8px; min-height: 7px; }
 scale highlight { background: #b4befe; border-radius: 8px; }
 scale slider { background: #cdd6f4; border: 2px solid #b4befe; min-width: 17px; min-height: 17px; }
+
+/* CONTRACT: le choix Session reste lisible, y compris lors du gel PAM. */
+dropdown.session-selector > button { border-color: #b4befe; }
+dropdown:disabled > button { opacity: 0.55; }

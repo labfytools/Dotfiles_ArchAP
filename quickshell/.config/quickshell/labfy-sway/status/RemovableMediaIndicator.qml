@@ -29,11 +29,11 @@ Item {
     ]
     readonly property var allowedActions: ["mount", "unmount", "open", "safe-remove"]
 
-    visible: deviceCount > 0
+    // CONTRACT: an open popup survives an empty snapshot. Keep its anchor in
+    // the bar until dismissed so a device can reappear on the same surface.
+    visible: deviceCount > 0 || popupOpen
     width: visible ? 26 : 0
     height: 26
-
-    onDeviceCountChanged: if (deviceCount === 0) popup.visible = false
 
     function hasExactKeys(device, expectedKeys) {
         const keys = Object.keys(device).sort();
@@ -271,6 +271,14 @@ Item {
                         color: Theme.accentForeground
                         font.pixelSize: 16
                         font.bold: true
+                    }
+
+                    Text {
+                        visible: indicator.deviceCount === 0
+                        width: parent.width
+                        text: "Aucun support amovible"
+                        color: Theme.secondaryForeground
+                        font.pixelSize: 12
                     }
 
                     Repeater {

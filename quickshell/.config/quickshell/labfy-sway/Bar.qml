@@ -156,6 +156,8 @@ PanelWindow {
             dateCenter.requestClose();
             windowStrip.closeMenu();
             rightStatusArea.closeRemovableMedia();
+            rightStatusArea.closePrinting();
+            rightStatusArea.closePhotoBackup();
             bar.closeDrawer();
         }
         function onApplicationsOpening(output) {
@@ -165,6 +167,8 @@ PanelWindow {
             dateCenter.requestClose();
             windowStrip.closeMenu();
             rightStatusArea.closeRemovableMedia();
+            rightStatusArea.closePrinting();
+            rightStatusArea.closePhotoBackup();
             bar.closeDrawer();
         }
     }
@@ -214,6 +218,8 @@ PanelWindow {
             dateCenter.requestClose();
             windowStrip.closeMenu();
             rightStatusArea.closeRemovableMedia();
+            rightStatusArea.closePrinting();
+            rightStatusArea.closePhotoBackup();
             bar.closeDrawer();
             clipboardLoader.active = true;
         }
@@ -237,6 +243,8 @@ PanelWindow {
         dateCenter.requestClose();
         windowStrip.closeMenu();
         rightStatusArea.closeRemovableMedia();
+        rightStatusArea.closePrinting();
+        rightStatusArea.closePhotoBackup();
         bar.closeDrawer();
         overviewRequested = true;
         if (!overviewCapture.running) overviewCapture.running = true;
@@ -331,6 +339,8 @@ PanelWindow {
             bar.closeClipboard();
             dateCenter.requestClose();
             windowStrip.closeMenu();
+            rightStatusArea.closePrinting();
+            rightStatusArea.closePhotoBackup();
             controlCenter.openPage(page);
             controlCenter.visible = true;
             return true;
@@ -346,6 +356,8 @@ PanelWindow {
             bar.closeClipboard();
             controlCenter.visible = false;
             dateCenter.requestClose();
+            rightStatusArea.closePrinting();
+            rightStatusArea.closePhotoBackup();
             return windowStrip.openActiveMenu();
         }
     }
@@ -386,6 +398,33 @@ PanelWindow {
         }
     }
 
+    // Le bouton de sauvegarde utilise la même exclusion que les autres popups.
+    function togglePhotoBackup() {
+        if (authenticationActive || !rightStatusArea.photoBackupVisible) return false;
+        const opening = !rightStatusArea.photoBackupOpen;
+        closeApplications();
+        closeOverview();
+        closeClipboard();
+        controlCenter.visible = false;
+        dateCenter.requestClose();
+        windowStrip.closeMenu();
+        rightStatusArea.closeRemovableMedia();
+        rightStatusArea.closePrinting();
+        bar.closeDrawer();
+        rightStatusArea.setPhotoBackupOpen(opening);
+        return true;
+    }
+    IpcHandler {
+        target: "photoBackupUi-" + bar.screen.name
+        function toggle(): bool { return bar.togglePhotoBackup(); }
+        function open(): bool {
+            if (bar.authenticationActive || !rightStatusArea.photoBackupVisible) return false;
+            return rightStatusArea.photoBackupOpen || bar.togglePhotoBackup();
+        }
+        function close(): bool { rightStatusArea.closePhotoBackup(); return true; }
+        function state(): string { return JSON.stringify(rightStatusArea.photoBackupState()); }
+    }
+
     // CONTRACT: toute la capsule centrale partage le même popup et la même exclusion XOR.
     function toggleDateCenter() {
         if (authenticationActive) return;
@@ -396,6 +435,8 @@ PanelWindow {
         controlCenter.visible = false;
         windowStrip.closeMenu();
         rightStatusArea.closeRemovableMedia();
+        rightStatusArea.closePrinting();
+        rightStatusArea.closePhotoBackup();
         bar.closeDrawer();
         if (opening) dateCenter.requestOpen();
         else dateCenter.requestClose();
@@ -411,6 +452,8 @@ PanelWindow {
         dateCenter.requestClose();
         windowStrip.closeMenu();
         rightStatusArea.closeRemovableMedia();
+        rightStatusArea.closePrinting();
+        rightStatusArea.closePhotoBackup();
     }
 
     Item {
@@ -521,6 +564,8 @@ PanelWindow {
                 controlCenter.visible = false;
                 dateCenter.requestClose();
                 rightStatusArea.closeRemovableMedia();
+                rightStatusArea.closePrinting();
+                rightStatusArea.closePhotoBackup();
                 bar.closeDrawer();
             }
         }
@@ -565,6 +610,8 @@ PanelWindow {
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 rightStatusArea.closeRemovableMedia();
+                rightStatusArea.closePrinting();
+                rightStatusArea.closePhotoBackup();
                 bar.closeDrawer();
                 controlCenter.currentPage = page;
                 controlCenter.visible = true;
@@ -577,6 +624,8 @@ PanelWindow {
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
                 rightStatusArea.closeRemovableMedia();
+                rightStatusArea.closePrinting();
+                rightStatusArea.closePhotoBackup();
                 bar.closeDrawer();
                 controlCenter.currentPage = 0;
                 controlCenter.visible = opening;
@@ -589,9 +638,26 @@ PanelWindow {
                 controlCenter.visible = false;
                 dateCenter.requestClose();
                 windowStrip.closeMenu();
+                rightStatusArea.closePrinting();
+                rightStatusArea.closePhotoBackup();
                 rightStatusArea.setRemovableMediaOpen(opening);
                 bar.closeDrawer();
             }
+            onTogglePrintingRequested: {
+                if (bar.authenticationActive) return;
+                const opening = !rightStatusArea.printingOpen;
+                bar.closeApplications();
+                bar.closeOverview();
+                bar.closeClipboard();
+                controlCenter.visible = false;
+                dateCenter.requestClose();
+                windowStrip.closeMenu();
+                rightStatusArea.closeRemovableMedia();
+                rightStatusArea.closePhotoBackup();
+                bar.closeDrawer();
+                rightStatusArea.setPrintingOpen(opening);
+            }
+            onTogglePhotoBackupRequested: bar.togglePhotoBackup()
             onToggleClipboardRequested: bar.toggleClipboard()
         }
     }

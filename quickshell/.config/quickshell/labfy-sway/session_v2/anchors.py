@@ -67,8 +67,9 @@ class Anchors:
         self.verify(self.ids)
         progress("all-anchors", len(self.ids))
 
-    def verify(self, mapping):
-        tree = self.sway.tree()
+    def verify(self, mapping, tree=None):
+        # CONTRACT : un arbre fourni permet le contrôle final sur la même observation.
+        tree = self.sway.tree() if tree is None else tree
         reverse = {v: k for k, v in mapping.items()}
         for t in trees(self.data):
             require(canonical(tree, t.workspace, reverse) == normalized(t.root), "FINAL_TREE_MISMATCH")

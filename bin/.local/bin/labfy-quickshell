@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+prefix_dir="$HOME/.local/opt/quickshell-qt612-popup"
+# CONTRACT: Quickshell uses private Qt APIs. Refuse a stale local build after
+# a Qt update rather than running a binary against an incompatible private ABI.
+qt_version=$(pkg-config --modversion Qt6Core)
+if [[ ! -r "$prefix_dir/qt-build-version" ]] || [[ $(< "$prefix_dir/qt-build-version") != "$qt_version" ]]; then
+    echo 'Rebuild with ~/.dotfiles/tools/build-quickshell-popup-fix for the installed Qt.' >&2
+    exit 1
+fi
+exec "$prefix_dir/bin/quickshell" "$@"

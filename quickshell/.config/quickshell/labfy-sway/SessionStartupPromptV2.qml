@@ -15,27 +15,103 @@ PanelWindow {
     property bool restored: false
     property bool detailsVisible: false
     property bool attempted: false
+    property bool startupChecked: false
+    property bool releasing: false
+    property bool inProgress: false
+    property bool watchingBackend: false
+    property bool retryAllowed: false
+    property bool awaitingUserFocus: false
+    property int releaseTicks: 0
+    property int releaseClearTicks: 0
+    property string failureMessage: "Impossible de restaurer complètement la session."
     property string technicalDetails: ""
     property int windowCount: 0
     property int workspaceCount: 0
-    readonly property bool busy: SessionV2Service.busy
+    readonly property bool busy: SessionV2Service.busy || watchingBackend
     function restoreRequested() {
-        if (!interactionArmed || busy || attempted || failed) return;
-        if (SessionV2Service.run("apply-last", "", "", popup)) attempted = true;
+        if (!interactionArmed || busy || releasing || (attempted && !retryAllowed)) return;
+        if (!SessionV2Service.prepareRestore(popup)) return;
+        attempted = true;
+        failed = false;
+        retryAllowed = false;
+        releasing = true;
+        releaseTicks = 0;
+        releaseClearTicks = 0;
+        // WHY : visible=false seul ne vaut pas retrait de la backing window.
+        // CONTRACT : deux observations QML après retrait, bornées à 1,5 s.
+        // Le backend exige ensuite sa propre preuve Sway avant tout journal.
+        visible = false;
+        releasePoll.start();
     }
     function newSessionRequested() {
         if (interactionArmed && !busy) SessionV2Service.run("ack-new", "", "", popup);
     }
-    function fail() {
+    function releaseFailed() {
+        releasePoll.stop();
+        SessionV2Service.cancelRestore(popup);
+        releasing = false;
+        failed = true;
+        retryAllowed = true;
+        // Un retrait expiré ne doit pas recréer la capture clavier au retry.
+        awaitingUserFocus = true;
+        failureMessage = "Restauration différée : le dialogue n’a pas libéré sa surface. Réessayez ou choisissez Nouvelle session.";
+        visible = true;
+    }
+    function fail(value) {
+        inProgress = false;
         failed = true;
         restored = false;
+        retryAllowed = !!value && value.status === "DEFERRED";
+        // WHY : rouvrir une layer exclusive après DEFERRED recrée le focus nul.
+        // CONTRACT : l'utilisateur active lui-même sa fenêtre/workspace puis
+        // clique Réessayer ; ce panneau reste sans clavier même pendant le clic.
+        // INVARIANT : aucune cible IPC inférée, aucun retry automatique ; le
+        // backend doit encore prouver le focus après retrait de cette surface.
+        awaitingUserFocus = retryAllowed;
+        const prewarmDeferred = retryAllowed && (value.reason === "APPLICATION_LAUNCH_FAILED"
+                                                   || value.reason === "APPLICATION_WINDOWS_INCOMPLETE");
+        failureMessage = prewarmDeferred
+            ? "Préparation incomplète. Les fenêtres ouvertes sont conservées, sans déplacement. Vérifiez les applications, puis cliquez Réessayer. Aucune application déjà présente ne sera relancée."
+            : retryAllowed
+            ? "Restauration différée : aucun focus stable n’est prouvé. Ce dialogue ne capte plus le clavier. Activez vous-même une fenêtre ou un espace avec vos raccourcis Sway, puis cliquez Réessayer. Sinon, choisissez Nouvelle session."
+            : "Impossible de restaurer complètement la session. Consultez les détails ou choisissez Nouvelle session.";
+        visible = true;
         // Détails provient uniquement de Restore Attempt V2, jamais d'un log.
-        SessionV2Service.run("restore-status", "", "", popup);
+        technicalDetails = Protocol.details(value);
+        if (!retryAllowed) SessionV2Service.run("restore-status", "", "", popup);
+    }
+    Timer {
+        id: releasePoll
+        interval: 25
+        repeat: true
+        onTriggered: {
+            popup.releaseTicks += 1;
+            if (popup.visible || popup.focusable) { popup.releaseFailed(); return; }
+            popup.releaseClearTicks = popup.backingWindowVisible ? 0 : popup.releaseClearTicks + 1;
+            if (popup.releaseClearTicks >= 2) {
+                stop();
+                popup.releasing = false;
+                if (SessionV2Service.startRestore(popup)) popup.inProgress = true;
+                else popup.releaseFailed();
+            } else if (popup.releaseTicks >= 60) popup.releaseFailed();
+        }
+    }
+    Component.onDestruction: SessionV2Service.cancelRestore(popup)
+    Timer {
+        interval: 1000
+        repeat: true
+        running: popup.watchingBackend
+        onTriggered: SessionV2Service.run("startup-status", "", "", popup)
     }
     Timer {
         interval: 350
-        running: popup.startupHost
-        onTriggered: SessionV2Service.run("startup-status", "", "", popup)
+        repeat: true
+        running: popup.startupHost && !popup.startupChecked
+        // Un owner recréé pendant un Process existant attend son terme ; le
+        // premier refus busy ne doit pas perdre le seul chemin de diagnostic.
+        onTriggered: {
+            if (SessionV2Service.run("startup-status", "", "", popup)) popup.startupChecked = true;
+        }
     }
     Timer { id: arm; interval: 750; onTriggered: popup.interactionArmed = popup.visible }
     Timer { id: closeSuccess; interval: 600; onTriggered: popup.visible = false }
@@ -44,7 +120,23 @@ PanelWindow {
         function onCompleted(owner, kind, value, okay) {
             if (owner !== popup) return;
             if (kind === "startup-status") {
-                popup.visible = okay && value.eligible === true && value.claimed === true;
+                if (!okay) {
+                    popup.watchingBackend = false;
+                    popup.fail(value);
+                    return;
+                }
+                popup.watchingBackend = value.in_progress === true;
+                popup.inProgress = popup.watchingBackend;
+                popup.visible = value.eligible === true && value.claimed === true && !popup.watchingBackend;
+                if (popup.visible && value.deferred === true) {
+                    popup.attempted = true;
+                    popup.fail({status: "DEFERRED", reason: value.deferred_reason});
+                } else if (popup.visible && value.interrupted === true) {
+                    popup.attempted = true;
+                    popup.failed = true;
+                    popup.failureMessage = "Une restauration précédente a été interrompue ou attend une décision. Consultez les détails ou choisissez Nouvelle session.";
+                    SessionV2Service.run("restore-status", "", "", popup);
+                }
                 if (popup.visible) {
                     popup.windowCount = value.windows || 0;
                     popup.workspaceCount = value.workspaces || 0;
@@ -52,15 +144,17 @@ PanelWindow {
             } else if (kind === "apply-last") {
                 if (okay && Protocol.restoreSucceeded(value))
                     SessionV2Service.run("ack-restored", "", value.transaction_id, popup);
-                else popup.fail();
+                else popup.fail(value);
             } else if (kind === "ack-restored") {
                 if (okay && value.status === "acknowledged" && value.choice === "restored") {
+                    popup.inProgress = false;
                     popup.restored = true;
+                    popup.visible = true;
                     closeSuccess.start();
                 } else popup.fail();
             } else if (kind === "ack-new") {
                 if (okay && value.status === "acknowledged") popup.visible = false;
-                else popup.fail();
+                else popup.fail(value);
             } else if (kind === "restore-status") {
                 popup.technicalDetails = okay ? Protocol.details(value) : "Rapport de restauration indisponible.";
             }
@@ -73,7 +167,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
     aboveWindows: true
-    focusable: true
+    focusable: visible && !awaitingUserFocus && !releasing && !inProgress && !restored
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "labfy-session-startup-v2"
     visible: false
@@ -82,6 +176,24 @@ PanelWindow {
         if (startupHost) SessionV2Service.startupChooserVisible = visible;
         interactionArmed = false;
         if (visible) arm.restart(); else arm.stop();
+    }
+    PanelWindow {
+        screen: popup.screen
+        visible: popup.inProgress
+        focusable: false
+        exclusionMode: ExclusionMode.Ignore
+        exclusiveZone: 0
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "labfy-session-progress-v2"
+        anchors { top: true }
+        implicitWidth: 340
+        implicitHeight: 54
+        color: Theme.popupBackground
+        Text {
+            anchors.centerIn: parent
+            text: "Restauration de la session en cours…"
+            color: Theme.foreground
+        }
     }
     FocusScope {
         id: modal
@@ -109,7 +221,7 @@ PanelWindow {
                 Text { text: "Session précédente"; color: Theme.foreground; font.pixelSize: 19; font.bold: true }
                 Text {
                     width: parent.width
-                    text: popup.failed ? "Impossible de restaurer complètement la session."
+                    text: popup.failed ? popup.failureMessage
                         : popup.restored ? "Session restaurée"
                         : popup.busy && popup.attempted ? "Restauration en cours…"
                         : popup.windowCount + " fenêtres • " + popup.workspaceCount + " espaces"
@@ -138,9 +250,9 @@ PanelWindow {
                         onClicked: popup.newSessionRequested()
                     }
                     ActionButton {
-                        visible: !popup.failed
-                        label: "Restaurer"
-                        enabled: popup.interactionArmed && !popup.busy && !popup.attempted
+                        visible: !popup.failed || popup.retryAllowed
+                        label: popup.retryAllowed ? "Réessayer" : "Restaurer"
+                        enabled: popup.interactionArmed && !popup.busy && (!popup.attempted || popup.retryAllowed)
                         onClicked: popup.restoreRequested()
                     }
                 }

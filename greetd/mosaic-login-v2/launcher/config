@@ -1,0 +1,63 @@
+# EXPERIMENTAL — essai matériel personnel court, une sortie, aucun autostart stable.
+# CONTRACT: no include; only this compositor creates/export its Wayland and IPC sockets.
+set $mod Mod4
+font pango:monospace 14
+output * disable
+output eDP-1 enable mode 3200x2000 scale 1.25 position 0 0
+output eDP-1 bg #20242b solid_color
+input type:keyboard {
+    xkb_layout fr
+    xkb_variant oss
+}
+input type:touchpad {
+    tap enabled
+    natural_scroll enabled
+    dwt enabled
+}
+input type:pointer accel_profile adaptive
+blur disable
+shadows disable
+shadows_on_csd disable
+animation_duration_ms 0
+corner_radius 0
+xwayland disable
+focus_follows_mouse no
+default_border pixel 2
+floating_modifier $mod normal
+bindsym $mod+Return exec /usr/bin/kitty --config NONE /usr/bin/zsh -f
+bindsym $mod+Left focus left
+bindsym $mod+Right focus right
+bindsym $mod+Up focus up
+bindsym $mod+Down focus down
+bindsym $mod+Alt+l layout toggle mosaic
+bindsym $mod+Ctrl+Left layout mosaic scroll -240
+bindsym $mod+Ctrl+Right layout mosaic scroll 240
+bindsym $mod+Shift+q kill
+# WHY: Sway exit is scoped to this running compositor; no global uwsm stop/pkill.
+bindsym $mod+Shift+e exit
+bindsym $mod+ampersand workspace number 1
+bindsym $mod+Shift+ampersand move container to workspace number 1
+bindsym $mod+eacute workspace number 2
+bindsym $mod+Shift+eacute move container to workspace number 2
+bindsym $mod+quotedbl workspace number 3
+bindsym $mod+Shift+quotedbl move container to workspace number 3
+bindsym $mod+apostrophe workspace number 4
+bindsym $mod+Shift+apostrophe move container to workspace number 4
+bindsym $mod+parenleft workspace number 5
+bindsym $mod+Shift+parenleft move container to workspace number 5
+bindsym $mod+minus workspace number 6
+bindsym $mod+Shift+minus move container to workspace number 6
+bindsym $mod+egrave workspace number 7
+bindsym $mod+Shift+egrave move container to workspace number 7
+bindsym $mod+underscore workspace number 8
+bindsym $mod+Shift+underscore move container to workspace number 8
+bindsym $mod+ccedilla workspace number 9
+bindsym $mod+Shift+ccedilla move container to workspace number 9
+bindsym $mod+agrave workspace number 10
+bindsym $mod+Shift+agrave move container to workspace number 10
+
+workspace 1
+# Finalize from Sway's exec environment after its own sockets exist; never import the stable socket.
+exec /usr/bin/uwsm finalize SWAYSOCK I3SOCK XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP
+# exec is once per compositor startup (not exec_always). zsh -f skips personal startup files.
+exec /usr/bin/kitty --config NONE --title Mosaic-recovery /usr/bin/zsh -f

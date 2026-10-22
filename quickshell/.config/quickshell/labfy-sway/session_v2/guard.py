@@ -18,6 +18,7 @@ import time
 from .errors import require
 from .ipc import Sway, until
 from .storage import atomic, read, loads
+from .recovery import resume_pending, Recovery, JOURNAL
 
 
 def helper_state(pid): return Path(f"/proc/{pid}/status").read_text().split("State:\t", 1)[1][0]
@@ -169,7 +170,6 @@ def run(config):
                 signal.pidfd_send_signal(config["engine_fd"], signal.SIGKILL)
                 until(lambda: bool(select.select([config["engine_fd"]], [], [], 0)[0]), 3)
                 break
-        require(resume(), "GUARD_RECOVERY_FAILED")
         def owned(n):
             signal.pidfd_send_signal(config["anchor_fd"], 0)
             return n.get("pid") == config["anchor_pid"] and n.get("app_id") in config["allowed"]
@@ -178,13 +178,26 @@ def run(config):
             if not owned(old): continue
             fresh = next((n for n in sway.windows() if n["id"] == old["id"]), None)
             if fresh and owned(fresh):
-                sway.command(f'[con_id={fresh["id"]}] kill')
+                journal = Path(config["report"]).parent / JOURNAL
+                if journal.exists():
+                    recovery = Recovery(sway, journal.parent)
+                    recovery.anchor_owned = owned
+                    recovery.command(f'[con_id={fresh["id"]}] kill')
+                else:
+                    sway.command(f'[con_id={fresh["id"]}] kill')
                 cleaned += 1
         until(lambda: not any(owned(n) for n in sway.windows()))
         os.write(config["writer_fd"], b"quit\n")
+        # WHY : autotiling repris peut restructurer le stage avant la reprise
+        # et rendre son appartenance ambiguë. Finir nos obligations de fenêtres
+        # pendant la suspension possédée, puis toujours reprendre les helpers.
+        report = read(config["report"])
+        if not normal or report["status"] == "failed":
+            resume_pending(sway, Path(config["report"]).parent)
+        require(resume(), "GUARD_RECOVERY_FAILED")
         if not normal:
             data = read(config["report"])
-            if data["status"] != "success":
+            if data["status"] == "running":
                 data.update(status="interrupted", phase="recovered", reason="EXECUTOR_INTERRUPTED")
             data.update(**counts)
             data["anchors_cleaned"] += cleaned
@@ -196,8 +209,11 @@ def run(config):
         try: signal.pidfd_send_signal(config["anchor_fd"], signal.SIGTERM)
         except ProcessLookupError: pass
         try:
+            resume_pending(sway, Path(config["report"]).parent)
             data = read(config["report"])
-            data.update(status="interrupted", phase="guard-error", reason="GUARD_RECOVERY_FAILED", **counts)
+            if data["status"] == "running":
+                data.update(status="interrupted", phase="guard-error", reason="GUARD_RECOVERY_FAILED")
+            data.update(**counts)
             atomic(config["report"], data)
             control.sendall(b'{"status":"failed"}')
         except (OSError, BrokenPipeError): pass

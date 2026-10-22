@@ -107,6 +107,10 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(cli(["show", "example"]), self.data)
                 self.assertTrue(cli(["plan", "example"])["operations"])
                 self.assertTrue(cli(["startup-status", "--execute", "--socket", "/mock"])["eligible"])
+                # Un claim seul n'est pas une décision durable : après restart,
+                # le chooser reste visible et ne restaure jamais automatiquement.
+                self.assertTrue(cli(["startup-status", "--socket", "/mock"])["interrupted"])
+                cli(["acknowledge-startup", "--execute", "--choice", "new", "--socket", "/mock"])
                 self.assertFalse(cli(["startup-status", "--socket", "/mock"])["eligible"])
                 self.assertEqual(cli(["delete", "example", "--execute"]), {"status": "deleted"})
 

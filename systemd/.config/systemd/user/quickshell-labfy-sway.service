@@ -5,7 +5,8 @@ After=wayland-session@sway.desktop.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/qs -c labfy-sway --no-color
+# Qt 6.12 popup reposition ownership fix; rebuild after Qt updates.
+ExecStart=%h/.local/bin/labfy-quickshell -c labfy-sway --no-color
 Restart=on-failure
 RestartSec=3s
 

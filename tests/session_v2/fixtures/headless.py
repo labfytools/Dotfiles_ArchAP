@@ -32,11 +32,20 @@ class Lab:
         self.children = []
         self.logs = []
         self.socket = None
-        self.env = dict(os.environ)
-        for key in ("SWAYSOCK", "I3SOCK", "DISPLAY", "WAYLAND_DISPLAY"):
-            self.env.pop(key, None)
+        # WHY : supprimer seulement les sockets laisse subsister un bus,
+        # XAUTHORITY ou une configuration GTK/Mozilla du bureau. CONTRACT :
+        # liste positive système ; aucun PATH/config/session utilisateur hérité.
+        self.env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+        # Aucun enfant (GTK, Qt, CLI) ne consulte les configurations/états réels.
+        for key, name in (("HOME", "home"), ("XDG_CONFIG_HOME", "config"),
+                          ("XDG_STATE_HOME", "state"), ("XDG_CACHE_HOME", "cache")):
+            target = self.directory / name
+            target.mkdir(mode=0o700)
+            self.env[key] = str(target)
+        # Outils TEST_ONLY sélectionnables sans remplacer le compositeur installé.
+        # Le backend reste imposé à headless ; aucun socket hérité n'est réutilisé.
         self.env.update(XDG_RUNTIME_DIR=str(self.directory), TMPDIR=str(self.directory), WLR_BACKENDS="headless",
-                        WLR_HEADLESS_OUTPUTS="1", WLR_RENDERER="gles2",
+                        WLR_HEADLESS_OUTPUTS="1", WLR_RENDERER=os.environ.get("LABFY_TEST_RENDERER", "gles2"),
                         WLR_RENDERER_ALLOW_SOFTWARE="1", LIBGL_ALWAYS_SOFTWARE="true")
 
     def start(self, argv):
@@ -49,7 +58,7 @@ class Lab:
 
     def __enter__(self):
         try:
-            self.sway = self.start(["sway", "-c", str(ROOT / "headless.conf")])
+            self.sway = self.start([os.environ.get("LABFY_TEST_SWAY", "sway"), "-c", str(ROOT / "headless.conf")])
             end = time.monotonic() + 15
             while time.monotonic() < end:
                 sockets = list(self.directory.glob("sway-ipc.*.sock"))

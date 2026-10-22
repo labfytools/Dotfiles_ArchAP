@@ -3,10 +3,11 @@ import argparse
 from dataclasses import asdict
 import json
 import os
+import stat
 from pathlib import Path
 import sys
 import uuid
-from .errors import Failure, require
+from .errors import Deferred, Failure, require
 from .storage import paths, read, atomic, lock, private_dir
 from .schema import validate
 from .checkpoint import Store
@@ -17,7 +18,24 @@ from .snapshot import capture
 from .layout import compile_plan
 from .executor import Executor
 from .observability import validate as validate_report
-from .startup import acknowledge
+from .startup import acknowledge, status as startup_status
+
+
+def readonly_runtime():
+    # WHY: paths()/Store create directories even for an idle diagnostic.
+    # CONTRACT: inspect only XDG runtime; absent terminals stay absent.
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", ""))
+    require(runtime.is_absolute() and ".." not in runtime.parts, "XDG_PATH_INVALID")
+    target = runtime / "labfy-sway"
+    for part in [*reversed(target.parents), target]:
+        try: info = part.lstat()
+        except FileNotFoundError: continue
+        require(stat.S_ISDIR(info.st_mode), "PATH_SYMLINK")
+        if part in (runtime, target):
+            require(info.st_uid == os.getuid() and info.st_mode & 0o077 == 0,
+                    "DIRECTORY_PERMISSIONS")
+    # INVARIANT: no mkdir, lock, state access, Store or IPC client here.
+    return target
 
 
 def migration(path):
@@ -38,7 +56,7 @@ def migration(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Backend de restauration de session V2")
-    parser.add_argument("command", choices=("capture", "save", "list", "show", "delete", "plan", "apply", "checkpoint-last", "startup-status", "acknowledge-startup", "apply-last", "restore-status", "analyze-v1-migration"))
+    parser.add_argument("command", choices=("capture", "save", "list", "show", "delete", "plan", "apply", "checkpoint-last", "startup-status", "acknowledge-startup", "apply-last", "restore-status", "recovery-status", "analyze-v1-migration"))
     parser.add_argument("name", nargs="?")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--stdout", action="store_true")
@@ -51,6 +69,10 @@ def main(argv=None):
     try:
         if args.command in ("capture", "save", "delete", "apply", "checkpoint-last", "apply-last", "acknowledge-startup"):
             require(args.execute, "EXECUTE_REQUIRED")
+        if args.command == "recovery-status":
+            from .recovery import recovery_status
+            print(json.dumps(recovery_status(readonly_runtime()), ensure_ascii=False))
+            return 0
         state, runtime = paths()
         store = Store(state)
         command = args.command
@@ -71,16 +93,7 @@ def main(argv=None):
             elif command == "startup-status":
                 try: last = store.last()
                 except FileNotFoundError: last = None
-                if last is None:
-                    result = {"eligible": False, "claimed": False}
-                else:
-                    marker = private_dir(runtime / "session-v2") / "startup.json"
-                    with lock(marker.parent):
-                        seen = read(marker) if marker.exists() else {}
-                        eligible = last["metadata"]["sway_session"] != sway.session and seen.get("session") != sway.session
-                        if args.execute and eligible: atomic(marker, {"session": sway.session})
-                    result = {"eligible": eligible, "claimed": bool(args.execute and eligible)}
-                    result.update(windows=len(last['window_slots']), workspaces=len(last['workspaces']))
+                result = startup_status(runtime, sway.session, last, args.execute)
             elif command in ("capture", "save", "checkpoint-last"):
                 with lock(private_dir(runtime / "session-v2")):
                     data = capture(sway, catalog, provider, args.reason if command == "checkpoint-last" else "manual")
@@ -93,7 +106,7 @@ def main(argv=None):
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except Failure as exc:
-        print(json.dumps({"status": "failed", "reason": exc.code}))
+        print(json.dumps({"status": "DEFERRED" if isinstance(exc, Deferred) or exc.code in ("RESTORE_FOCUS_UNAVAILABLE", "RESTORE_FOCUS_UNSTABLE") else "failed", "reason": exc.code}))
         return 2
     except (OSError, TypeError, ValueError):
         print(json.dumps({"status": "failed", "reason": "BACKEND_IO_OR_FORMAT_ERROR"}))

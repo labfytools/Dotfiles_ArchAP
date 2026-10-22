@@ -1,10 +1,20 @@
 # Session Restore V2
 
-La recette réelle du 7 octobre 2026 a réussi : logout, checkpoint V2, arrêt par
-UWSM, login, chooser unique et un clic **Restaurer**. Aucune interaction après
-ce clic ; arbre, focus final et identité Firefox exacte vérifiés. La validation
-visuelle utilisateur est PASS. Les preuves détaillées restent dans la branche
-locale de recherche ; elles ne sont pas distribuées dans ce dépôt.
+État de cette révision : **deux P0 de frontière prewarm/finalisation corrigés ;
+validation privée Sway 1.12/Pixman ; login physique non testé pour ce patch**.
+Le prewarm antérieur a été validé sur SwayFX 0.6 headless ; cette preuve
+historique ne valide pas automatiquement le présent delta. Lors du premier login
+du 17 octobre 2026, l’ancienne séquence a échoué avant le premier swap avec
+`FOCUS_RECOVERY_NOT_PROVEN` : les trois fenêtres ont été remises à leur place
+manuellement et l’incident archivé. La correction actuelle prépare les
+applications manquantes avant la transaction et restaure le focus final.
+Son efficacité lors d’un prochain login physique reste à vérifier.
+
+La recette réelle réussie du **7 octobre 2026** est une preuve historique de la
+révision d’alors : logout, checkpoint V2, arrêt UWSM, login, chooser unique,
+arbre, focus final et identité Firefox exacte vérifiés. Elle ne valide pas les
+changements de focus actuels ni le prochain login physique. Les preuves
+historiques restent dans la branche locale de recherche.
 
 ## Utilisation
 
@@ -14,9 +24,58 @@ et Éteindre sauvegardent avant leur action systemd. Un échec de checkpoint
 permet d’annuler ou de choisir explicitement de quitter sans sauvegarder.
 
 Au login suivant, le chooser propose Restaurer ou Nouvelle session. Un clic
-Restaurer lance la transaction jusqu’au résultat final, sans étape Firefox
-manuelle ni deuxième restauration. Le chooser est acquitté durablement ; un
-redémarrage QuickShell dans la même session ne le réaffiche pas.
+Restaurer retire sa surface et attend deux observations QML de ce retrait
+(délai maximal de 1,5 seconde). Sous le verrou Session V2, le backend refuse
+d’abord une récupération antérieure inachevée, puis **prépare les applications
+absentes via le catalogue**, avant de déplacer une fenêtre ou de publier un
+journal Recovery/Attempt. Limusic appartient exclusivement à l’autostart Sway :
+elle n’est jamais lancée par Session V2, et son absence bloque la transaction.
+
+Lorsque toutes les fenêtres attendues sont présentes, le backend vérifie les
+identités, emplacements et cardinalités, puis exige une preuve stable du focus
+Sway et de l’identité de session avant de reconstruire le layout. Un focus
+inconnu ou ambigu (`con_id=null, workspace=null`) reste refusé sans feuille
+inventée. Un focus explicitement situé sur un workspace, même sans feuille,
+est une observation valide, sans preuve de la provenance d’une activation
+ultérieure. Les changements de focus pendant la transaction restent refusés.
+
+Après `DEFERRED` pour absence de focus, le dialogue reste sans capture
+clavier : **activez vous-même une fenêtre ou un espace avec vos raccourcis Sway,
+puis cliquez Réessayer**. Si la préparation n’a pas ouvert une application,
+le dialogue conserve les fenêtres déjà lancées et propose également
+**Réessayer**, sans les lancer une deuxième fois.
+Le clic demande une nouvelle preuve ; il n’autorise pas un re-focus arbitraire.
+Aucun retry n’est automatique. **Nouvelle session** reste disponible. Si une
+autre surface exclusive conserve le clavier, il faut d’abord la libérer.
+Un retrait QML expiré permet également un retry explicite sans capture clavier.
+
+Le lot phase0 épingle les `con_id`, PID, `/proc` starttime, `app_id` et
+placements runtime. Après l’initialisation de Guard/Anchors et avant le premier
+move, le lot entier est relu. Chaque staging vérifie encore les membres et les
+placements attendus ; ses cibles viennent exclusivement du lot épinglé. Une
+fenêtre ajoutée ou remplacée après prewarm est refusée, y compris à `app_id` et
+cardinalité identiques. L’origine Recovery n’est jamais redécouverte par nom
+applicatif. Aucun lancement Limusic n’est ajouté.
+
+La vérification finale relit la structure **après** les appels au provider et
+**après** `guard.finish()`. Elle contrôle layout canonique, membership, sorties,
+flottement/géométrie flottante, focus verrouillé et identités runtime complètes
+de toutes les fenêtres gérées. Les UUID exacts du provider restent exigés.
+`Recovery.complete()` refuse identité ou placement divergents, ordre relatif
+modifié, focus pending/conflict et toute fenêtre pending. Executor lui fournit
+le contrôle structurel sur sa dernière observation avant publication. Une
+normalisation de parent unaire par Sway reste permise si placement, ordre et
+layout canonique sont conservés ; les ratios exacts restent hors contrat.
+Ces contrôles ne sont **pas un CAS** : ils ne garantissent rien contre une
+modification postérieure à la dernière observation du compositeur.
+
+Un succès exige le rapport final vérifié puis son acquittement durable. Après
+cet acquittement ou Nouvelle session, un redémarrage QuickShell dans la même
+session ne réaffiche pas le chooser. Un simple claim n’est pas un acquittement :
+après redémarrage, un état DEFERRED conserve son retry explicite, un backend
+encore verrouillé est observé sans relancement, et une interruption présente
+le diagnostic sans restauration automatique. Une intention IPC ambiguë reste
+`RECOVERY_REQUIRED` ; Réessayer ne contourne pas cette protection.
 
 Le gestionnaire de sessions permet sauvegarde, liste, aperçu structurel,
 suppression et restauration V2. L’aperçu ne modifie aucune fenêtre. Le backend
@@ -42,9 +101,18 @@ install -Dm755 build/session-v2/labfy-v2-anchor \
 Le build ne déploie ni extension ni préférence. Le helper compilé et les archives
 restent ignorés par Git. Déployer le package Stow `quickshell` selon le guide
 habituel, puis suivre [la documentation du companion Firefox](../firefox-extension/session-v2/README.md).
-L’extension signée déjà installée n’a pas besoin d’être réinstallée pour ce nettoyage.
+Pour la correction d’identité Firefox 1.1.1, les sources locales ne suffisent
+pas : une mise à jour XPI signée AMO unlisted puis une installation explicitement
+autorisée sont nécessaires. Voir le companion pour le protocole de lecture seule,
+l’auto-baseline uniquement après attestation native d’absence du checkpoint
+automatique V2 et de toute entrée de sauvegarde nommée dans `sessions`
+(échec fermé si contrôle inaccessible), les Ctrl+N automatiques après
+photographie initiale, les ambiguïtés isolées et le risque résiduel
+de restauration tardive indiscernable. Aucun timer ne constitue une preuve de
+nouveauté ni un CAS sessionstore. Les fenêtres ambiguës observées restent refusées.
+Ce delta n’a pas été validé au login physique et ne récupère pas un UUID déjà perdu.
 
-Versions de la recette : Firefox 157.0, SwayFX 0.6, QuickShell 0.3.1,
+Versions de la recette historique du 7 octobre : Firefox 157.0, SwayFX 0.6, QuickShell 0.3.1,
 autotiling 1.9.4, Python 3.14.7, Qt Declarative 6.11.2 et GTK3 3.24.52.
 
 ## Architecture et invariants
@@ -86,7 +154,10 @@ un ticket public. Ne jamais relancer un restore pour simplement lire son statut.
 Tests sur compositeur headless privé, sans logout ni accès au bureau utilisateur :
 
 ```sh
+python3 -B quickshell/.config/quickshell/labfy-sway/tests/focus/test_focus.py
+python3 -B quickshell/.config/quickshell/labfy-sway/tests/focus/test_qml.py
 python3 -B -m unittest discover -s tests/session_v2 -p 'test_*.py'
+python3 -B tests/session_v2/validate_login_focus.py
 python3 -B tests/session_v2/runtime.py
 python3 -B tests/session_v2/failures.py
 python3 -B tests/session_v2/crashes.py
@@ -104,6 +175,96 @@ compositeur et leurs enfants TEST_ONLY. Le build helper C17 utilise
 `-Wall -Wextra -Werror`. Les métadonnées QuickShell peuvent produire des
 avertissements qmllint ; le chargement réel et les scénarios Qt complètent
 le contrôle syntaxique, sans prétendre à zéro avertissement.
+
+Validation du 17 octobre dans la copie isolée : tests backend, focus et QML,
+35 scénarios runtime, erreurs contrôlées, interruptions/SIGKILL, sécurité,
+Limusic synthétique et scénarios QuickShell réels sur Wayland headless.
+Le cas `deferred-real` maintient une seconde surface QuickShell exclusive :
+focus Sway nul observé, refus sans journaux, aucun retry automatique, retrait
+explicite de la surface, activation de la fenêtre tierce par le contrôleur de
+test, puis demande Réessayer et succès. La fenêtre tierce retrouve son vrai
+focus ; Limusic synthétique reste unique. Les fonctions des boutons sont
+appelées par le harnais QML : ce n’est pas une recette de clic physique.
+
+Le test crash mid-command tue l’executor après mutation IPC réelle mais avant
+confirmation dans Recovery : l’intention durable reste pending et
+`RECOVERY_REQUIRED`, sans prétendre à une récupération prouvée. Les cas Limusic
+absente et dupliquée refusent sans lancement ni fermeture de Limusic. Le
+catalogue et les lignes Sway `assign [app_id="limusic-app"] workspace 10` et
+`exec limusic-app` restent inchangés.
+
+Dans le bac à sable Codex, `/dev/dri` était inaccessible : le SwayFX 0.6
+installé n’a pas pu initialiser son renderer GLES2. Cet échec initial ne vaut
+pas un test fonctionnel. La première validation a donc utilisé Sway 1.12,
+extrait du paquet local `sway-1:1.12-4-x86_64.pkg.tar.zst` dans `/tmp`, avec
+Pixman, QuickShell 0.3.2 et Qt 6.12.0, sans remplacer le compositeur installé.
+
+Après réintégration contrôlée, une deuxième validation a réussi directement
+sur l’hôte ArchASP avec **SwayFX 0.6 installé**, en backend headless privé et
+avec accès au renderer de l’hôte : 35 scénarios runtime, 3 erreurs contrôlées,
+10 scénarios de crash, 22 contrôles de sécurité, Limusic synthétique et
+7 scénarios UI QuickShell, dont `deferred-real`. Les tests backend (27),
+focus (18), QML (12) et `qmllint` passent également sur les sources réintégrées.
+Aucun essai n’a accédé au socket Sway de la session utilisateur.
+
+**Nouvelle validation après la correction prewarm (17 octobre 2026).**
+Une campagne sur le SwayFX 0.6 installé, mais sur un socket Wayland/Sway IPC
+headless privé, a réussi les tests de focus (28), backend et prewarm (34),
+QML Python (13), QtTest (5) et onze scénarios composés. Le cas nominal exécute
+le véritable chemin de lancement Python `Popen` avec des applications GTK
+**synthétiques** : Limusic préexiste sur 10, Kitty et Firefox arrivent sur 1
+avant toute mutation du layout ; trois swaps, trois slots, arborescence
+vérifiée, stage vide et focus final sur Firefox/1. Sont également vérifiés :
+lancement Firefox en échec puis retry sans deuxième Kitty, focus tiers
+préservé, mappings concurrents refusés et intentions IPC ambiguës conservées.
+
+Sur le même SwayFX headless privé, les suites runtime (35 scénarios), erreurs
+contrôlées (3), crash/SIGKILL (10), sécurité (22), propriété Limusic et les
+sept scénarios de QuickShell passent. Les sources de production validées dans
+la copie de test sont identiques octet pour octet à la version retenue pour
+cette intégration. Les tests ne lancent jamais le vrai Firefox, Kitty ou
+Limusic du bureau : le **prochain login réel reste non validé**, y compris
+l’intégration de l’extension Firefox avec son profil habituel. Voir aussi
+[l’investigation du premier échec](session-v2-login-focus-investigation.md).
+
+Les fixtures acceptent `LABFY_TEST_SWAY=/chemin/absolu/vers/sway` et
+`LABFY_TEST_RENDERER=pixman` pour une exécution sans renderer GLES2 ;
+pour Qt headless utiliser `QT_QPA_PLATFORM=wayland` et
+`QT_QUICK_BACKEND=software`. Elles imposent un backend headless,
+un socket privé et HOME/XDG temporaires. Le répertoire de preuves, s’il est
+précréé, doit avoir le mode 0700 (les JSON sont privés).
+
+Ces résultats prouvent les chemins testés sur ce compositeur headless. Ils ne
+prouvent ni le retour du focus avec tous les périphériques du bureau, ni le
+comportement du prochain login SwayFX/UWSM réel. Cette validation reste à faire
+séparément après réintégration contrôlée.
+
+La campagne des corrections P0, ses résultats, les refus initiaux et les
+commandes de reprise sur hôte sont détaillés dans
+[la validation prewarm privée](session-v2-prewarm-private-validation.md).
+Le refus DRM du SwayFX installé dans le bac à sable n’est pas un PASS SwayFX.
+
+## Correction des chemins post-Guard du premier login
+
+Le dernier login réel fourni au diagnostic a encore refusé après intégration
+P0 : `TARGET_OBSERVATION_CHANGED`, zéro déplacement, zéro swap. Les journaux
+réels restent préservés ; ils n’ont pas été recherchés ni modifiés ici.
+Les chemins exacts PREWARM n’étant pas archivés, l’insertion de parents unaires
+par Sway/autotiling est une hypothèse forte, pas une cause historique prouvée.
+
+La contradiction démontrée est corrigée : après Guard, le lot courant déjà
+comparé à la phase 0 devient l’observation canonique passée aux admissions.
+Recovery conserve ses relectures strictes ; identité, placement, ordre et
+preuve de focus ne sont pas élargis. Les chemins actualisés par les commandes
+possédées sont acceptés après provider ; un changement externe pendant cette
+attente reste refusé. Les protections P0 restent en place.
+
+La campagne privée Sway 1.12/Pixman passe : 43 tests backend, suites précédentes
+complètes, quatre succès de quatre slots avec parents unaires (dont un avec
+autotiling enfant) et un refus post-provider ciblé. Le SwayFX/GLES2 du sandbox
+échoue au démarrage faute de DRM. **Cette correction ne valide pas le login
+graphique physique**, ni les applications Firefox/Kitty/Limusic réelles.
+Voir le [diagnostic ciblé, les preuves et la commande hôte](session-v2-path-stability-diagnostic.md).
 
 ## Limites conservées
 

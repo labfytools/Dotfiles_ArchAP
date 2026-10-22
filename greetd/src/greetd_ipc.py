@@ -3,9 +3,21 @@ import json
 import os
 import socket
 import struct
+from types import MappingProxyType
 
 MAX_FRAME = 65536
-SESSION_COMMAND = ["/usr/bin/uwsm", "start", "default"]
+# CONTRACT: identifiants internes stricts ; aucun chemin ou argv fourni par le client.
+# INVARIANT: les tuples et leur table sont immuables ; seule une copie part au JSON.
+SESSION_COMMANDS = MappingProxyType({
+    "stable": ("/usr/bin/uwsm", "start", "sway.desktop"),
+    "mosaic": ("/usr/bin/uwsm", "start", "swayfx-mosaic-test.desktop"),
+})
+
+
+def session_command(selection="stable"):
+    if type(selection) is not str or selection not in SESSION_COMMANDS:
+        raise ValueError("Choix de session invalide")
+    return SESSION_COMMANDS[selection]
 
 
 class ProtocolError(Exception):
@@ -79,6 +91,7 @@ class Client:
     def cancel(self):
         return self.request({"type": "cancel_session"})
 
-    def start(self):
-        # INVARIANT: la commande authentifiée est fixe et exécutée par greetd, jamais ici.
-        return self.request({"type": "start_session", "cmd": SESSION_COMMAND, "env": []})
+    def start(self, selection="stable"):
+        # WHY: seul greetd, après PAM, exécute cet argv ; aucun shell ni spawn local.
+        command = session_command(selection)
+        return self.request({"type": "start_session", "cmd": list(command), "env": []})

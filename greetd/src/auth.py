@@ -1,5 +1,5 @@
 """Machine PAM indépendante de GTK pour préserver les invites multiples."""
-from greetd_ipc import Client, ProtocolError
+from greetd_ipc import Client, ProtocolError, session_command
 
 
 class AuthFlow:
@@ -9,14 +9,23 @@ class AuthFlow:
         self.username = None
         self.pending = None
         self.authenticated = False
+        self.selection = None
 
-    def begin(self, username):
-        if not username or len(username) > 256 or any(ord(c) < 32 for c in username):
-            raise ValueError("Nom utilisateur invalide")
+    def begin(self, username, selection="stable"):
         self.reset()
+        session_command(selection)
+        if type(username) is not str or not username or len(username) > 256 or any(ord(c) < 32 for c in username):
+            raise ValueError("Nom utilisateur invalide")
+        # CONTRACT: compte et choix sont figés pour toute cette conversation PAM.
+        # Le thread GTK ne les modifie pas ; un nouveau begin annule l'ancien état.
         self.username = username
-        self.client = Client(self.socket_path)
-        return self._accept(self.client.create(username))
+        self.selection = selection
+        try:
+            self.client = Client(self.socket_path)
+            return self._accept(self.client.create(username))
+        except (OSError, ProtocolError):
+            self.reset()
+            raise
 
     def answer(self, value=None):
         if self.pending is None or self.client is None:
@@ -27,7 +36,11 @@ class AuthFlow:
         if kind in ("info", "error"):
             value = None
         self.pending = None
-        return self._accept(self.client.answer(value))
+        try:
+            return self._accept(self.client.answer(value))
+        except (OSError, ProtocolError):
+            self.reset()
+            raise
 
     def _accept(self, reply):
         self.pending = None
@@ -42,10 +55,20 @@ class AuthFlow:
     def start(self):
         if not self.authenticated or self.client is None:
             raise ProtocolError("Session non authentifiée")
-        reply = self.client.start()
+        # INVARIANT: un seul start par authentification, succès ou refus ; aucun repli.
+        self.authenticated = False
+        try:
+            reply = self.client.start(self.selection)
+        except (OSError, ProtocolError):
+            self.reset()
+            raise
         if reply["type"] == "success":
             self.client.close()
             self.client = None
+            self.username = None
+            self.selection = None
+        else:
+            self.reset()
         return reply
 
     def reset(self):
@@ -56,5 +79,7 @@ class AuthFlow:
                 pass
             self.client.close()
         self.client = None
+        self.username = None
+        self.selection = None
         self.pending = None
         self.authenticated = False

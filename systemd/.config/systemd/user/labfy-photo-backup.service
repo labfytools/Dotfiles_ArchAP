@@ -1,0 +1,12 @@
+[Unit]
+Description=Sauvegarder et vérifier la photothèque sur le SSD PHOTO_BAK
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-inhibit --what=sleep --mode=block --who="Sauvegarde photos" --why="Copie et vérification du SSD" --no-ask-password %h/.local/bin/labfy-photo-backup run
+TimeoutStartSec=infinity
+TimeoutStopSec=20
+KillMode=control-group
+Nice=10
+IOSchedulingClass=idle
+UMask=0077

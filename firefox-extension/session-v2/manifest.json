@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Labfy — Identité des fenêtres",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Identité locale des fenêtres pour restaurer leur disposition Sway.",
   "browser_specific_settings": {
     "gecko": {"id": "session-v2@labfy.org", "strict_min_version": "157.0", "data_collection_permissions": {"required": ["none"]}}

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# WHY: Qt 6.12 and Quickshell 0.3.2 must share one popup reposition owner.
+# CONTRACT: build against installed Qt private headers; never replace /usr files.
+# Re-run after each Qt update. Only these pinned upstream archives are used.
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+work_dir="${XDG_CACHE_HOME:-$HOME/.cache}/labfy-quickshell-popup"
+prefix_dir="$HOME/.local/opt/quickshell-qt612-popup"
+qt_version=$(pkg-config --modversion Qt6Core)
+case "$qt_version" in
+    6.12.*) ;;
+    *) echo "This patch is validated for Qt 6.12.x; found $qt_version" >&2; exit 1 ;;
+esac
+mkdir -p "$work_dir"
+fetch() {
+    local url=$1 archive=$2 digest=$3
+    if [[ ! -f "$archive" ]]; then curl --fail --location "$url" --output "$archive"; fi
+    printf '%s  %s\n' "$digest" "$archive" | sha256sum --check --status
+}
+fetch 'https://github.com/quickshell-mirror/quickshell/archive/refs/tags/v0.3.2.tar.gz' \
+    "$work_dir/quickshell.tar.gz" '946a27e2a276917a03c1079e5c60971af84ece73088c3661dee455d92eb420f7'
+fetch 'https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.5.0.tar.gz' \
+    "$work_dir/cli11.tar.gz" '17e02b4cddc2fa348e5dbdbb582c59a3486fa2b2433e70a0c3bacb871334fd55'
+# Extract to a fresh directory: applying the patch twice is never implicit.
+source_dir=$(mktemp -d "$work_dir/source.XXXXXX")
+# This directory is owned exclusively by this invocation, including on failure.
+trap 'rm -rf -- "$source_dir"' EXIT
+tar -xzf "$work_dir/quickshell.tar.gz" -C "$source_dir"
+tar -xzf "$work_dir/cli11.tar.gz" -C "$source_dir"
+patch --batch --forward -d "$source_dir/quickshell-0.3.2" -p1 < "$repo_dir/tools/quickshell/qt612-popup-owner.patch"
+cmake -S "$source_dir/CLI11-2.5.0" -B "$source_dir/cli-build" -G Ninja \
+    -DCLI11_BUILD_TESTS=OFF -DCLI11_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="$source_dir/deps"
+cmake --install "$source_dir/cli-build"
+cmake -S "$source_dir/quickshell-0.3.2" -B "$source_dir/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$source_dir/deps" \
+    -DDISTRIBUTOR=labfy-local-qt612-popup-fix -DCMAKE_INSTALL_PREFIX="$prefix_dir"
+# INVARIANT: bounded compilation parallelism on the interactive desktop.
+cmake --build "$source_dir/build" --parallel 2
+cmake --install "$source_dir/build"
+printf '%s\n' "$qt_version" > "$prefix_dir/qt-build-version"
+printf 'Installed %s (Qt %s). Restart the shell service to activate.\n' "$prefix_dir" "$qt_version"

@@ -1,0 +1,21 @@
+{
+  "status": "EXPERIMENTAL_V2_PREPARED_PHYSICAL_NOT_RUN",
+  "lab_temporary": "/var/tmp/swayfx-mosaic-session-mvp-id6h_707",
+  "binary_sha256": "91f48aae2675331e0a2c60ec2fedf983745c521c75232c704a6516a4140801fb",
+  "wlroots_sha256": "7edca9a7d65855addda68e29ba5db94d57c803eb5fa7d0f86db3136b90ca9837",
+  "files": {
+    "/home/fy59/.config/swayfx-mosaic-test/config": "bbbf5bfb9d6ab285938e66b1cef79c5866f4d75ea7288404ed28f845c469825d",
+    "/home/fy59/.config/swayfx-mosaic-test/session.py": "eed6802eeed2dc35a17a944f2bfa009d693e0ab9e93a9612824b304852e4219a",
+    "/home/fy59/.config/swayfx-mosaic-test/swayfx-mosaic-test-session": "e0fac861c2af5b7ee6dcd4df1ede3fc3f991a53081bcadbd800a458471349c2d",
+    "/home/fy59/.config/swayfx-mosaic-test/swayfx-mosaic-test-arm": "0a23fda0b118b222e7e7392e41e628f26227a41c535f87cb4289034eac0cece3",
+    "/home/fy59/.config/swayfx-mosaic-test/swayfx-mosaic-test-stable": "c626ee1958c93eca9bd21f51ffb5bd0c35fba177e27d32e47ae081bdcb4a46aa",
+    "/home/fy59/.config/swayfx-mosaic-test/swayfx-mosaic-test-check": "caf14b97d7fa9cc078883b433a3e8f46d0f60f3a5d28800efbdebc855ce7a1e7",
+    "/home/fy59/.local/share/systemd/user/wayland-session@swayfx\\x2dmosaic\\x2dtest.desktop.target.d/20-mosaic-smoke.conf": "1b206dfb9acb113adc9e878e5cac5ed09ab2519533d12eefa0837e8f8ca58dbc",
+    "/home/fy59/.local/share/systemd/user/wayland-wm@swayfx\\x2dmosaic\\x2dtest.desktop.service.d/20-mosaic-smoke.conf": "fc7b2b8cf03bd067e6f4d1604c766b89bc16a282f0c8823aa30c2342fe56ff78",
+    "/home/fy59/.local/share/wayland-sessions/swayfx-mosaic-test.desktop": "3c78ed22a25a2a2bdd9bfab765ea5a65548554b1690e3813632e2f6cda0df1cd",
+    "/home/fy59/.config/swayfx-mosaic-test/inspect-session.py": "4af671fb9815e09a7df7e034b55613d404409caad910e7364712d212fbe70d13",
+    "/home/fy59/.config/swayfx-mosaic-test/quickshell-guard.py": "9f7803e510e71d504bed23cd93fd34033442b630c37b5801571cf98032256ba0",
+    "/home/fy59/.dotfiles/systemd/.config/systemd/user/quickshell-labfy-mosaic.service": "1f3e0ef36df9f3f31b73e4f868c92b9b61732acd40af1cc140ea2897c59d0ce3",
+    "/home/fy59/.dotfiles/quickshell/.config/quickshell/labfy-sway/sessionui/SessionV2Service.qml": "420577f8b9767f799e752c0050a0384163fa54e054a0643c72b2242e1e7f0aff"
+  }
+}

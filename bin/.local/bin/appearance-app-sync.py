@@ -142,6 +142,62 @@ def qt_adapter(state, colors):
     return {'status': 'ok', 'flavor': state['effectiveFlavor'], 'live': 'new-window'}
 
 
+
+def digikam_palette(state, p):
+    # digiKam remplace la palette qt6ct : fournir son format natif depuis
+    # la même source Catppuccin. Le nom reste stable entre clair et sombre.
+    accent = p[state['effectiveAccent']]
+    selection_text = p['crust'] if state['effectiveDark'] else '#000000'
+    lines = ['# Généré par appearance-app-sync.py ; ne pas éditer.',
+             '[General]', 'Name=Labfy Appearance', '',
+             '[ColorEffects:Inactive]', 'Enable=false', '',
+             '[ColorEffects:Disabled]', 'Enable=true', 'ColorEffect=0',
+             'ContrastEffect=1', 'ContrastAmount=0.55', 'IntensityEffect=0', '']
+    groups = {
+        'View': (p['base'], p['mantle'], p['text']),
+        'Window': (p['mantle'], p['base'], p['text']),
+        'Button': (p['surface1'], p['surface0'], p['text']),
+        'Selection': (accent, accent, selection_text),
+        'Tooltip': (p['crust'], p['mantle'], p['text']),
+        'Complementary': (p['mantle'], p['base'], p['text']),
+        'Header': (p['mantle'], p['base'], p['text']),
+    }
+    for name, (background, alternate, foreground) in groups.items():
+        selected = name == 'Selection'
+        roles = {
+            'BackgroundNormal': background, 'BackgroundAlternate': alternate,
+            'ForegroundNormal': foreground,
+            'ForegroundInactive': foreground if selected else p['subtext0'],
+            'ForegroundActive': foreground if selected else accent,
+            'ForegroundLink': foreground if selected else p['blue'],
+            'ForegroundVisited': foreground if selected else p['mauve'],
+            'ForegroundNegative': foreground if selected else p['red'],
+            'ForegroundNeutral': foreground if selected else p['yellow'],
+            'ForegroundPositive': foreground if selected else p['green'],
+            'DecorationFocus': accent, 'DecorationHover': accent,
+        }
+        lines.append('[Colors:' + name + ']')
+        for key, value in roles.items():
+            rgb = ','.join(str(int(value[i:i + 2], 16)) for i in (1, 3, 5))
+            lines.append(key + '=' + rgb)
+        lines.append('')
+    return ('\n'.join(lines) + '\n').encode()
+
+
+def digikam_adapter(state, colors):
+    if not (CONFIG / 'digikamrc').is_file():
+        return {'status': 'unsupported', 'reason': 'digiKam non configuré'}
+    data = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share'))
+    target = data / 'digikam/colorschemes/LabfyAppearance.colors'
+    content = digikam_palette(state, colors[state['effectiveFlavor']])
+    if not target.is_file() or target.read_bytes() != content:
+        atomic_write(target, content)
+    # Le gestionnaire interne met le fichier en cache : relancer digiKam
+    # après un changement Appearance pour charger la nouvelle palette.
+    return {'status': 'ok', 'flavor': state['effectiveFlavor'],
+            'accent': state['effectiveAccent'], 'live': 'restart'}
+
+
 def kitty_theme(p, accent, opaque):
     def line(key, value):
         return key + ' ' + value
@@ -227,7 +283,8 @@ def firefox_adapter(state, colors):
 
 
 ADAPTERS = {'gtk': gtk_adapter, 'qt': qt_adapter, 'kitty': kitty_adapter,
-            'nvim': nvim_adapter, 'firefox': firefox_adapter}
+            'nvim': nvim_adapter, 'firefox': firefox_adapter,
+            'digikam': digikam_adapter}
 
 
 def reconcile(state_path=STATE, result_path=RESULT, palette_path=PALETTE):

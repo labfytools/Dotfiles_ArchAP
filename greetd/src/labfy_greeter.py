@@ -36,7 +36,8 @@ class Greeter(Gtk.Application):
 
     def activate(self, *_):
         provider = Gtk.CssProvider()
-        provider.load_from_path(str(CSS))
+        stylesheet = Path(__file__).resolve().parent.parent / "style/labfy-greeter.css" if self.preview else CSS
+        provider.load_from_path(str(stylesheet))
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.window = Gtk.ApplicationWindow(application=self, title="Labfy Greeter")
         self.window.set_default_size(1200, 760)
@@ -75,7 +76,7 @@ class Greeter(Gtk.Application):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         card.add_css_class("login-card")
         card.set_halign(Gtk.Align.CENTER)
-        card.set_size_request(410, -1)
+        card.set_size_request(510, -1)
         middle.append(card)
         self.avatar_picture = Gtk.Picture()
         self.avatar_picture.set_size_request(68, 68)
@@ -98,6 +99,18 @@ class Greeter(Gtk.Application):
         self.manual.connect("changed", lambda *_: self.refresh_avatar(self.manual.get_text().strip()))
         self.manual.set_visible(False)
         card.append(self.manual)
+        session_label = Gtk.Label(label="_Session", use_underline=True)
+        session_label.set_xalign(0)
+        session_label.add_css_class("secondary")
+        card.append(session_label)
+        self.session_selector = Gtk.DropDown.new_from_strings([
+            "SwayFX — Stable", "SwayFX Mosaic — Expérimental"])
+        self.session_selector.add_css_class("session-selector")
+        self.session_selector.set_tooltip_text(
+            "Session de cette connexion · Stable par défaut · Mosaic : essai non qualifié")
+        session_label.set_mnemonic_widget(self.session_selector)
+        self.session_selector.connect("notify::selected", self.session_changed)
+        card.append(self.session_selector)
         self.prompt = Gtk.Label(label="Mot de passe")
         self.prompt.set_xalign(0)
         self.prompt.add_css_class("secondary")
@@ -228,27 +241,45 @@ class Greeter(Gtk.Application):
         return False
 
     def user_changed(self, *_):
+        if self.busy:
+            return
         other = self.selector.get_selected() == self.selector.get_model().get_n_items() - 1
         self.manual.set_visible(other)
         if other:
             self.manual.grab_focus()
         self.refresh_avatar(self.username() if not self.preview else "")
         if not self.preview and self.flow:
-            self.flow.reset()
+            self.start_called = False
             self.entry.set_text("")
             self.entry.set_visibility(False)
             self.entry.set_sensitive(False)
             self.button.set_label("Continuer" if other else "Connexion")
             self.prompt.set_text("Saisissez le nom utilisateur" if other else "Chargement de l’authentification…")
             self.error.set_text("")
-            if self.selection_ready and not other:
-                self.begin_selected_user()
+            if self.selection_ready:
+                if other:
+                    self.perform(self.reset_attempt)
+                else:
+                    self.begin_selected_user()
+
+    def session_choice(self):
+        # CONTRACT: tout index inattendu revient au choix de secours Stable.
+        return "mosaic" if self.session_selector.get_selected() == 1 else "stable"
+
+    def session_changed(self, *_):
+        # WHY: une sélection entre deux invites ne réutilise jamais le PAM précédent.
+        if not self.preview and not self.busy:
+            self.user_changed()
+
+    def reset_attempt(self):
+        self.flow.reset()
+        return {"type": "reset"}
 
     def begin_selected_user(self):
         if not self.preview and not self.busy and self.username() and self.selector.get_selected() != self.selector.get_model().get_n_items() - 1:
             self.current_user = self.username()
             self.prompt.set_text("Chargement de l’authentification…")
-            self.perform(self.flow.begin, self.current_user)
+            self.perform(self.flow.begin, self.current_user, self.session_choice())
         return False
 
     def username(self):
@@ -274,7 +305,8 @@ class Greeter(Gtk.Application):
     def submit(self):
         if self.preview or self.busy:
             return
-        if self.flow.pending:
+        # Le nom manuel peut changer entre les invites ; begin annule l'ancien PAM.
+        if self.flow.pending and self.flow.username == self.username() and self.flow.selection == self.session_choice():
             kind = self.flow.pending["auth_message_type"]
             response = self.entry.get_text() if kind in ("secret", "visible") else None
             self.entry.set_text("")
@@ -285,13 +317,20 @@ class Greeter(Gtk.Application):
                 self.error.set_text("Saisissez un nom utilisateur.")
                 return
             self.current_user = username
-            self.perform(self.flow.begin, username)
+            # WHY: un nom manuel modifié ne transporte pas la réponse précédente.
+            self.entry.set_text("")
+            self.perform(self.flow.begin, username, self.session_choice())
 
     def perform(self, func, *args):
+        if self.preview or self.busy:
+            return
+        # INVARIANT: un seul worker possède AuthFlow ; contrôles gelés jusqu'au retour.
         self.busy = True
         self.button.set_sensitive(False)
         self.entry.set_sensitive(False)
         self.selector.set_sensitive(False)
+        self.session_selector.set_sensitive(False)
+        self.manual.set_sensitive(False)
         def run():
             try:
                 result = func(*args)
@@ -304,6 +343,8 @@ class Greeter(Gtk.Application):
     def handle_reply(self, reply):
         self.busy = False
         self.selector.set_sensitive(True)
+        self.session_selector.set_sensitive(True)
+        self.manual.set_sensitive(True)
         if reply["type"] == "auth_message":
             kind = reply["auth_message_type"]
             self.prompt.set_text(reply["auth_message"])
@@ -326,8 +367,9 @@ class Greeter(Gtk.Application):
             self.perform(self.flow.start)
             return False
         elif reply["type"] == "error":
+            launch_failed = self.start_called
             self.start_called = False
-            self.error.set_text("Authentification refusée. Réessayez." if reply["error_type"] == "auth_error" else "Erreur de connexion. Réessayez.")
+            self.error.set_text("Lancement de la session refusé. Choisissez une session puis réessayez." if launch_failed else "Authentification refusée. Réessayez." if reply["error_type"] == "auth_error" else "Erreur de connexion. Réessayez.")
             self.entry.set_text("")
             self.entry.set_visible(True)
             self.entry.set_sensitive(False)
@@ -338,6 +380,8 @@ class Greeter(Gtk.Application):
     def handle_failure(self):
         self.busy = False
         self.selector.set_sensitive(True)
+        self.session_selector.set_sensitive(True)
+        self.manual.set_sensitive(True)
         self.flow.reset()
         self.start_called = False
         self.entry.set_text("")

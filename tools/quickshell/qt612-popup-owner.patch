@@ -1,0 +1,28 @@
+--- a/src/wayland/popupanchor.cpp
++++ b/src/wayland/popupanchor.cpp
+@@ -3,6 +3,7 @@
+ #include <private/qhighdpiscaling_p.h>
+ #include <private/qwayland-xdg-shell.h>
+ #include <private/qwaylandwindow_p.h>
++#include <private/qwaylandshellsurface_p.h>
+ #include <private/wayland-xdg-shell-client-protocol.h>
+ #include <qvariant.h>
+ #include <qwindow.h>
+@@ -29,6 +30,17 @@
+ 	anchor->markClean();
+ 
+ 	if (popupRole) {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 12, 0)
++		// WHY: Qt tracks popup reposition tokens and suppresses rendering until
++		// its token is acknowledged. A second raw request with token 0 can
++		// supersede Qt's request and leave the surface permanently unexposed.
++		// CONTRACT: Qt owns the entire reposition/acknowledgement lifecycle.
++		// Keep Quickshell's anchor properties, then request placement through
++		// the Qt shell surface so size and anchor changes use the same owner.
++		WaylandPopupPositioner::setFlags(anchor, window);
++		waylandWindow->shellSurface()->setWindowGeometry(waylandWindow->geometry());
++		return;
++#endif
+ 		auto* xdgWmBase = XdgWmBase::instance();
+ 
+ 		if (xdgWmBase->QtWayland::xdg_wm_base::version() < XDG_POPUP_REPOSITION_SINCE_VERSION) {

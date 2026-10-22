@@ -213,10 +213,11 @@ bindsym $mod+Alt+i exec ~/.local/bin/vmware-on-demand
 bindsym $mod+Alt+f exec firefox
 bindsym $mod+Alt+a exec AppFlowy
 bindsym $mod+Alt+g exec gimp
+bindsym Mod1+m exec ~/.config/sway/scripts/applications-quickshell
 bindsym $mod+Alt+m exec limusic-app
 bindsym $mod+Alt+b exec blueman-manager
 bindsym $mod+Alt+o exec /home/fy59/.local/bin/labfy-lock
-bindsym $mod+Alt+l exec ~/.config/sway/scripts/applications-quickshell
+bindsym $mod+Alt+l exec ~/.local/bin/labfy-layout-toggle
 bindsym $mod+Alt+p exec proton-pass
 bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton
 bindsym $mod+Alt+y exec kitty -- sh -c "yazi" 
