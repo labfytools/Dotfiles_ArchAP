@@ -26,3 +26,13 @@ layer_effects "labfy-sway-bar" {
     shadows enable
     corner_radius 4
 }
+
+# CONTRACT: only the dock's layer surface receives blur; no window rule or
+# focus/restore policy is changed. Its transparent input strip stays clear.
+layer_effects "labfy-sway-dock" {
+    blur $bar_blur
+    blur_xray disable
+    blur_ignore_transparent enable
+    shadows disable
+    corner_radius 25
+}

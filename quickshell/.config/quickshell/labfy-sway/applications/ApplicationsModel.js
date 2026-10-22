@@ -31,7 +31,8 @@ function catalog(entries) {
         .map(entry => ({ id: entry.id.endsWith(".desktop") ? entry.id : entry.id + ".desktop",
             name: entry.name || entry.id,
             genericName: entry.genericName || "", keywords: entry.keywords || [],
-            icon: entry.icon || "", category: classify(entry) }))
+            icon: entry.icon || "", iconSource: entry.iconSource || "",
+            aliases: entry.aliases || [], newInstance: !!entry.newInstance, category: classify(entry) }))
         .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }) || a.id.localeCompare(b.id));
 }
 

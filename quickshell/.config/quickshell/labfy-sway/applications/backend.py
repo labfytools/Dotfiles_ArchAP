@@ -57,18 +57,31 @@ def write_favorites(path, action, ids):
     directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
         fcntl.flock(directory, fcntl.LOCK_EX)
+        if (action in ("add", "remove", "toggle") and (len(ids) != 1 or not valid_id(ids[0]))) or (
+                action == "move" and (len(ids) != 2 or not valid_id(ids[0])
+                                      or (ids[1] and not valid_id(ids[1])))):
+            raise ValueError("Identifiant de favori invalide")
         exists, current = read_favorites(path)
         if action == "seed":
             if exists:
                 return current
             current = list(dict.fromkeys(ids))[:MAX_FAVORITES]
-        elif action == "add":
+        elif action == "add" or (action == "toggle" and ids[0] not in current):
             if ids[0] not in current:
                 if len(current) >= MAX_FAVORITES:
                     raise ValueError("Trop de favoris")
                 current.append(ids[0])
-        elif action == "remove":
+        elif action in ("remove", "toggle"):
             current = [item for item in current if item != ids[0]]
+        elif action == "move":
+            # CONTRACT: move one existing ID before a live anchor (or to the
+            # end). Never replace a client's stale whole list: concurrent adds
+            # and removes survive. A vanished source/anchor rejects atomically.
+            if len(ids) != 2 or ids[0] not in current or (ids[1] and ids[1] not in current):
+                raise ValueError("Favori déplacé ou cible indisponible")
+            if ids[0] != ids[1]:
+                current.remove(ids[0])
+                current.insert(current.index(ids[1]) if ids[1] else len(current), ids[0])
         else:
             raise ValueError("Action de favoris invalide")
         if any(not valid_id(item) for item in current):
@@ -155,10 +168,22 @@ def main(argv):
             if len(ids) > 4 or any(not valid_id(item) for item in ids):
                 raise ValueError("Favoris initiaux invalides")
             result = {"ids": write_favorites(state_path(), "seed", ids)}
-        elif len(argv) == 3 and argv[:2] in (["favorites", "add"], ["favorites", "remove"]):
+        elif len(argv) == 3 and argv[:2] in (["favorites", "add"], ["favorites", "remove"], ["favorites", "toggle"]):
             if not valid_id(argv[2]):
                 raise ValueError("Identifiant de favori invalide")
             result = {"ids": write_favorites(state_path(), argv[1], [argv[2]])}
+        elif len(argv) == 4 and argv[:2] == ["favorites", "move"]:
+            result = {"ids": write_favorites(state_path(), "move", argv[2:])}
+        elif argv == ["serve"]:
+            from shared import serve
+            return serve()
+        elif argv == ["windows"]:
+            from shared import windows, sway_request
+            result = {"windows": windows(sway_request(4, ""))}
+        elif len(argv) == 2 and argv[0] == "focus":
+            from shared import focus
+            focus(argv[1])
+            result = {"ok": True}
         elif len(argv) == 2 and argv[0] == "launch":
             launch(argv[1])
             result = {"ok": True}
@@ -166,7 +191,7 @@ def main(argv):
             raise ValueError("Commande invalide")
         print(json.dumps(result, ensure_ascii=False))
         return 0
-    except (OSError, ValueError, GLib.Error, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+    except (OSError, ValueError, KeyError, GLib.Error, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False))
         return 1
 

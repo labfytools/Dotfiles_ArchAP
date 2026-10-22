@@ -10,6 +10,8 @@ import "theme"
 import "polkit"
 import "scratchpad"
 import "osd"
+import "applications"
+import "dock"
 
 ShellRoot {
     id: shell
@@ -241,6 +243,12 @@ ShellRoot {
         function publishNightLight(payload: string): bool {
             return AppearanceController.acceptPublishedNightLight(payload);
         }
+    }
+    // CONTRACT: shell-owned singleton remains alive while the menu is closed.
+    readonly property bool applicationsReady: FavoritesService.ready
+    Variants {
+        model: Quickshell.screens
+        Dock { suppressed: shell.authenticationActive || shell.applicationsOutput !== "" }
     }
     // Une barre par écran, y compris si les sorties changent pendant la session.
     // CONTRACT: un seul serveur D-Bus pour toutes les sorties.

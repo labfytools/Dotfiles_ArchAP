@@ -389,3 +389,10 @@ relance n’est automatique, y compris après redémarrage QuickShell.
 Voir [Session Restore V2](../../../../docs/session-restore-v2.md) pour les
 commandes, les preuves et les limites de l’environnement. La recette réussie
 du 7 octobre est historique ; elle ne valide pas cette révision au login réel.
+
+## Dock et favoris partagés
+
+Le dock à masquage automatique et le menu utilisent `applications/FavoritesService.qml`
+et `ApplicationIcon.qml`. Le stockage existant reste inchangé. Architecture,
+interactions, tests headless, limites et procédure d’intégration :
+[Dock Tela / favoris V1](../../../../docs/quickshell-dock-tela-shared-favorites-v1.md).

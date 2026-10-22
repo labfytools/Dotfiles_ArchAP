@@ -12,8 +12,8 @@ PanelWindow {
     signal menuDismissed()
     signal launchRequested(string desktopId)
     property string errorMessage: ""
-    property var allApps: []
-    property var favoriteIds: []
+    readonly property var allApps: FavoritesService.apps
+    readonly property var favoriteIds: FavoritesService.ids
     property string selectedCategory: "Toutes"
     property int selectedIndex: 0
     property int navIndex: 0
@@ -44,10 +44,6 @@ PanelWindow {
     WlrLayershell.namespace: "labfy-applications-menu"
     color: "transparent"
 
-    function refreshCatalog() {
-        allApps = ApplicationsModel.catalog(DesktopEntries.applications.values);
-        if (!favoriteIds.length && selectedCategory === "Favoris") selectedCategory = "Toutes";
-    }
     function chooseCategory(key) {
         selectedCategory = key;
         navIndex = navigation.findIndex(item => item.key === key);
@@ -63,10 +59,7 @@ PanelWindow {
         if (app) launchRequested(app.id);
     }
     function toggleFavorite(id) {
-        const had = favoriteIds.includes(id);
-        favoriteIds = had ? favoriteIds.filter(value => value !== id) : favoriteIds.concat([id]);
-        Quickshell.execDetached(["python3", "-B", backend, "favorites", had ? "remove" : "add", id]);
-        if (selectedCategory === "Favoris" && favoriteIds.length === 0) chooseCategory("Toutes");
+        FavoritesService.toggle(id);
     }
     function dismiss() {
         if (closing) return;
@@ -80,39 +73,10 @@ PanelWindow {
         interval: 150; repeat: false
         onTriggered: { menu.visible = false; menu.menuDismissed(); }
     }
-    readonly property string backend: (Quickshell.env("XDG_CONFIG_HOME") ||
-        (Quickshell.env("HOME") + "/.config")) + "/quickshell/labfy-sway/applications/backend.py"
-
     onVisibleAppsChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, visibleApps.length - 1))
-    Connections {
-        target: DesktopEntries
-        function onApplicationsChanged() { menu.refreshCatalog(); }
-    }
-    Process {
-        id: favoritesReader
-        command: ["python3", "-B", menu.backend, "favorites", "read"]
-        stdout: StdioCollector { id: favoritesOutput; waitForEnd: true }
-        onExited: (code, status) => {
-            if (code !== 0) { menu.errorMessage = "Favoris indisponibles"; return; }
-            try {
-                const data = JSON.parse(favoritesOutput.text);
-                if (data.exists) {
-                    menu.favoriteIds = data.ids;
-                } else {
-                    const suggested = ApplicationsModel.initialFavorites(menu.allApps);
-                    menu.favoriteIds = suggested;
-                    Quickshell.execDetached(["python3", "-B", menu.backend, "favorites", "seed"]
-                        .concat(suggested));
-                }
-                menu.selectedCategory = menu.favoriteIds.some(id => menu.allApps.some(app => app.id === id))
-                    ? "Favoris" : "Toutes";
-                menu.navIndex = menu.selectedCategory === "Favoris" ? 0 : 1;
-            } catch (_) { menu.errorMessage = "Favoris invalides"; }
-        }
-    }
     Component.onCompleted: {
-        refreshCatalog();
-        favoritesReader.running = true;
+        selectedCategory = favoriteIds.some(id => allApps.some(app => app.id === id)) ? "Favoris" : "Toutes";
+        navIndex = selectedCategory === "Favoris" ? 0 : 1;
     }
     // The Wayland surface exists after completion; focus at the next frame.
     Timer { interval: 120; running: true; repeat: false; onTriggered: search.forceActiveFocus() }
@@ -166,6 +130,10 @@ PanelWindow {
                         font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 13
                         background: Item {}
                         onTextChanged: { menu.selectedIndex = 0; grid.positionViewAtBeginning(); }
+                        // WHY: TextField's built-in Tab navigation consumes the
+                        // event before AfterItem handlers. Preserve this menu's
+                        // explicit search/sidebar/grid keyboard cycle.
+                        Keys.priority: Keys.BeforeItem
                         Keys.onPressed: event => {
                             if (event.key === Qt.Key_Escape) { menu.dismiss(); event.accepted = true; }
                             else if (event.key === Qt.Key_Backtab ||
@@ -182,8 +150,8 @@ PanelWindow {
                     }
                 }
                 Text {
-                    visible: menu.errorMessage !== ""
-                    width: parent.width; text: menu.errorMessage
+                    visible: menu.errorMessage !== "" || FavoritesService.error !== ""
+                    width: parent.width; text: menu.errorMessage || FavoritesService.error
                     color: Theme.danger; font.pixelSize: 12; elide: Text.ElideRight
                 }
                 Item {
@@ -199,6 +167,7 @@ PanelWindow {
                             anchors.fill: parent; anchors.margins: 5
                             clip: true; spacing: 3
                             model: menu.navigation
+                            Keys.priority: Keys.BeforeItem
                             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                             Keys.onPressed: event => {
                                 if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
@@ -255,6 +224,7 @@ PanelWindow {
                             visible: menu.visibleApps.length > 0
                             clip: true
                             model: menu.visibleApps
+                            Keys.priority: Keys.BeforeItem
                             cellWidth: Math.max(80, Math.floor(width / (width >= 420 ? 4 : 3)))
                             cellHeight: 104
                             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -293,23 +263,12 @@ PanelWindow {
                                     border.color: menu.selectedIndex === index && grid.activeFocus
                                         ? Theme.lavender : "transparent"
                                 }
-                                Image {
+                                ApplicationIcon {
                                     id: appIcon
                                     anchors.top: parent.top; anchors.topMargin: 12
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     width: 46; height: 46
-                                    source: modelData.icon.startsWith("/") ? "file://" + modelData.icon
-                                        : Quickshell.iconPath(modelData.icon || "application-x-executable",
-                                            "application-x-executable")
-                                    sourceSize.width: 46; sourceSize.height: 46
-                                    fillMode: Image.PreserveAspectFit
-                                    asynchronous: true
-                                }
-                                Text {
-                                    visible: appIcon.status === Image.Error
-                                    anchors.centerIn: appIcon
-                                    text: "󰀻"; color: Theme.lavender
-                                    font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 32
+                                    iconSource: modelData.iconSource
                                 }
                                 Text {
                                     anchors.top: appIcon.bottom; anchors.topMargin: 5

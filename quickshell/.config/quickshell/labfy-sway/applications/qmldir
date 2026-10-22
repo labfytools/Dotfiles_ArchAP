@@ -1,0 +1,3 @@
+singleton FavoritesService 1.0 FavoritesService.qml
+ApplicationsMenu 1.0 ApplicationsMenu.qml
+ApplicationIcon 1.0 ApplicationIcon.qml

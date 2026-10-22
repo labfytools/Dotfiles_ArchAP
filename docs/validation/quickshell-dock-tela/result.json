@@ -1,0 +1,225 @@
+{
+  "status": "PASS",
+  "initial": {
+    "ready": true,
+    "ids": [
+      "firefox.desktop",
+      "kitty.desktop",
+      "yazi.desktop",
+      "nvim.desktop",
+      "org.darktable.darktable.desktop",
+      "orca-slicer.desktop",
+      "org.freecad.FreeCAD.desktop",
+      "org.kde.digikam.desktop",
+      "AppFlowy.desktop"
+    ],
+    "error": "",
+    "phase": "hidden",
+    "revealed": false,
+    "entries": [
+      {
+        "id": "firefox.desktop",
+        "name": "Mozilla Firefox",
+        "genericName": "Web Browser",
+        "keywords": [
+          "Internet",
+          "WWW",
+          "Browser",
+          "Web",
+          "Explorer"
+        ],
+        "icon": "firefox",
+        "iconSource": "file:///usr/share/icons/Tela-circle-purple-dark/scalable/apps/firefox.svg",
+        "aliases": [
+          "firefox"
+        ],
+        "newInstance": false,
+        "category": "Internet",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "kitty.desktop",
+        "name": "kitty",
+        "genericName": "Terminal emulator",
+        "keywords": [],
+        "icon": "kitty",
+        "iconSource": "file:///usr/share/icons/Tela-circle-purple-dark/scalable/apps/kitty.svg",
+        "aliases": [
+          "kitty"
+        ],
+        "newInstance": true,
+        "category": "Syst\u00e8me",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "yazi.desktop",
+        "name": "Yazi File Manager",
+        "genericName": "",
+        "keywords": [
+          "File",
+          "Manager",
+          "Explorer",
+          "Browser",
+          "Launcher"
+        ],
+        "icon": "yazi",
+        "iconSource": "file:///usr/share/icons/hicolor/48x48/apps/yazi.png",
+        "aliases": [
+          "yazi"
+        ],
+        "newInstance": false,
+        "category": "Syst\u00e8me",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "nvim.desktop",
+        "name": "Neovim",
+        "genericName": "Text Editor",
+        "keywords": [
+          "Text",
+          "editor"
+        ],
+        "icon": "nvim",
+        "iconSource": "file:///usr/share/icons/Tela-circle-purple-dark/scalable/apps/nvim.svg",
+        "aliases": [
+          "nvim"
+        ],
+        "newInstance": false,
+        "category": "D\u00e9veloppement",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "org.darktable.darktable.desktop",
+        "name": "Darktable Photo Workflow Software",
+        "genericName": "Virtual Lighttable and Darkroom",
+        "keywords": [
+          "graphics",
+          "photography",
+          "raw"
+        ],
+        "icon": "darktable",
+        "iconSource": "file:///usr/share/icons/Tela-circle-purple-dark/scalable/apps/darktable.svg",
+        "aliases": [
+          "darktable",
+          "org.darktable.darktable"
+        ],
+        "newInstance": false,
+        "category": "Graphisme",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "orca-slicer.desktop",
+        "name": "OrcaSlicer",
+        "genericName": "",
+        "keywords": [],
+        "icon": "OrcaSlicer",
+        "iconSource": "file:///usr/share/icons/hicolor/192x192/apps/OrcaSlicer.png",
+        "aliases": [
+          "apprun",
+          "orca-slicer"
+        ],
+        "newInstance": false,
+        "category": "Utilitaires",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "org.freecad.FreeCAD.desktop",
+        "name": "FreeCAD",
+        "genericName": "CAD Application",
+        "keywords": [],
+        "icon": "org.freecad.FreeCAD",
+        "iconSource": "file:///usr/share/icons/Tela-circle-purple-dark/scalable/apps/org.freecad.FreeCAD.svg",
+        "aliases": [
+          "freecad",
+          "org.freecad.freecad"
+        ],
+        "newInstance": false,
+        "category": "Graphisme",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "org.kde.digikam.desktop",
+        "name": "digiKam",
+        "genericName": "Photo Management Program",
+        "keywords": [],
+        "icon": "digikam",
+        "iconSource": "file:///usr/share/icons/Tela-circle-purple-dark/scalable/apps/digikam.svg",
+        "aliases": [
+          "digikam",
+          "org.kde.digikam"
+        ],
+        "newInstance": false,
+        "category": "Graphisme",
+        "pinned": true,
+        "windows": []
+      },
+      {
+        "id": "AppFlowy.desktop",
+        "name": "AppFlowy",
+        "genericName": "",
+        "keywords": [
+          "Notes"
+        ],
+        "icon": "appflowy",
+        "iconSource": "file:///usr/share/icons/hicolor/scalable/apps/appflowy.svg",
+        "aliases": [
+          "appflowy"
+        ],
+        "newInstance": false,
+        "category": "Internet",
+        "pinned": true,
+        "windows": []
+      }
+    ],
+    "theme": "Tela-circle-purple-dark",
+    "menu": null,
+    "searchFocused": false,
+    "navFocused": false,
+    "gridFocused": false,
+    "screenWidth": 1280,
+    "bodyY": 364,
+    "width": 538,
+    "pointerX": -1000,
+    "tileWidth": 54,
+    "context": false
+  },
+  "reordered": [
+    "kitty.desktop",
+    "firefox.desktop",
+    "yazi.desktop",
+    "nvim.desktop",
+    "org.darktable.darktable.desktop",
+    "orca-slicer.desktop",
+    "org.freecad.FreeCAD.desktop",
+    "org.kde.digikam.desktop",
+    "AppFlowy.desktop"
+  ],
+  "checks": [
+    "shared favorites",
+    "menu and dock mutations",
+    "durable reorder",
+    "empty restart",
+    "autohide",
+    "context hold",
+    "kitty multi-window",
+    "floating scratchpad explicit focus",
+    "window close",
+    "no hover focus",
+    "real pointer drag",
+    "zoom growth",
+    "IPC reconnect",
+    "Firefox private profile",
+    "desktop install/remove monitoring",
+    "external writer",
+    "keyboard menu navigation",
+    "resolution change",
+    "SwayFX dock blur rule"
+  ]
+}

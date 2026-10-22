@@ -1,0 +1,18 @@
+/tmp/labfy-session-v2-TEST_ONLY-43bkifog
+ready PASS
+accept PASS
+cancel PASS
+timeout PASS
+absent PASS
+still-locked PASS
+different PASS
+quickshell-restart-during-unlock PASS
+keyring_ui WITH_DOCK PASS
+success PASS
+failure PASS
+invalid PASS
+new PASS
+claimed PASS
+real PASS
+deferred-real PASS
+phase3b_ui WITH_DOCK PASS

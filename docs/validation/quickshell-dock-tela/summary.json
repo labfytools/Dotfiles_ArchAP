@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "baseline": "a556cd56",
+  "quickshell": "0.3.2",
+  "sway": "SwayFX 0.6 / Sway 1.12.0",
+  "tests": {
+    "existingApplicationsPython": 7,
+    "dockPython": 6,
+    "existingApplicationsJS": "PASS",
+    "dockModelsJS": "PASS",
+    "sessionV2BackendPython": 93,
+    "sessionV2ValidationGroups": 11,
+    "keyringWithDock": "PASS (8 cases)",
+    "restoreUIWithDock": "PASS (7 cases)",
+    "headless": "PASS",
+    "fullShellRelativeImports": "PASS",
+    "diffCheck": "PASS"
+  },
+  "activeSession": "not modified; original nine favorites preserved",
+  "limitations": [
+    "XWayland fixture coverage only",
+    "physical greeter/PAM login not exercised",
+    "terminal-host identity is preserved",
+    "fractional scale and touch not exercised"
+  ],
+  "notes": [
+    "Absolute-import fixture emits QuickShell scanner warnings; actual relative-import shell loads.",
+    "Virtual keyboard teardown emits Qt Wayland leave/text-input warnings; keyboard cycle passes.",
+    "Full shell intentionally has no system services in the private compositor."
+  ]
+}

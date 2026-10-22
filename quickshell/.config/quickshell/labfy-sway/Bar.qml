@@ -103,8 +103,7 @@ PanelWindow {
 
     property string applicationsError: ""
     property string queuedApplicationId: ""
-    readonly property string applicationsBackend: (Quickshell.env("XDG_CONFIG_HOME") ||
-        (Quickshell.env("HOME") + "/.config")) + "/quickshell/labfy-sway/applications/backend.py"
+    readonly property string applicationsBackend: FavoritesService.backend
     function closeApplications() { applicationCoordinator.applicationsOutput = ""; }
     function toggleApplications() {
         if (authenticationActive) return false;
