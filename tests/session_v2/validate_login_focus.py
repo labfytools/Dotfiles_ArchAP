@@ -29,7 +29,7 @@ tasks = {
  'checkpoint-fixture': [sys.executable,'-B','-c',"import sys; sys.path.insert(0, 'tests/session_v2'); from login_focus import checkpoint; print(checkpoint()['focus'])"],
  'diff-check': ['git','diff','--check'],
 }
-for case in ('natural', 'launch-failure-retry', 'preserve-empty-workspace', 'preserve-foreign', 'focus-third-party', 'focus-same-client', 'unowned-map', 'pinned-map', 'map-in-ipc-gap', 'provider-placement', 'crash-mid-ipc'):
+for case in ('natural', 'launch-failure-retry', 'preserve-empty-workspace', 'preserve-foreign', 'focus-third-party', 'focus-same-client', 'unowned-map', 'pinned-map', 'map-in-ipc-gap', 'provider-placement', 'crash-mid-ipc', 'autotiling', 'focus-helper-late', 'focus-external-late', 'focus-finish-late'):
     tasks['login-'+case] = [sys.executable,'-B','tests/session_v2/login_focus.py','--case',case]
 def run(item):
     name, argv = item

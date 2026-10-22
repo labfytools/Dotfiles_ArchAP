@@ -15,7 +15,7 @@ from .ipc import Sway
 from .applications import Catalog
 from .firefox_identity import FirefoxProvider
 from .snapshot import capture
-from .layout import compile_plan
+from .layout import compile_plan, compile_placements
 from .executor import Executor
 from .observability import validate as validate_report
 from .startup import acknowledge, status as startup_status
@@ -83,7 +83,10 @@ def main(argv=None):
             try: result = read(runtime / "session-v2-restore-attempt.json", validate_report)
             except FileNotFoundError: result = {"status": "idle", "reason": "NO_RESTORE_ATTEMPT"}
         elif command == "analyze-v1-migration": result = migration(args.name)
-        elif command == "plan": result = {"operations": [asdict(x) for x in compile_plan(store.load(args.name), "0" * 32)]}
+        elif command == "plan":
+            data = store.load(args.name)
+            result = {"operations": [asdict(x) for x in compile_plan(data, "0" * 32)],
+                      "placements": compile_placements(data)}
         else:
             sway = Sway(args.socket)
             catalog = Catalog()

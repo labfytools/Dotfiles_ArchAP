@@ -30,8 +30,12 @@ class Anchors:
     def identity(self, slot): return "labfy-v2-anchor-" + self.tx + "-" + slot
 
     def owned(self, node):
+        # WHY : prepare a terminé/reapé le helper avant les vérifications
+        # finales. CONTRACT : une fenêtre étrangère n'exige pas un PID vivant
+        # du helper ; toute candidate possédée exige encore son pidfd exact.
+        if node.get("pid") != self.process.pid or node.get("app_id") not in self.allowed: return False
         signal.pidfd_send_signal(self.pidfd, 0)
-        return node.get("pid") == self.process.pid and node.get("app_id") in self.allowed
+        return True
 
     def anchor(self, slot):
         require(self.active, "TRANSACTION_INACTIVE")

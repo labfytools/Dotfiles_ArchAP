@@ -41,6 +41,19 @@ TestCase {
             compare(spy.count, 0);
         }
     }
+    function test_backend_reason_is_visible_and_logout_stays_gated() {
+        for (const reason of ["CAPABILITY_UNSUPPORTED", "SNAPSHOT_CHANGED", "RECOVERY_REQUIRED", "UNKNOWN_BACKEND_REASON"]) {
+            const g = gate();
+            const spy = createTemporaryObject(spyComponent, this, {target: g, signalName: "commandRequested"});
+            g.requestAction("logout"); g.confirmAction("logout");
+            g.checkpointFinished(2, 0, JSON.stringify({status: "failed", reason: reason}), "Le checkpoint V2 a échoué.");
+            verify(g.errorMessage.indexOf(reason) >= 0);
+            verify(g.errorMessage.length > reason.length + 10);
+            compare(spy.count, 0);
+            compare(g.pendingAction.id, "logout");
+            g.cancel(); compare(spy.count, 0);
+        }
+    }
     function test_quit_without_saving_requires_explicit_call() {
         const g = gate();
         const spy = createTemporaryObject(spyComponent, this, {target: g, signalName: "commandRequested"});

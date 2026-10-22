@@ -1,5 +1,8 @@
 # Premier login V2 : chemins de feuilles après Guard
 
+Suite du diagnostic : [focus et récupération du 22 octobre](session-v2-focus-recovery-fix-v1.md).
+Cette page conserve la portée et les résultats de la correction précédente.
+
 ## Résultat et portée
 
 Correction minimale dans la seule copie

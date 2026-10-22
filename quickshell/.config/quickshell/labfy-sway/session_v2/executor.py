@@ -18,7 +18,8 @@ from .guard import Guard
 from .observability import Attempt
 from .startup import record_deferred
 from .slots import assign
-from .recovery import Recovery, RecordedSway, resume_pending, process_start, focus_proof, placement, observe, recovery_status
+from .layout import compile_placements
+from .recovery import Recovery, RecordedSway, resume_pending, process_start, focus_proof, placement, observe, recovery_status, scratchpad_state
 
 
 def process_owner(pid):
@@ -217,7 +218,9 @@ class Executor:
                 recovery.admit(n)
                 self.sway.command(f'[con_id={n["id"]}] move container to workspace ' + json.dumps(stage))
             for n in targets.values():
-                stage_node(n)
+                # Hidden scratchpads stay detached throughout staging; neither
+                # workspace moves nor floating-disable may expose them.
+                if prepared[n["id"]]["scratchpad"] == "none": stage_node(n)
             def progress(phase, count):
                 values = {"phase": phase}
                 if phase == "anchor": values["anchors_created"] = count
@@ -264,7 +267,7 @@ class Executor:
                     identity = self.provider.resolve(expected, groups[app["application_id"]]) if expected else self.provider.capture(groups[app["application_id"]])
                     attempt.data["providers"] = [PROVIDER]
                     attempt.data["identity_resolutions"] = [{"uuid": k, "con_id": v} for k, v in identity.items()]
-                mapping.update(assign(members, groups[app["application_id"]], identity))
+                mapping.update(assign(members, groups[app["application_id"]], identity, pinned))
             # CONTRACT : le provider ne peut introduire une admission hors du
             # lot phase0, même si un remplacement conserve la cardinalité.
             check_batch()
@@ -283,6 +286,7 @@ class Executor:
             for n in captured.values():
                 recovery.admit(n, pinned[n["id"]])
             for n in captured.values():
+                if recovery.snapshot(n["id"])["scratchpad"] != "none": continue
                 if location(self.sway.tree(), n["id"])[0] != stage: stage_node(n)
                 if n.get("type") == "floating_con" or n.get("floating") in ("user_on", "auto_on"):
                     self.sway.command(f'[con_id={n["id"]}] floating disable')
@@ -290,6 +294,7 @@ class Executor:
             for slot in data["window_slots"]:
                 if slot["state"]["floating"]: continue
                 target = captured[mapping[slot["slot_id"]]]
+                require(recovery.snapshot(target["id"])["scratchpad"] == "none", "SCRATCHPAD_ASSIGNMENT_UNPROVEN")
                 anchors.swap(slot["slot_id"], target, slot["workspace"], stage, specs[slot["application_id"]].app_ids)
                 attempt.update(phase="swap", anchors_swapped=attempt.data["anchors_swapped"] + 1)
                 self.progress("swap", attempt.data["anchors_swapped"])
@@ -303,6 +308,13 @@ class Executor:
             self._verify(data, mapping, specs, anchors)
             attempt.data["timings_ms"]["verification"] = (time.monotonic() - start) * 1000
             attempt.update(final_tree_verified=True, slots_filled=len(mapping), phase="focus")
+            # WHY : quitter le helper après SIGCONT ajoute une transition
+            # Wayland pendant la validation finale. CONTRACT : finir sa vie
+            # possédée sous suspension, contrôler le focus avant de le choisir.
+            # INVARIANT : aucune divergence ne donne droit à refocaliser.
+            recovery.boundary("before-guard-prepare")
+            guard.prepare()
+            recovery.boundary("after-guard-prepare")
             # WHY : restaurer le checkpoint ne possède pas le focus d'un client
             # tiers déjà actif. CONTRACT : son identité/emplacement de baseline
             # reste inchangé ; le focus du snapshot ne remplace que celui du lot.
@@ -312,7 +324,7 @@ class Executor:
             if foreign_focus is not None:
                 require(placement(recovery.snapshot(origin_focus)) == placement(foreign_focus), "FOREIGN_WINDOW_CHANGED")
                 target_focus = origin_focus
-            if target_focus is None and origin_focus is not None:
+            if target_focus is None and origin_focus is not None and data.get("focus_workspace") is None:
                 # focus=null préserve la feuille réellement prouvée après mapping.
                 # L'identité complète reste celle de Recovery, jamais celle d'un
                 # app_id ou de la pile de focus d'un split arbitraire.
@@ -322,20 +334,25 @@ class Executor:
                         "RECOVERY_FOCUS_IDENTITY_CHANGED")
                 target_focus = origin_focus
             if target_focus is not None:
+                require(recovery.snapshot(target_focus)["scratchpad"] != "hidden", "RESTORE_FOCUS_UNAVAILABLE")
                 self.sway.command(f'[con_id={target_focus}] focus')
             else:
-                origin_workspace = recovery.data["focus_origin"]["workspace"]
-                require(origin_focus is None and origin_workspace and origin_workspace != stage, "RESTORE_FOCUS_UNAVAILABLE")
+                origin_workspace = data.get("focus_workspace") or recovery.data["focus_origin"]["workspace"]
+                require((origin_focus is None or data.get("focus_workspace")) and origin_workspace and origin_workspace != stage, "RESTORE_FOCUS_UNAVAILABLE")
                 self.sway.command("workspace " + json.dumps(origin_workspace))
             final_focus = recovery.data["focus_expected"]
             require(final_focus["workspace"] != stage, "FINAL_FOCUS_IN_STAGE")
+            recovery.boundary("before-helper-resume")
             answer = guard.resume()
             attempt.update(helpers_resumed=answer["helpers_resumed"], phase="final-verification")
+            recovery.boundary("after-helper-resume")
             self.progress("after-resume", len(mapping))
             self._verify(data, mapping, specs, anchors)
             recovery.check_command_focus(self.sway.tree(), final_focus, "final-verification")
+            recovery.boundary("before-guard-finish")
             guard.finish()
             guard = None
+            recovery.boundary("after-guard-finish")
             self._verify(data, mapping, specs, anchors)
             recovery.complete(lambda tree: self._verify_structure(data, mapping, specs, anchors, tree))
             attempt.update(final_focus_verified=True, status="success", reason="SUCCESS", phase="complete")
@@ -370,11 +387,30 @@ class Executor:
                     pass
 
     def _floating(self, data, mapping, captured):
-        for s in data["window_slots"]:
-            if not s["state"]["floating"]: continue
+        slots = {s["slot_id"]: s for s in data["window_slots"]}
+        for placement_op in compile_placements(data):
+            s = slots[placement_op["slot_id"]]
             target = mapping[s["slot_id"]]
             n = next((n for n in self.sway.windows() if n["id"] == target), None)
             require(n and n.get("pid") == captured[target].get("pid"), "TARGET_IDENTITY_CHANGED")
+            scratch = s["state"]["scratchpad"]
+            current = self.sway.recovery.snapshot(target)
+            if scratch in ("hidden", "shown"):
+                prefix = f'[con_id={target}] '
+                if not current["floating"]: self.sway.command(prefix + "floating enable")
+                if current["scratchpad"] != "hidden": self.sway.command(prefix + "move scratchpad")
+                if scratch == "shown":
+                    self.sway.command("workspace " + json.dumps(s["workspace"]))
+                    output = next(w["output"] for w in data["workspaces"] if w["workspace"] == s["workspace"])
+                    self.sway.command("move workspace to output " + json.dumps(output))
+                    self.sway.command(prefix + "scratchpad show")
+                # Hidden geometry can be set without showing the leaf. IPC rect
+                # is the contract, not the transform of a future user show.
+                g = s["state"]["geometry"]
+                self.sway.command(prefix + f'resize set width {g["width"]} px height {g["height"]} px')
+                self.sway.command(prefix + f'move absolute position {g["x"]} px {g["y"]} px')
+                continue
+            require(current["scratchpad"] == "none", "SCRATCHPAD_ASSIGNMENT_UNPROVEN")
             self.sway.command(f'[con_id={target}] move container to workspace ' + json.dumps(s["workspace"]))
             # Sway rattache une fenêtre déplacée en coordonnées à l'espace
             # visible de l'output : rendre la cible visible avant sa géométrie.
@@ -385,6 +421,14 @@ class Executor:
             g = s["state"]["geometry"]
             self.sway.command(f'[con_id={target}] resize set width {g["width"]} px height {g["height"]} px')
             self.sway.command(f'[con_id={target}] move absolute position {g["x"]} px {g["y"]} px')
+
+        # V2 can capture an empty focused workspace alongside hidden leaves.
+        # WHY : after launch/staging Sway may destroy it. CONTRACT : recreate
+        # only that explicitly persisted workspace/output, never __i3_scratch.
+        for w in data["workspaces"]:
+            if w["root"] is None and not any(s["workspace"] == w["workspace"] for s in data["window_slots"]):
+                self.sway.command("workspace " + json.dumps(w["workspace"]))
+                self.sway.command("move workspace to output " + json.dumps(w["output"]))
 
     def _verify(self, data, mapping, specs, anchors):
         # WHY : capture est une frontière externe potentiellement lente.
@@ -424,7 +468,9 @@ class Executor:
         for s in data["window_slots"]:
             n = next((n for n in nodes if n["id"] == mapping[s["slot_id"]]), None)
             require(n and n.get("app_id") in specs[s["application_id"]].app_ids, "TARGET_IDENTITY_CHANGED")
+            scratch = s["state"]["scratchpad"]
+            require(scratchpad_state(n, location(tree, n["id"])[0]) == ("none" if scratch is False else scratch), "FINAL_SCRATCHPAD_MISMATCH")
             if s["state"]["floating"]:
-                require(location(tree, n["id"])[0] == s["workspace"] and n.get("floating") in ("auto_on", "user_on") and
+                require(location(tree, n["id"])[0] == ("__i3_scratch" if scratch == "hidden" else s["workspace"]) and n.get("floating") in ("auto_on", "user_on") and
                         all(n["rect"][k] == v for k, v in s["state"]["geometry"].items()), "FLOATING_GEOMETRY_MISMATCH")
         return tree

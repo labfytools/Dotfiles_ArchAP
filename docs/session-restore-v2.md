@@ -270,7 +270,71 @@ Voir le [diagnostic ciblé, les preuves et la commande hôte](session-v2-path-st
 
 - Contenu et processus terminal non restaurés.
 - Ratios exacts non restaurés.
-- Fullscreen et scratchpad non pris en charge actuellement.
+- Fullscreen non pris en charge. Scratchpad pris en charge par le snapshot version 2 pour les feuilles flottantes individuelles ; les groupes restent refusés.
 - Multi-output physique non validé.
 - Provider Firefox candidat actuel pour le profil supporté ; plusieurs profils
   simultanés ne sont pas pris en charge.
+
+
+## Snapshot version 2 — scratchpad (22 octobre 2026)
+
+Les nouvelles captures conservent `schema=labfy.sway.session-v2` et écrivent
+`version=2`. Le contrat V1 et `schema-v1.json` restent inchangés : les anciennes
+sessions sont lues, validées et restaurées directement, sans conversion ni
+invention d’appartenance scratchpad. `schema-v2.json` décrit la nouvelle forme ;
+`schema.py` ajoute les contraintes référentielles (unicité, cardinalité, chemins,
+focus et association workspace/output) aux contraintes locales du schéma JSON.
+Le bundle de développement contient les deux schémas.
+
+Dans V2, `state.scratchpad` vaut `none`, `hidden` ou `shown`. Une feuille
+scratchpad est nécessairement flottante, avec son rectangle IPC entier
+`x/y/width/height`. Une feuille cachée a `workspace=null` et `tree_path=[]` ;
+`__i3_scratch` n’entre jamais dans les workspaces, sorties ou ancres persistés.
+Une feuille montrée garde le workspace/output de visibilité. `focus` reste une
+référence de slot ou null, jamais une feuille déduite d’un split. Le champ V2
+`focus_workspace` conserve le workspace effectivement focalisé, y compris un
+workspace vide lorsque toutes les fenêtres sont cachées. Ce seul workspace vide
+est admissible sans slot ; son output doit être disponible. Une feuille cachée
+ne peut être le focus persistant.
+
+La capture inclut les scratchpads cachés sous l’output interne Sway et les
+scratchpads montrés parmi les flottants normaux. Les relectures comparent aussi
+app_id, PID, appartenance scratchpad et focus ; un changement donne
+`SNAPSHOT_CHANGED`. Les groupes flottants/scratchpad ne sont pas aplatis en
+feuilles indépendantes : ils sont refusés précisément. Les fenêtres de même
+application sans fournisseur exact restent explicitement interchangeables.
+Le mapping privilégie la visibilité déjà observée pour ces slots ; une feuille
+scratchpad existante n’est pas exposée pour remplir arbitrairement un slot
+ordinaire. Les preuves UUID/singleton restent prioritaires, puis les identités
+runtime admises comprennent con_id/PID/starttime/session/placement.
+
+La phase de placement (`plan.placements`) est distincte de la compilation des
+ancres de splits. Les scratchpads existants évitent staging et `floating disable`.
+Les commandes sont ciblées par l’identité admise ; `scratchpad show` n’est émis
+que pour une feuille prouvée cachée et un slot explicitement montré. L’ajout
+initial au scratchpad sélectionne le workspace source, même si la cible était
+inactive : cette transition est prédite avant IPC. Le journal précède chaque
+commande. Les transitions `floating enable` et `scratchpad show` ont une attente
+bornée de 300 ms pour laisser passer la configuration Wayland initiale ; cette
+attente n’est pas une preuve de stabilité. Toute divergence encore observée
+reste un échec. Le rectangle intermédiaire d’un `show` peut être converti par
+Sway selon l’output ; le rectangle sauvegardé est ensuite commandé et vérifié
+exactement, avec appartenance, visibilité, output, layout, identité et focus.
+
+Les nouveaux journaux Recovery sont en version 2 et suivent l’appartenance
+scratchpad. Les journaux V1 restent lisibles ; une observation scratchpad absente
+de leurs preuves est refusée, jamais reconstruite implicitement. Après incident,
+un scratchpad déjà exactement à son origine peut être reconnu sans IPC. Si son
+placement diffère, la reprise conserve les données et donne
+`SCRATCHPAD_RECOVERY_REQUIRES_REVIEW` ; elle n’affiche aucune feuille pour tenter
+un rollback spéculatif. Les intentions pending et les conflits de focus restent
+bloquants. L’ancien journal utilisateur `RECOVERY_REQUIRED` n’est ni modifié ni
+acquitté par ce patch.
+
+Le dialogue d’échec de checkpoint montre maintenant le `reason` JSON exact,
+avec une explication pour les cas connus, notamment `CAPABILITY_UNSUPPORTED`.
+L’erreur conserve l’action en attente : annulation ou choix explicite de quitter
+sans sauvegarder restent nécessaires. Aucun code d’erreur n’autorise le logout.
+
+Validation et limites détaillées :
+[rapport scratchpad](session-v2-scratchpad-save-and-restore-v1.md).

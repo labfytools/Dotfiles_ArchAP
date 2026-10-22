@@ -32,8 +32,8 @@ def array(value, maximum=256):
 
 
 def validate(data):
-    fields(data, "schema version metadata outputs applications window_slots workspaces focus")
-    require(data["schema"] == SCHEMA and type(data["version"]) is int and data["version"] == 1, "SCHEMA_VERSION")
+    fields(data, "schema version metadata outputs applications window_slots workspaces focus" + (" focus_workspace" if type(data) is dict and data.get("version") == 2 else ""))
+    require(data["schema"] == SCHEMA and type(data["version"]) is int and data["version"] in (1, 2), "SCHEMA_VERSION")
     fields(data["metadata"], "created_ns sway_session reason")
     integer(data["metadata"]["created_ns"], 0, 2**63 - 1)
     text(data["metadata"]["sway_session"])
@@ -43,6 +43,7 @@ def validate(data):
     for o in data["outputs"]:
         fields(o, "name")
         text(o["name"], PLACE)
+        require(data["version"] == 1 or o["name"] != "__i3_scratch", "SCRATCHPAD_WORKSPACE")
         require(o["name"] not in outputs, "DUPLICATE_OUTPUT")
         outputs[o["name"]] = o
     for a in data["applications"]:
@@ -60,7 +61,7 @@ def validate(data):
         fields(s, "slot_id application_id workspace tree_path state identity_requirement identity_evidence")
         text(s["slot_id"])
         text(s["application_id"])
-        text(s["workspace"], PLACE)
+        if s["workspace"] is not None: text(s["workspace"], PLACE)
         array(s["tree_path"], 32)
         for i in s["tree_path"]: integer(i, 0, 31)
         require(s["application_id"] in apps and s["slot_id"] not in slots, "SLOT_REFERENCE")
@@ -68,8 +69,18 @@ def validate(data):
         state = s["state"]
         fields(state, "floating geometry fullscreen scratchpad")
         require(type(state["floating"]) is bool, "SCHEMA_BOOLEAN")
-        require(type(state["fullscreen"]) is bool and state["fullscreen"] is False and state["scratchpad"] is False,
+        require(type(state["fullscreen"]) is bool and state["fullscreen"] is False,
                 "CAPABILITY_UNSUPPORTED")
+        # CONTRACT : V1 reste immuable. V2 distingue appartenance et visibilité ;
+        # le workspace interne Sway n'est jamais une destination persistante.
+        if data["version"] == 1:
+            require(state["scratchpad"] is False, "CAPABILITY_UNSUPPORTED")
+        else:
+            require(type(state["scratchpad"]) is str and state["scratchpad"] in ("none", "hidden", "shown"), "SCHEMA_SCRATCHPAD")
+            require(state["scratchpad"] == "none" or state["floating"], "SCRATCHPAD_FLOATING_REQUIRED")
+        hidden = state["scratchpad"] == "hidden"
+        require((s["workspace"] is None) == hidden, "SCRATCHPAD_WORKSPACE")
+        require(s["workspace"] != "__i3_scratch", "SCRATCHPAD_WORKSPACE")
         if state["floating"]:
             fields(state["geometry"], "x y width height")
             for k in ("x", "y"): integer(state["geometry"][k], -100000, 100000)
@@ -108,18 +119,24 @@ def validate(data):
     for w in data["workspaces"]:
         fields(w, "workspace output root")
         text(w["workspace"], PLACE)
+        require(w["workspace"] != "__i3_scratch", "SCRATCHPAD_WORKSPACE")
         text(w["output"], PLACE)
         require(w["workspace"] not in workspaces and w["output"] in outputs, "WORKSPACE_REFERENCE")
         workspaces[w["workspace"]] = w
         tree(w["root"], w["workspace"])
     for s in slots.values():
-        require(s["workspace"] in workspaces and (s["state"]["floating"] or s["slot_id"] in seen), "UNPLACED_SLOT")
+        require(s["state"]["scratchpad"] == "hidden" or s["workspace"] in workspaces and (s["state"]["floating"] or s["slot_id"] in seen), "UNPLACED_SLOT")
     for name in workspaces:
-        require(any(s["workspace"] == name for s in slots.values()), "EMPTY_WORKSPACE_UNSUPPORTED")
+        require(any(s["workspace"] == name for s in slots.values()) or data.get("focus_workspace") == name, "EMPTY_WORKSPACE_UNSUPPORTED")
     for a in apps.values():
         members = [s for s in slots.values() if s["application_id"] == a["application_id"]]
         require(len(members) == a["expected_windows"], "APPLICATION_CARDINALITY")
         uuids = [s["identity_evidence"]["id"] for s in members if s["identity_evidence"] and s["identity_evidence"]["type"] == PROVIDER]
         require(len(uuids) == len(set(uuids)), "EXACT_WINDOW_IDENTITY_COLLISION")
     require(data["focus"] is None or type(data["focus"]) is str and data["focus"] in slots, "FOCUS_REFERENCE")
+    require(data["focus"] is None or slots[data["focus"]]["state"]["scratchpad"] != "hidden", "FOCUS_HIDDEN_SCRATCHPAD")
+    if data["version"] == 2:
+        name = data["focus_workspace"]
+        require(name is None or type(name) is str and name in workspaces, "FOCUS_WORKSPACE_REFERENCE")
+        require(data["focus"] is None or name is not None and slots[data["focus"]]["workspace"] == name, "FOCUS_WORKSPACE_REFERENCE")
     return data

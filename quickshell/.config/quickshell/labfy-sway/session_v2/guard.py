@@ -97,6 +97,18 @@ class Guard:
             self.process.wait(timeout=15)
             raise
 
+    def prepare(self):
+        """Le helper d'ancres doit être sorti avant focus final et SIGCONT.
+
+        CONTRACT : ACK après disparition prouvée par pidfd, pendant notre
+        suspension ; finish ne provoque plus cette sortie après la reprise.
+        """
+        self.parent.sendall(b"prepare")
+        self.parent.settimeout(15)
+        answer = loads(self.parent.recv(4096), 4096)
+        require(answer.get("status") == "prepared", "GUARD_RECOVERY_FAILED")
+        return answer
+
     def resume(self):
         self.parent.sendall(b"resume")
         self.parent.settimeout(15)
@@ -140,6 +152,7 @@ def run(config):
     stopped = []
     counts = {"helpers_suspended": 0, "helpers_resumed": 0}
     normal = False
+    prepared = False
     sway = Sway(config["socket"])
     def resume():
         return resume_helpers(stopped, config["socket"], counts)
@@ -160,7 +173,19 @@ def run(config):
             if config["engine_fd"] in readable: break
             if control in readable:
                 message = control.recv(16)
+                if message == b"prepare":
+                    require(not prepared and not any(n.get("pid") == config["anchor_pid"] and
+                            n.get("app_id") in config["allowed"] for n in sway.windows()), "ANCHOR_CLEANUP_FAILED")
+                    os.write(config["writer_fd"], b"quit\n")
+                    # WHY : la réponse à kill et l'écriture quit ne prouvent pas
+                    # la fin Wayland du processus. CONTRACT : pidfd hérité exact,
+                    # attente bornée, aucun SIGCONT avant cette barrière.
+                    until(lambda: bool(select.select([config["anchor_fd"]], [], [], 0)[0]), 3)
+                    prepared = True
+                    control.sendall(b'{"status":"prepared"}')
+                    continue
                 if message == b"resume":
+                    require(prepared, "GUARD_PROTOCOL_INVALID")
                     require(resume(), "GUARD_RECOVERY_FAILED")
                     control.sendall(json.dumps({"status": "resumed", **counts}).encode())
                     continue
@@ -171,10 +196,13 @@ def run(config):
                 until(lambda: bool(select.select([config["engine_fd"]], [], [], 0)[0]), 3)
                 break
         def owned(n):
+            if n.get("pid") != config["anchor_pid"] or n.get("app_id") not in config["allowed"]: return False
             signal.pidfd_send_signal(config["anchor_fd"], 0)
-            return n.get("pid") == config["anchor_pid"] and n.get("app_id") in config["allowed"]
+            return True
         cleaned = 0
-        for old in sway.windows():
+        # CONTRACT : après prepare, aucune fermeture ni écriture quit tardive.
+        # Le pidfd a déjà prouvé la sortie ; ne pas dépendre d'un zombie non reapé.
+        for old in ([] if prepared else sway.windows()):
             if not owned(old): continue
             fresh = next((n for n in sway.windows() if n["id"] == old["id"]), None)
             if fresh and owned(fresh):
@@ -186,8 +214,9 @@ def run(config):
                 else:
                     sway.command(f'[con_id={fresh["id"]}] kill')
                 cleaned += 1
-        until(lambda: not any(owned(n) for n in sway.windows()))
-        os.write(config["writer_fd"], b"quit\n")
+        if not prepared:
+            until(lambda: not any(owned(n) for n in sway.windows()))
+            os.write(config["writer_fd"], b"quit\n")
         # WHY : autotiling repris peut restructurer le stage avant la reprise
         # et rendre son appartenance ambiguë. Finir nos obligations de fenêtres
         # pendant la suspension possédée, puis toujours reprendre les helpers.

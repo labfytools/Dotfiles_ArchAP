@@ -7,9 +7,10 @@ INVARIANT : aucun kill client, aucune propriété déduite du nom du workspace.
 import copy
 import json
 import re
+import time
 from pathlib import Path
 from .errors import require
-from .ipc import walk, location, workspace, until
+from .ipc import walk, location, workspace, until, canonical
 from .storage import atomic, read
 
 JOURNAL = "session-v2-recovery.json"
@@ -22,6 +23,13 @@ def process_start(pid):
 
 
 def observe(tree, node, start):
+    # Commands addressed to a leaf can act on its floating/scratchpad ancestor
+    # in Sway. Such a group is outside the single-surface ownership contract.
+    parents = {c["id"]: n for n in walk(tree) for c in n.get("nodes", []) + n.get("floating_nodes", [])}
+    ancestor = parents.get(node["id"])
+    while ancestor and ancestor.get("type") not in ("workspace", "output", "root"):
+        require(ancestor.get("scratchpad_state", "none") == "none", "SCRATCHPAD_CONTAINER_UNSUPPORTED")
+        ancestor = parents.get(ancestor["id"])
     where = location(tree, node["id"])
     require(where and where[0], "RECOVERY_LOCATION_MISSING")
     output = next((o["name"] for o in tree.get("nodes", [])
@@ -30,18 +38,51 @@ def observe(tree, node, start):
     floating = node.get("type") == "floating_con" or node.get("floating") in ("user_on", "auto_on")
     return {"con_id": node["id"], "app_id": node.get("app_id"), "pid": node.get("pid"),
             "starttime": start(node["pid"]), "workspace": where[0], "output": output,
-            "path": list(where[1]), "floating": floating, "geometry": dict(node["rect"]) if floating else None}
+            "path": list(where[1]), "scratchpad": scratchpad_state(node, where[0]), "floating": floating, "geometry": dict(node["rect"]) if floating else None}
+
+
+def scratchpad_state(node, workspace_name):
+    """CONTRACT : appartenance IPC et visibilité sont deux preuves distinctes."""
+    raw = node.get("scratchpad_state", "none")
+    require(raw in ("none", "fresh", "changed"), "SCRATCHPAD_STATE_UNSUPPORTED")
+    return "none" if raw == "none" else ("hidden" if workspace_name == "__i3_scratch" else "shown")
 
 
 def placement(state):
     return {k: v for k, v in state.items() if k != "path"} if state is not None else None
 
 
+def structure(tree):
+    """Preuve de topologie, avec feuilles con_id et branches ordonnées.
+
+    CONTRACT : seule la contraction des splits unaires h/v/none déjà utilisée
+    par Anchors est équivalente. Tabbed/stacked, branches, ordre et appartenance
+    restent significatifs. Les flottants sont comparés par placement exact.
+    WHY : un chemin brut ne permet pas de distinguer compaction et réordonnancement.
+    """
+    identities = {n["id"]: n["id"] for n in walk(tree) if n.get("app_id") or n.get("window")}
+    return {n["name"]: canonical(tree, n["name"], identities) for n in walk(tree)
+            if n.get("type") == "workspace" and n.get("nodes")}
+
+
 def command_postcondition(state, target, operation, tree):
     expected = copy.deepcopy(state)
     fields = ["con_id", "app_id", "pid", "starttime", "workspace", "output", "floating", "geometry"]
+    if "scratchpad" in expected: fields.append("scratchpad")
     if expected["con_id"] == target:
-        if operation.startswith("move container to workspace "):
+        if operation == "move scratchpad":
+            require(state["floating"], "SCRATCHPAD_FLOATING_REQUIRED")
+            expected.update(workspace="__i3_scratch", output="__i3", scratchpad="hidden")
+        elif operation == "scratchpad show":
+            require(state.get("scratchpad") == "hidden", "SCRATCHPAD_SHOW_UNPROVEN")
+            name = focused(tree)["workspace"]
+            require(name and name != "__i3_scratch", "RESTORE_FOCUS_UNAVAILABLE")
+            expected.update(workspace=name, output=next(o["name"] for o in tree["nodes"]
+                if any(w.get("type") == "workspace" and w.get("name") == name for w in walk(o))), scratchpad="shown")
+            # Output-coordinate conversion is compositor-owned. The exact saved
+            # geometry is set and checked afterwards; identity/focus stay strict.
+            fields.remove("geometry")
+        elif operation.startswith("move container to workspace "):
             expected["workspace"] = json.loads(operation.removeprefix("move container to workspace "))
             destination = workspace(tree, expected["workspace"])
             if destination:
@@ -57,7 +98,9 @@ def command_postcondition(state, target, operation, tree):
             expected["floating"] = operation == "floating enable"
             if expected["floating"]:
                 if not state["floating"]: fields.remove("geometry")
-            else: expected["geometry"] = None
+            else:
+                expected["geometry"] = None
+                if "scratchpad" in expected: expected["scratchpad"] = "none"
         elif operation.startswith("resize set "):
             values = [int(v) for v in re.findall(r"-?\d+", operation)]
             g = expected["geometry"]
@@ -162,7 +205,26 @@ def command_focus(tree, target, operation):
                 ws = workspace(tree, before["workspace"])
                 if leaves == [target] and ws and all(n["id"] == target for n in walk(ws) if n.get("app_id") or n.get("window")):
                     return {"con_id": None, "workspace": before["workspace"]}
-    if operation == "focus": return at(target)
+    if operation == "scratchpad show":
+        require(target in nodes and scratchpad_state(nodes[target], location(tree, target)[0]) == "hidden", "SCRATCHPAD_SHOW_UNPROVEN")
+        return {"con_id": target, "workspace": before["workspace"]}
+    if operation == "move scratchpad":
+        require(target in nodes and (nodes[target].get("app_id") or nodes[target].get("window")), "SCRATCHPAD_CONTAINER_UNSUPPORTED")
+        source = location(tree, target)[0]
+        if source == "__i3_scratch": return before
+        if nodes[target].get("scratchpad_state", "none") == "none":
+            # root_scratchpad_add_container always selects the inactive node of
+            # the source workspace, even when an unrelated workspace had focus.
+            # With floating leaf ownership there is no tiled parent fallback.
+            require(nodes[target].get("floating") in ("auto_on", "user_on"), "SCRATCHPAD_FLOATING_REQUIRED")
+            ws = workspace(tree, source)
+            return inactive(ws, target) or {"con_id": None, "workspace": source}
+        # Floating leaves only: the removal uses the same inactive focus stack
+        # as move-to-workspace. No split ancestor is implicitly admitted.
+        return command_focus(tree, target, 'move container to workspace "__i3_scratch"')
+    if operation == "focus":
+        require(target in nodes and location(tree, target)[0] != "__i3_scratch", "FOCUS_HIDDEN_SCRATCHPAD")
+        return at(target)
     if operation.startswith("workspace "):
         name = json.loads(operation.removeprefix("workspace "))
         ws = workspace(tree, name)
@@ -185,7 +247,7 @@ def command_focus(tree, target, operation):
 
 
 def validate(value):
-    require(type(value) is dict and value.get("schema") == "labfy.session-v2-recovery" and value.get("version") == 1,
+    require(type(value) is dict and value.get("schema") == "labfy.session-v2-recovery" and type(value.get("version")) is int and value.get("version") in (1, 2),
             "RECOVERY_SCHEMA")
     require(value.get("status") in ("active", "complete", "recovered", "required"), "RECOVERY_SCHEMA")
     require(type(value.get("windows")) is list and len(value["windows"]) <= 256, "RECOVERY_SCHEMA")
@@ -196,12 +258,16 @@ def validate(value):
     require(value.get("stage") == "labfy-v2-stage-" + value["transaction_id"], "RECOVERY_SCHEMA")
     def text(v): return type(v) is str and 0 < len(v) <= 256 and not any(ord(c) < 32 for c in v)
     def state(v):
-        require(type(v) is dict and set(v) == {"con_id", "app_id", "pid", "starttime", "workspace", "output", "floating", "geometry", "path"}, "RECOVERY_SCHEMA")
+        require(type(v) is dict and set(v) == ({"con_id", "app_id", "pid", "starttime", "workspace", "output", "floating", "geometry", "path"} | ({"scratchpad"} if value["version"] == 2 else set())), "RECOVERY_SCHEMA")
         for k in ("con_id", "pid", "starttime"):
             require(type(v[k]) is int and 0 < v[k] < 2**63, "RECOVERY_SCHEMA")
         require(v["app_id"] is None or text(v["app_id"]), "RECOVERY_SCHEMA")
         require(text(v["workspace"]) and text(v["output"]) and type(v["floating"]) is bool, "RECOVERY_SCHEMA")
         require(type(v["path"]) is list and len(v["path"]) <= 64 and all(type(i) is int and 0 <= i <= 256 for i in v["path"]), "RECOVERY_SCHEMA")
+        if value["version"] == 2:
+            require(v["scratchpad"] in ("none", "hidden", "shown") and
+                    (v["scratchpad"] == "none" or v["floating"]) and
+                    ((v["workspace"] == "__i3_scratch") == (v["scratchpad"] == "hidden")), "RECOVERY_SCHEMA")
         g = v["geometry"]
         require((not v["floating"] and g is None) or (type(g) is dict and set(g) == {"x", "y", "width", "height"}
                 and all(type(x) is int and abs(x) < 2**31 for x in g.values())), "RECOVERY_SCHEMA")
@@ -219,7 +285,48 @@ def validate(value):
         require(type(f) is dict and set(f) == {"con_id", "workspace"}, "RECOVERY_SCHEMA")
         require(f["con_id"] is None or (type(f["con_id"]) is int and 0 < f["con_id"] < 2**63), "RECOVERY_SCHEMA")
         require(f["workspace"] is None or text(f["workspace"]), "RECOVERY_SCHEMA")
+    if "focus_boundaries" in value:
+        rows = value["focus_boundaries"]
+        require(type(rows) is list and len(rows) <= 8, "RECOVERY_SCHEMA")
+        for row in rows:
+            require(type(row) is dict and set(row) == {"boundary", "expected", "observed"} and
+                    text(row["boundary"]), "RECOVERY_SCHEMA")
+            for key in ("expected", "observed"):
+                f = row[key]
+                require(type(f) is dict and set(f) == {"con_id", "workspace"}, "RECOVERY_SCHEMA")
+                require(f["con_id"] is None or (type(f["con_id"]) is int and 0 < f["con_id"] < 2**63), "RECOVERY_SCHEMA")
+                require(f["workspace"] is None or text(f["workspace"]), "RECOVERY_SCHEMA")
     for key in ("focus_pending", "focus_conflict"): require(type(value.get(key)) is bool, "RECOVERY_SCHEMA")
+    if "path_reconciliations" in value:
+        rows = value["path_reconciliations"]
+        require(type(rows) is list and len(rows) <= 4, "RECOVERY_SCHEMA")
+        for batch in rows:
+            require(type(batch) is list and len(batch) <= 256, "RECOVERY_SCHEMA")
+            for row in batch:
+                require(type(row) is dict and set(row) == {"con_id", "before", "after"} and
+                        type(row["con_id"]) is int and 0 < row["con_id"] < 2**63, "RECOVERY_SCHEMA")
+                for key in ("before", "after"):
+                    path = row[key]
+                    require(type(path) is list and len(path) <= 64 and
+                            all(type(i) is int and 0 <= i <= 256 for i in path), "RECOVERY_SCHEMA")
+    # CONTRACT : extension facultative V1 ; l'absence dans un ancien journal
+    # n'autorise jamais à reconstruire une preuve depuis l'arbre post-incident.
+    if "structure_expected" in value:
+        shapes = value["structure_expected"]
+        require(type(shapes) is dict and len(shapes) <= 256 and all(text(k) for k in shapes), "RECOVERY_SCHEMA")
+        budget = [4096]
+        def shape(node, depth=0):
+            budget[0] -= 1
+            require(budget[0] >= 0 and depth <= 64, "RECOVERY_SCHEMA")
+            if type(node) is int:
+                require(0 < node < 2**63, "RECOVERY_SCHEMA")
+                return
+            require(type(node) is dict and len(node) == 1, "RECOVERY_SCHEMA")
+            layout, children = next(iter(node.items()))
+            require(layout in ("splith", "splitv", "none", "tabbed", "stacked") and
+                    type(children) is list and len(children) <= 256, "RECOVERY_SCHEMA")
+            for child in children: shape(child, depth + 1)
+        for node in shapes.values(): shape(node)
     return value
 
 
@@ -236,7 +343,7 @@ class Recovery:
             tree = sway.tree()
             if proof is not None:
                 require(sway.session == proof[0] and focused(tree) == proof[1][0], "RESTORE_FOCUS_UNSTABLE")
-            self.data = {"schema": "labfy.session-v2-recovery", "version": 1,
+            self.data = {"schema": "labfy.session-v2-recovery", "version": 2,
                          "session": sway.session, "transaction_id": tx, "stage": stage,
                          "status": "active", "windows": [], "foreign": [], "operations": 0,
                          "focus_origin": focused(tree), "focus_expected": focused(tree),
@@ -257,7 +364,12 @@ class Recovery:
     def snapshot(self, identity, tree=None):
         tree = self.sway.tree() if tree is None else tree
         node = next((n for n in walk(tree) if n["id"] == identity and (n.get("app_id") or n.get("window"))), None)
-        return observe(tree, node, self.start) if node else None
+        state = observe(tree, node, self.start) if node else None
+        if state and self.data["version"] == 1:
+            # Historical journals never proved scratchpad membership. Refuse an
+            # observed scratchpad rather than synthesizing absent evidence.
+            require(state.pop("scratchpad") == "none", "LEGACY_SCRATCHPAD_UNPROVEN")
+        return state
 
     def pin(self, node):
         """Observation runtime avant une attente externe, sans autorité de focus.
@@ -347,6 +459,14 @@ class Recovery:
         self.data["operations"] += 1
         self.publish()
         answer = self.sway.command(command)
+        if operation in ("floating enable", "scratchpad show"):
+            # WHY : IPC reports pending rect before Wayland configure/commit;
+            # a late initial configure can otherwise undo the next resize.
+            # CONTRACT : bounded drain only where geometry is explicitly
+            # compositor-owned; all predicted fields and focus are still checked
+            # below, before publishing the confirmed observation. No retries of
+            # a divergent command and no relaxation of final geometry equality.
+            time.sleep(.3)
         if operation == "kill" and target is not None:
             # Une réponse à kill n'est pas le retrait Wayland. Attendre l'anchor
             # possédée évite de journaliser un chemin encore transitoire.
@@ -365,9 +485,27 @@ class Recovery:
             require(all(after[k] == v for k, v in expected_after[str(after["con_id"])].items()), "RECOVERY_POSTCONDITION_FAILED")
             entry.update(expected=after, pending=False)
         self.check_command_focus(tree, expected_focus, command)
-        self.data.update(focus_expected=focused(tree), focus_pending=False)
+        # CONTRACT : cette preuve est post-réponse RUN_COMMAND ; elle décrit
+        # l'observation, pas une exclusion de l'input concurrent.
+        self.data["intention"]["focus_after"] = focused(tree)
+        self.data.update(focus_expected=focused(tree), focus_pending=False, structure_expected=structure(tree))
         self.publish()
         return answer
+
+    def boundary(self, name):
+        """Observation durable bornée aux transitions du watchdog.
+
+        WHY : SIGCONT acquitté ne prouve pas le drainage des événements d'un
+        client IPC. CONTRACT : comparer avant toute nouvelle mutation ; aucune
+        attribution helper/utilisateur ni nouvelle autorité de focus.
+        """
+        tree = self.sway.tree()
+        rows = self.data.setdefault("focus_boundaries", [])
+        require(len(rows) < 8, "RECOVERY_OPERATION_LIMIT")
+        rows.append({"boundary": name, "expected": copy.deepcopy(self.data["focus_expected"]),
+                     "observed": focused(tree)})
+        self.publish()
+        self.check_command_focus(tree, self.data["focus_expected"], name)
 
     def verify(self):
         tree = self.sway.tree()
@@ -442,6 +580,8 @@ class Recovery:
         expected = command_postcondition(observed, target, operation, tree) if observed else None
         expected_focus = command_focus(tree, target, operation)
         self.check_focus_preservation(tree, expected_focus, text)
+        require("structure_expected" not in self.data or structure(tree) == self.data["structure_expected"],
+                "RECOVERY_STRUCTURE_CHANGED")
         require(self.data["operations"] < 4096 and len(text) <= 2048, "RECOVERY_OPERATION_LIMIT")
         entry = next((e for e in self.data["windows"] if observed and e["origin"]["con_id"] == observed["con_id"]), None)
         if entry is not None:
@@ -467,7 +607,7 @@ class Recovery:
             self.data["intention"]["observed_after"] = after
         self.check_command_focus(tree, expected_focus, text)
         self.data["intention"]["focus_after"] = focused(tree)
-        self.data.update(focus_expected=focused(tree), focus_pending=False)
+        self.data.update(focus_expected=focused(tree), focus_pending=False, structure_expected=structure(tree))
         self.publish()
 
     def check_focus_preservation(self, tree, expected, command):
@@ -545,6 +685,35 @@ class Recovery:
                         "reason": "RECOVERY_OBSERVATION_UNAVAILABLE"} for e in durable["windows"] if not e["recovered"]]
             return self.receipt("RECOVERY_REQUIRED", windows, ["RECOVERY_OBSERVATION_UNAVAILABLE"])
 
+    def equivalent_paths(self, tree):
+        """Réconcilier seulement une équivalence structurelle déjà prouvée.
+
+        INVARIANT : lot entier, identités, placement et branches doivent rester
+        exacts ; aucune intention pending n'est réinterprétée. L'origine et les
+        preuves d'incident restent immuables, même pour une reprise sans IPC.
+        """
+        if (self.data["focus_pending"] or any(e["pending"] for e in self.data["windows"]) or
+                "structure_expected" not in self.data or structure(tree) != self.data["structure_expected"]):
+            return
+        expected = [e["expected"] for e in self.data["windows"]] + self.data["foreign"]
+        nodes = [n for n in walk(tree) if n.get("app_id") or n.get("window")]
+        if {n["id"] for n in nodes} != {s["con_id"] for s in expected}: return
+        current = {n["id"]: observe(tree, n, self.start) for n in nodes}
+        if any(placement(current[s["con_id"]]) != placement(s) for s in expected): return
+        changed = [{"con_id": e["origin"]["con_id"], "before": list(e["expected"]["path"]),
+                    "after": list(current[e["origin"]["con_id"]]["path"])} for e in self.data["windows"]
+                   if e["expected"]["path"] != current[e["origin"]["con_id"]]["path"]]
+        if not changed: return
+        # WHY : réconcilier expected ne doit pas effacer la preuve exacte de la
+        # commande confirmée. CONTRACT : historique avant/après durable et borné ;
+        # à saturation refuser la normalisation, jamais écraser un ancien lot.
+        history = self.data.setdefault("path_reconciliations", [])
+        if len(history) >= 4: return
+        history.append(changed)
+        for entry in self.data["windows"]:
+            entry["expected"] = current[entry["origin"]["con_id"]]
+        self.publish()
+
     def _recover(self):
         if self.data["status"] in ("complete", "recovered"):
             return {"status": self.data["status"], "windows": [], "issues": []}
@@ -555,15 +724,23 @@ class Recovery:
                             "workspace": origin["workspace"], "output": origin["output"], "reason": reason,
                             "inspect": "swaymsg -t get_tree -r", "stage": self.data["stage"],
                             "instruction": "Vérifier identité et emplacement avec get_tree ; après autorisation humaine seulement, "
-                            + f'[con_id={origin["con_id"]}] move container to workspace ' + json.dumps(origin["workspace"])})
+                            + ("Scratchpad : examiner le journal avant toute commande." if origin.get("scratchpad", "none") != "none" else
+                               f'[con_id={origin["con_id"]}] move container to workspace ' + json.dumps(origin["workspace"]))})
         if self.sway.session != self.data["session"]:
             for e in self.data["windows"]: issue(e, "SESSION_CHANGED")
             issues.append("SESSION_CHANGED")
         else:
-            recovery_focus = focused(self.sway.tree())
+            tree = self.sway.tree()
+            recovery_focus = focused(tree)
             if recovery_focus != self.data["focus_expected"]:
                 self.record_focus_conflict({"phase": "recovery-entry", "command": None,
                                             "before": self.data["focus_expected"], "observed": recovery_focus})
+            # WHY : un changement de layout peut garder tous les chemins bruts
+            # identiques. CONTRACT : la preuve canonique, lorsqu'elle existe,
+            # doit aussi précéder une reprise, même sans normalisation de chemin.
+            structure_changed = ("structure_expected" in self.data and
+                                 structure(tree) != self.data["structure_expected"])
+            self.equivalent_paths(tree)
             for e in self.data["windows"]:
                 if e["recovered"]: continue
                 try:
@@ -573,8 +750,22 @@ class Recovery:
                         self.publish()
                         continue
                     if e["pending"]: issue(e, "AMBIGUOUS_INTENTION"); continue
-                    if current != e["expected"]: issue(e, "IDENTITY_OR_MEMBERSHIP_CHANGED"); continue
+                    if structure_changed: issue(e, "STRUCTURE_OR_ORDER_CHANGED"); continue
+                    if current != e["expected"]:
+                        issue(e, "PATH_EQUIVALENCE_NOT_PROVEN" if placement(current) == placement(e["expected"])
+                              else "IDENTITY_OR_MEMBERSHIP_CHANGED")
+                        continue
                     origin = e["origin"]
+                    if origin.get("scratchpad", "none") != "none" or current.get("scratchpad", "none") != "none":
+                        if placement(current) == placement(origin):
+                            e.update(recovered=True, pending=False)
+                            self.publish()
+                        else:
+                            # WHY : no original output transform is persisted for
+                            # a hidden leaf. CONTRACT : keep the client and exact
+                            # journal; never show it as a speculative rollback.
+                            issue(e, "SCRATCHPAD_RECOVERY_REQUIRES_REVIEW")
+                        continue
                     active = {o["name"] for o in self.sway.outputs() if o.get("active")}
                     if origin["output"] not in active: issue(e, "OUTPUT_UNAVAILABLE"); continue
                     existing = workspace(self.sway.tree(), origin["workspace"])

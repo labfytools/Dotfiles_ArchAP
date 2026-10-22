@@ -13,6 +13,7 @@ from unittest.mock import patch
 from common import *
 from lab import Lab, Surfaces, build_helper
 from session_v2.executor import Executor
+from session_v2.guard import Guard
 from session_v2.applications import launch as real_launch
 from dataclasses import replace
 from session_v2.recovery import JOURNAL, focused, process_start, Recovery, recovery_status
@@ -122,7 +123,7 @@ def run_case(case):
                 return value
             foreign = Surfaces(lab, binary)
             foreign_node = None
-            if case in ('focus-third-party', 'preserve-foreign'):
+            if case in ('focus-third-party', 'preserve-foreign', 'focus-external-late'):
                 lab.command('workspace "TEST_ONLY_OTHER"')
                 foreign_node = foreign.create('TEST_ONLY_foreign')
                 lab.command('workspace "1"')
@@ -189,6 +190,36 @@ def run_case(case):
                     return {UUID: nodes[0]['id']}
                 def capture(self, nodes): return {UUID: nodes[0]['id']}
             runtime = private_dir(lab.directory / 'runtime')
+            helper = lab.spawn(['/usr/bin/python', '/usr/bin/autotiling', '--debug']) if case == 'autotiling' else None
+            def helpers(path):
+                # Only this private child is eligible. Never discover the host's
+                # /proc helpers, including when running an actual autotiling.
+                assert path == lab.socket
+                return [dict(pid=helper.pid, fd=os.pidfd_open(helper.pid), script='/usr/bin/autotiling')] if helper else []
+            class ObservedGuard(Guard):
+                def prepare(self):
+                    answer = super().prepare()
+                    assert self.anchors.process.poll() is not None, 'ANCHOR_NOT_EXITED_BEFORE_RESUME'
+                    evidence['anchor_exited_before_resume'] = True
+                    return answer
+                def __init__(self, sway, anchors, *args, **kwargs):
+                    self.anchors = anchors
+                    super().__init__(sway, anchors, *args, **kwargs)
+                def resume(self):
+                    answer = super().resume()
+                    if case in ('focus-helper-late', 'focus-external-late'):
+                        kitty = next(n for n in sway.windows() if n['app_id'] == 'kitty')
+                        target = foreign_node['id'] if case == 'focus-external-late' else kitty['id']
+                        lab.command(f'[con_id={target}] focus')
+                        evidence['injected_focus'] = focused(sway.tree())
+                    return answer
+                def finish(self):
+                    answer = super().finish()
+                    if case == 'focus-finish-late':
+                        kitty = next(n for n in sway.windows() if n['app_id'] == 'kitty')
+                        lab.command(f'[con_id={kitty["id"]}] focus')
+                        evidence['injected_focus'] = focused(sway.tree())
+                    return answer
             raw_command = sway.command
             def command(text):
                 row = {'command': text, 'ns': time.monotonic_ns(), 'before': focused(sway.tree())}
@@ -210,7 +241,7 @@ def run_case(case):
                 finally: row['after'] = focused(sway.tree())
             sway.command = command
             try:
-                with patch('session_v2.executor.launch', side_effect=launch_surface), patch('session_v2.guard.discover', return_value=[]):
+                with patch('session_v2.executor.launch', side_effect=launch_surface), patch('session_v2.guard.discover', side_effect=helpers), patch('session_v2.executor.Guard', ObservedGuard):
                     if case == 'launch-failure-retry':
                         bad_catalog = Catalog(tuple(replace(spec, argv=(str(lab.directory / 'TEST_ONLY_NO_EXECUTABLE'),))
                                                     if spec.application_id == 'firefox' else spec
@@ -245,7 +276,7 @@ def run_case(case):
                 # Aucun kill d'un client ; les kill du guard sont sur le helper.
                 assert not any(row['command'] == f'[con_id={music["id"]}] kill' for row in evidence['commands'])
                 assert not any(n['app_id'].startswith('labfy-v2-anchor-') for n in sway.windows())
-                if case in ('natural', 'launch-failure-retry', 'preserve-empty-workspace', 'preserve-foreign'):
+                if case in ('natural', 'launch-failure-retry', 'preserve-empty-workspace', 'preserve-foreign', 'autotiling'):
                     # Le contrat de recette exige un vrai succès. Un refus sûr
                     # est conservé comme BLOCKED et retourne un code non nul.
                     evidence['requirement_met'] = (evidence['outcome'] == 'success' and
@@ -261,8 +292,18 @@ def run_case(case):
                         assert focused(sway.tree()) == (evidence['preserved_focus'] if case in ('preserve-empty-workspace', 'preserve-foreign') else {'con_id': firefox['id'], 'workspace': '1'})
                         assert not any(location(sway.tree(), n['id'])[0] == journal['stage'] for n in sway.windows())
                         assert focused(sway.tree())['workspace'] != journal['stage']
+                elif case in ('focus-helper-late', 'focus-external-late', 'focus-finish-late'):
+                    assert evidence['outcome'] == 'RECOVERY_FOCUS_MISMATCH', evidence['outcome']
+                    assert report['anchors_swapped'] == 3 and report['slots_filled'] == 3
+                    assert report['final_tree_verified'] and not report['final_focus_verified']
+                    assert journal['status'] == 'required' and journal['focus_conflict']
+                    assert focused(sway.tree()) == evidence['injected_focus']
+                    boundary = 'after-guard-finish' if case == 'focus-finish-late' else 'after-helper-resume'
+                    assert journal['focus_conflict_observation']['command'] == boundary
+                    assert recovery_status(runtime)['status'] == 'RECOVERY_REQUIRED'
+                    evidence['requirement_met'] = True
                 else:
-                    expected = {'unowned-map': 'APPLICATION_MEMBERSHIP_CHANGED',
+                    expected = {'unowned-map' : 'APPLICATION_MEMBERSHIP_CHANGED',
                                 'provider-placement': 'TARGET_OBSERVATION_CHANGED',
                                 'pinned-map': 'APPLICATION_MEMBERSHIP_CHANGED',
                                 'map-in-ipc-gap': 'RECOVERY_FOCUS_MISMATCH',
@@ -300,7 +341,7 @@ def run_case(case):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['natural','launch-failure-retry','preserve-empty-workspace','preserve-foreign','focus-third-party','focus-same-client','unowned-map','pinned-map','map-in-ipc-gap','provider-placement','crash-mid-ipc'], default='natural')
+    parser.add_argument('--case', choices=['natural','launch-failure-retry','preserve-empty-workspace','preserve-foreign','focus-third-party','focus-same-client','unowned-map','pinned-map','map-in-ipc-gap','provider-placement','crash-mid-ipc','autotiling','focus-helper-late','focus-external-late','focus-finish-late'], default='natural')
     args = parser.parse_args()
     row = run_case(args.case)
     print(json.dumps({'scenario': args.case, 'requirement_met': row['requirement_met'],

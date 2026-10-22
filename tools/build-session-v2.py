@@ -47,7 +47,8 @@ def build(output, extension_only=False):
         for name in ("session-v2.py", "session-v2-native-host.py"):
             archive.add(SOURCE / name, arcname=name)
         for p in sorted((SOURCE / "session_v2").glob("*.py")): archive.add(p, arcname="session_v2/" + p.name)
-        archive.add(SOURCE / "session_v2/schema-v1.json", arcname="session_v2/schema-v1.json")
+        for version in (1, 2):
+            archive.add(SOURCE / f"session_v2/schema-v{version}.json", arcname=f"session_v2/schema-v{version}.json")
         archive.add(binary, arcname="session_v2/libexec/labfy-v2-anchor")
         archive.add(ROOT / "firefox-extension/session-v2/native-host.json.in", arcname="native-host.json.in")
     manifest = {"signed": False, "installed": False, "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (binary, xpi, bundle)}}

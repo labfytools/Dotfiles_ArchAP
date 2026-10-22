@@ -44,3 +44,18 @@ def compile_plan(data, tx):
             emit("create", leaves(t.root)[0])
             build(t.root, root=True)
     return tuple(plan)
+
+
+def compile_placements(data):
+    """Deterministic placement phase after tiling anchors, including scratchpad.
+
+    CONTRACT : this is descriptive data, not executable launch authority. Hidden
+    leaves have no workspace destination. V1 false means only ordinary floating;
+    the historical document itself is never rewritten or silently downgraded.
+    """
+    from .schema import validate
+    validate(data)
+    return tuple({"slot_id": s["slot_id"], "workspace": s["workspace"],
+                  "scratchpad": s["state"]["scratchpad"] or "none",
+                  "geometry": dict(s["state"]["geometry"])}
+                 for s in data["window_slots"] if s["state"]["floating"])

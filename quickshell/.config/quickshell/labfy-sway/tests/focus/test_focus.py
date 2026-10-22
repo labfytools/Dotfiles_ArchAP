@@ -186,6 +186,7 @@ class HelperAnchors:
 class HelperGuard:
     ready = dict(helpers_suspended=0)
     def __init__(self, *args): pass
+    def prepare(self): return dict(status="prepared")
     def resume(self): return dict(helpers_resumed=0)
     def finish(self): return dict(helpers_resumed=0, anchors_cleaned=0)
 
@@ -220,6 +221,39 @@ class ExtendedTests(unittest.TestCase):
             self.assertEqual(focused(sway.tree()), dict(con_id=6, workspace='1'))
             self.assertEqual(recovery_status(tmp)['status'], 'complete')
             self.assertFalse(status(Path(tmp), sway.session, fixture(), True)['deferred'])
+    def test_watchdog_boundary_focus_changes_refuse_without_refocusing(self):
+        for phase, boundary in (('prepare', 'after-guard-prepare'),
+                                ('resume', 'after-helper-resume'),
+                                ('finish', 'after-guard-finish')):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as tmp:
+                sway = MutationSway(6)
+                sway.runtime = Path(tmp)
+                class ChangedGuard(HelperGuard):
+                    def change(self):
+                        for n in walk(sway.value): n['focused'] = n['id'] == 5
+                    def prepare(self):
+                        if phase == 'prepare': self.change()
+                        return super().prepare()
+                    def resume(self):
+                        if phase == 'resume': self.change()
+                        return super().resume()
+                    def finish(self):
+                        if phase == 'finish': self.change()
+                        return super().finish()
+                with patch('session_v2.executor.Anchors', HelperAnchors), patch('session_v2.executor.Guard', ChangedGuard):
+                    with self.assertRaisesRegex(Failure, 'RECOVERY_FOCUS_MISMATCH'):
+                        Executor(sway, Catalog(), None, Path(tmp), '/forbidden', process_identity=lambda pid: pid).apply(fixture(), True)
+                report = read(Path(tmp)/'session-v2-restore-attempt.json')
+                journal = read(Path(tmp)/JOURNAL)
+                self.assertTrue(report['final_tree_verified'])
+                self.assertFalse(report['final_focus_verified'])
+                self.assertEqual(journal['focus_conflict_observation']['command'], boundary)
+                self.assertEqual(journal['focus_boundaries'][-1]['boundary'], boundary)
+                self.assertEqual(focused(sway.tree()), dict(con_id=5, workspace='10'))
+                # After the unexpected focus, even recovery emits no refocus.
+                expected = 0 if phase == 'prepare' else 1
+                self.assertEqual(sum(text == '[con_id=6] focus' for text in sway.commands), expected)
+
     def test_snapshot_focus_retained_when_baseline_belongs_to_batch(self):
         with tempfile.TemporaryDirectory() as tmp:
             sway = MutationSway(5)

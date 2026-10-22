@@ -16,7 +16,7 @@ class Application:
 class WindowSlot:
     slot_id: str
     application_id: str
-    workspace: str
+    workspace: str | None
     tree_path: tuple
     state: dict
     identity_requirement: str

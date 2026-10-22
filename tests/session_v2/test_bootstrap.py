@@ -22,9 +22,9 @@ def frame(value):
 
 class BootstrapTests(unittest.TestCase):
     def setUp(self):
-        base = REPO / "build/bootstrap-fixtures"
-        base.mkdir(parents=True, exist_ok=True)
-        self.tmp = tempfile.TemporaryDirectory(dir=base)
+        # AF_UNIX est borné à 108 octets : un worktree profond ne doit pas
+        # rendre ces sockets TEST_ONLY dépendants du chemin du dépôt.
+        self.tmp = tempfile.TemporaryDirectory(prefix="labfy-v2-bootstrap-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         for name in ("home", "state", "runtime"):

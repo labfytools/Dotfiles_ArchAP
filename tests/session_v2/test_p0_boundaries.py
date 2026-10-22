@@ -71,7 +71,7 @@ class BoundaryTests(unittest.TestCase):
                     parent['nodes'].remove(node)
                     break
             stage = json.loads(operation.removeprefix('move container to workspace '))
-            destination = dict(id=90, type='workspace', name=stage, nodes=[node])
+            destination = dict(id=90, type='workspace', name=stage, layout='splith', nodes=[node])
             self.sway.value['nodes'][0]['nodes'].append(destination)
             for n in walk(self.sway.value):
                 n['focused'] = n['id'] == focus['con_id'] if focus['con_id'] is not None else n.get('name') == focus['workspace']
