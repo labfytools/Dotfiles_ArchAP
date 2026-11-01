@@ -46,7 +46,7 @@ Exemples de correspondance :
 | `zsh/.zprofile` | `~/.zprofile` |
 | `wallpapers/.wallpapers/` | `~/.wallpapers/` |
 
-Les packages Stow sont une liste explicite de 31 noms, détaillée dans le
+Les packages Stow sont une liste explicite de 30 noms, détaillée dans le
 [guide d'installation](installation.md). Il ne faut pas déduire cette liste de
 tous les répertoires de premier niveau : `.assets/` et `docs/` ne sont pas des
 packages. Il ne faut jamais exécuter `stow .`.
@@ -58,7 +58,8 @@ packages. Il ne faut jamais exécuter `stow .`.
 - configuration déclarative sous `$HOME` ;
 - scripts personnels déployés dans `~/.local/bin` ;
 - unités et liens d'activation `systemd --user` ;
-- thèmes, icônes et fonds d'écran nécessaires à l'environnement ;
+- styles, configurations de thèmes et fonds d'écran nécessaires à l'environnement ;
+- références documentées aux thèmes d'icônes fournis par les paquets système ;
 - inventaires de reconstruction sous `.assets/` ;
 - références Git des plugins Zsh et Tmux via sous-modules.
 

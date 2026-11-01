@@ -103,7 +103,7 @@ ArchASP
 └── Dotfiles_ArchAP   utilisateur · $HOME · Stow · systemd --user
 ```
 
-Les 32 packages Stow couvrent le desktop, le shell, le développement, les
+Les 30 packages Stow couvrent le desktop, le shell, le développement, les
 services utilisateur et l'apparence. `.assets/` contient les inventaires de
 reconstruction ; `docs/` contient la documentation et n'est jamais un package
 Stow. Voir le [contrat d'architecture](docs/architecture.md).
@@ -119,13 +119,17 @@ git clone --recurse-submodules \
 cd "$HOME/.dotfiles"
 
 packages=(atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock \
-  hyprwhspr icons kitty mako nvim opencode portal qt5ct qt6ct \
+  hyprwhspr kitty mako nvim opencode portal qt5ct qt6ct \
   quickshell starship sway systemd themes tmux uwsm wallpapers wofi yazi \
   ytmusic-tui zsh)
 
 stow --no --verbose=2 --target="$HOME" "${packages[@]}"
 stow --verbose=2 --target="$HOME" "${packages[@]}"
 ```
+
+Les thèmes d’icônes et curseurs sont installés par paquets Arch (Tela Circle, Bibata),
+pas copiés dans les dotfiles. Le répertoire local `~/.icons` existant reste
+préservé pendant la migration : voir [le contrat des icônes](docs/icons.md).
 
 Le dry-run doit être examiné avant le déploiement. Les prérequis, conflits,
 inventaires et validations sont décrits dans le

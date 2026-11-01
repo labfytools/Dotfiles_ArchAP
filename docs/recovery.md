@@ -50,8 +50,11 @@ exigent une décision spécifique ; aucun helper AUR n'est supposé magique.
 ## 6. Déployer Stow
 
 Suivre le [guide d'installation](installation.md) : définir explicitement les
-32 packages, exécuter le dry-run, résoudre les conflits, puis seulement lancer
+30 packages, exécuter le dry-run, résoudre les conflits, puis seulement lancer
 le déploiement réel. `docs/` et `.assets/` ne sont pas déployés.
+
+Installer les thèmes d’icônes utilisés via les paquets (cf. [icônes](icons.md)) :
+il n’est pas nécessaire de restaurer un dossier `~/.icons` versionné.
 
 ## 7. Restaurer les services
 
