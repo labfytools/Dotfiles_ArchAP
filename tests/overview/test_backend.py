@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,6 +15,16 @@ spec.loader.exec_module(backend)
 
 
 class OverviewBackendTests(unittest.TestCase):
+    def setUp(self):
+        # CONTRACT: even secondary state reads never reach the personal cache.
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        env = patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.temp.name,
+            "XDG_CONFIG_HOME": self.temp.name})
+        env.start(); self.addCleanup(env.stop)
+        previous = os.umask(0o077)
+        self.addCleanup(os.umask, previous)
+
     def test_lock_guard_blocks_all_capture_entrypoints(self):
         # CONTRACT: no compositor read or grim call follows an active lock
         # guard, including the window-preview path.
@@ -111,10 +122,10 @@ class OverviewBackendTests(unittest.TestCase):
             original = backend.structure_revision(workspace, workspaces[0], rect)
             backend.snapshot_metadata_path("eDP-1", 1).write_text(json.dumps({
                 "version": 1, "output": "eDP-1", "number": 1, "workspaceId": 4,
-                "revision": original, "capturedNs": 123, "imageMtimeNs": path.stat().st_mtime_ns}))
-            self.assertNotEqual(backend.state()["cards"][0]["snapshot"], "")
+                "revision": original, "capturedNs": 123, "lockRevision": [], "imageMtimeNs": path.stat().st_mtime_ns}))
+            self.assertEqual(backend.state()["cards"][0]["snapshot"], "")
             window["name"] = "Titre changé"
-            self.assertNotEqual(backend.state()["cards"][0]["snapshot"], "")
+            self.assertEqual(backend.state()["cards"][0]["snapshot"], "")
             window["rect"] = {**rect, "width": 500}
             changed = backend.state()["cards"][0]
             self.assertEqual(changed["snapshot"], "")
@@ -146,24 +157,10 @@ class OverviewBackendTests(unittest.TestCase):
                 self.assertFalse(backend.capture("eDP-1")["captured"])
             self.assertFalse(backend.snapshot_path("eDP-1", 1).exists())
 
-    def test_capture_publishes_metadata_only_for_stable_visible_workspace(self):
-        card = {"number": 7, "workspaceId": 164, "revision": "stable", "visible": True,
-                "output": "eDP-1", "windows": [{"id": 42}]}
-
-        def fake_grim(args, **_kwargs):
-            Path(args[-1]).write_bytes(b"JPEG")
-            return subprocess.CompletedProcess(args, 0, "", "")
-
-        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"XDG_RUNTIME_DIR": directory}), \
-                patch.object(backend, "state", return_value={"cards": [card], "overlayOutputs": []}), \
-                patch.object(backend.subprocess, "run", side_effect=fake_grim):
-            result = backend.capture("eDP-1", expected_number=7, expected_workspace_id=164)
-            self.assertTrue(result["captured"])
-            self.assertIsNotNone(backend.valid_snapshot("eDP-1", 7, 164, "stable"))
-            self.assertIsNone(backend.valid_snapshot("eDP-1", 7, 164, "changed"))
-            self.assertIsNone(backend.valid_snapshot("eDP-1", 7, 999, "stable"))
-            self.assertFalse(backend.capture("eDP-1", expected_number=8)["captured"])
-            self.assertFalse(backend.capture("eDP-1", expected_revision="changed")["captured"])
+    def test_composed_capture_disabled_even_on_visible_workspace(self):
+        # Whole-output capture would leak excluded applications behind a card.
+        with patch.object(backend.subprocess, "run", side_effect=AssertionError("grim reached")):
+            self.assertEqual(backend.capture("eDP-1"), {"captured": False})
 
     def test_removed_workspace_cleans_only_its_cache_entries(self):
         tree = {"type": "root", "nodes": [], "floating_nodes": []}
@@ -199,14 +196,14 @@ class OverviewBackendTests(unittest.TestCase):
             path.write_bytes(b"JPEG")
             backend.window_preview_metadata_path(42).write_text(json.dumps({
                 "version": 1, "conId": 42, "foreignId": "a" * 32,
-                "capturedNs": 123, "imageMtimeNs": path.stat().st_mtime_ns}))
+                "capturedNs": 123, "lockRevision": [], "imageMtimeNs": path.stat().st_mtime_ns}))
             before = backend.state()["cards"]
             self.assertNotEqual(before[6]["windows"][0]["preview"], "")
             source["nodes"] = []
             destination["nodes"] = [window]
             moved = backend.state()["cards"]
             self.assertEqual(moved[6]["windows"], [])
-            self.assertEqual(moved[7]["windows"][0]["preview"], path.as_uri())
+            self.assertEqual(moved[7]["windows"][0]["preview"], backend.image_url(path))
             destination["nodes"] = []
             backend.state()
             self.assertFalse(path.exists())
@@ -222,6 +219,7 @@ class OverviewBackendTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, b"", b"")
 
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"XDG_RUNTIME_DIR": directory}), \
+                patch.object(backend, "overview_open", return_value=True), \
                 patch.object(backend.subprocess, "run", side_effect=fake_grim) as run:
             with patch.object(backend, "state", side_effect=[before, before]):
                 result = backend.capture_windows({7})
@@ -244,13 +242,16 @@ class OverviewBackendTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"XDG_RUNTIME_DIR": directory}), \
                 patch.object(backend, "state", return_value=cards), \
+                patch.object(backend, "overview_open", return_value=True), \
                 patch.object(backend.subprocess, "run", side_effect=fake_grim) as run:
             first = backend.capture_windows({7})
-            self.assertEqual(first["captured"], list(range(1, 17)))
-            self.assertEqual(first["nextCursor"], 16)
-            second = backend.capture_windows({7}, cursor=first["nextCursor"])
-            self.assertEqual(second["captured"], [17])
-            self.assertEqual(second["nextCursor"], 0)
+            self.assertEqual(first["captured"], list(range(1, 5)))
+            self.assertEqual(first["nextCursor"], 4)
+            captured = first["captured"]
+            while first["nextCursor"]:
+                first = backend.capture_windows({7}, cursor=first["nextCursor"])
+                captured += first["captured"]
+            self.assertEqual(captured, list(range(1, 18)))
             self.assertEqual(run.call_count, 17)
 
 

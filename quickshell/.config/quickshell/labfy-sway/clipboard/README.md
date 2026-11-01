@@ -21,7 +21,18 @@ L'ouverture du presse-papiers ferme Date Center, Control Center, le menu des fen
 
 Une seule image sélectionnée peut recevoir une miniature. Elle est produite par ImageMagick dans un répertoire `0700` sous `XDG_RUNTIME_DIR`, avec limites locales de mémoire et de surface. Le panneau nettoie ses miniatures à la fermeture. Les anciens fichiers de `cliphist/thumbs` ne sont pas réutilisés : leurs permissions et leur provenance ne sont pas garanties. Le décodage utilise un fichier temporaire privé, sans placer les octets binaires dans une propriété QML ou dans les arguments d'une commande.
 
-Les journaux ne contiennent ni aperçu ni contenu décodé. L'interface affiche les aperçus seulement quand l'utilisateur l'ouvre. Elle ne crée pas de base supplémentaire ni de nouvelle politique de rétention. Les deux collecteurs actuels ne distinguent pas de manière fiable les secrets des autres contenus ; l'exclusion automatique des mots de passe n'est donc pas annoncée. Pour éviter la collecte d'un secret, il faut agir à la source ou définir ultérieurement une politique explicite.
+Les journaux ne contiennent ni aperçu ni contenu décodé. L'interface affiche les aperçus seulement quand l'utilisateur l'ouvre. Elle ne crée pas de base supplémentaire ni de nouvelle politique de rétention. Les collecteurs transmettent `CLIPBOARD_STATE=sensitive` lorsque l'application
+source publie le marqueur `wl-copy --sensitive` ; `cliphist 0.7.0` ne stocke pas
+ces offres. Une application qui n'émet aucun marqueur sensible n'est pas
+reconnue automatiquement. Les tests STEP15A ont confirmé séparément une offre
+PNG seule (collecteur image) et une offre texte+PNG (un appel par collecteur,
+chaque représentation étant distincte). Le filtre `--type text` du service
+texte exprime explicitement ce choix pour les prochains démarrages de service.
+`UMask=0077` rend privés les nouveaux fichiers. La base existante a été
+contrôlée puis mise à `0600` sans lecture de contenu. Les services actifs
+n'ont pas été redémarrés par STEP15A. Le contrôle « Suspendre l'historique »
+est reporté : une suspension fiable doit refléter et piloter l'état réel des
+deux services sans perdre leur configuration ni leurs états initiaux. Pour éviter la collecte d'un secret, il faut agir à la source ou définir ultérieurement une politique explicite.
 
 ## Dépendances et retour arrière
 

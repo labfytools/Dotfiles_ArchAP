@@ -6,13 +6,20 @@ import subprocess
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from common import BACKEND, REPO, Path, os, sys
-from session_v2.native_host import bootstrap_eligibility, EXTENSION_ID
+from session_v2.native_host import bootstrap_eligibility, classify, validate, EXTENSION_ID, APP_IDS, WEBAPP_IDS
+from session_v2.errors import Failure
 
 
 REQUEST = {"op": "bootstrap-eligibility"}
 MAP = {"op": "map-window", "uuid": "11111111-1111-4111-8111-111111111111", "runtime_token": "a" * 32}
+CLASSIFY = {"op": "classify-window", "runtime_token": MAP["runtime_token"]}
+WEBAPP = "firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded"
+
+
+def surface(app_id="firefox", con_id=42):
+    return {"id": con_id, "app_id": app_id, "name": "[LABFY:" + MAP["runtime_token"] + "] private suffix"}
 
 
 def frame(value):
@@ -50,7 +57,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertIs(type(result["baseline_enrollment_allowed"]), bool)
         return result["baseline_enrollment_allowed"]
 
-    def wire(self, raw, extension=EXTENSION_ID, serve=False):
+    def wire(self, raw, extension=EXTENSION_ID, serve=False, nodes=None):
         # Le vrai host contrôle lstat/UID du socket. Le faux serveur n'accepte
         # que GET_TREE/GET_VERSION ; toute commande mutatrice échoue.
         server = socket.socket(socket.AF_UNIX)
@@ -58,6 +65,7 @@ class BootstrapTests(unittest.TestCase):
         server.listen()
         server.settimeout(.1)
         stop, errors = threading.Event(), []
+        tree = {"id": 0, "nodes": [surface()] if nodes is None else nodes}
         def run():
             try:
                 while not stop.is_set():
@@ -71,7 +79,6 @@ class BootstrapTests(unittest.TestCase):
                         self.assertEqual((magic, size), (b"i3-ipc", 0))
                         self.assertIn(kind, (4, 7))
                         if kind == 4: self.assertTrue(serve)
-                        tree = {"id": 0, "nodes": [{"id": 42, "app_id": "firefox", "name": "[LABFY:" + MAP["runtime_token"] + "] private suffix"}]}
                         payload = json.dumps(tree if kind == 4 else {"human_readable": "TEST_ONLY"}).encode()
                         client.sendall(struct.pack("<6sII", b"i3-ipc", len(payload), kind) + payload)
             except Exception as error: errors.append(error)
@@ -270,6 +277,110 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(record["uuid"], MAP["uuid"])
         self.assertEqual(record["publisher_pid"] > 0, True)
         self.assertFalse(self.store.exists())
+
+    def assert_no_observations(self):
+        observations = [p for p in (self.root / "runtime").rglob("*.json") if p.stem.isdigit()]
+        self.assertEqual(observations, [])
+        self.assertFalse(self.store.exists())
+
+    def test_classify_exact_catalogue_and_no_uuid_publication(self):
+        self.assertEqual(APP_IDS, {"firefox", "org.mozilla.firefox"})
+        self.assertEqual(WEBAPP_IDS, {WEBAPP})
+        for app_id, kind in (("firefox", "browser"), ("org.mozilla.firefox", "browser"),
+                             (WEBAPP, "managed-webapp")):
+            with self.subTest(app_id=app_id):
+                code, answers = self.wire(frame(CLASSIFY), serve=True, nodes=[surface(app_id)])
+                self.assertEqual(code, 0)
+                self.assertEqual(answers, [{"result": "OK", "kind": kind,
+                                           "runtime_token": CLASSIFY["runtime_token"], "con_id": 42}])
+                self.assert_no_observations()
+
+    def test_classify_closed_envelope_and_token(self):
+        invalid = [
+            ({**CLASSIFY, "uuid": MAP["uuid"]}, "MESSAGE_SCHEMA"),
+            ({**CLASSIFY, "kind": "managed-webapp"}, "MESSAGE_SCHEMA"),
+            ({**CLASSIFY, "app_id": WEBAPP}, "MESSAGE_SCHEMA"),
+            ({"op": "classify-window"}, "MESSAGE_SCHEMA"),
+        ]
+        for token in (None, True, 32, "", "a" * 31, "a" * 33, "A" * 32, "g" * 32):
+            invalid.append(({**CLASSIFY, "runtime_token": token}, "INVALID_TOKEN"))
+        for message, expected in invalid:
+            with self.subTest(message=message):
+                with self.assertRaises(Failure) as caught: validate(message)
+                self.assertEqual(caught.exception.code, expected)
+                self.assertEqual(self.wire(frame(message))[1], [{"result": expected}])
+        self.assert_no_observations()
+
+    def test_classify_real_framing_rejects_duplicate_and_bounds(self):
+        duplicate = b'{"op":"classify-window","runtime_token":"' + b'a' * 32 + b'","runtime_token":"' + b'b' * 32 + b'"}'
+        for raw in (struct.pack("=I", len(duplicate)) + duplicate,
+                    struct.pack("=I", 4097), struct.pack("=I", 0),
+                    struct.pack("=I", 80) + b'{"op":"classify-window"}'):
+            with self.subTest(raw=raw):
+                _, answers = self.wire(raw)
+                self.assertTrue(not answers or all(a["result"] != "OK" for a in answers))
+        self.assert_no_observations()
+
+    def test_classify_unknown_never_becomes_managed_webapp(self):
+        for app_id in ("firefox.webapp-unregistered", WEBAPP + "-suffix", "Firefox", "kitty", "x11-class:firefox"):
+            with self.subTest(app_id=app_id):
+                self.assertEqual(self.wire(frame(CLASSIFY), serve=True, nodes=[surface(app_id)])[1],
+                                 [{"result": "WINDOW_CLASS_UNSUPPORTED"}])
+        x11 = {**surface(None), "window": 123, "window_properties": {"class": "firefox"}}
+        self.assertEqual(self.wire(frame(CLASSIFY), serve=True, nodes=[x11])[1],
+                         [{"result": "WINDOW_CLASS_UNSUPPORTED"}])
+        self.assert_no_observations()
+
+    def test_classify_collision_including_unknown_fails_closed(self):
+        for second in ("org.mozilla.firefox", WEBAPP, "unregistered"):
+            with self.subTest(second=second):
+                self.assertEqual(self.wire(frame(CLASSIFY), serve=True,
+                                           nodes=[surface(), surface(second, 43)])[1],
+                                 [{"result": "EXACT_WINDOW_IDENTITY_COLLISION"}])
+        self.assert_no_observations()
+
+    def test_classify_requires_exact_prefix_with_bounded_timeout(self):
+        for name in ("private unmarked", "prefix " + surface()["name"],
+                     "[LABFY:" + "b" * 32 + "] private suffix"):
+            sway = Mock()
+            sway.windows.return_value = [{**surface(), "name": name}]
+            with self.subTest(name=name), patch("session_v2.native_host.time.monotonic", side_effect=[0, 3]):
+                with self.assertRaises(Failure) as caught: classify(sway, CLASSIFY)
+                self.assertEqual(caught.exception.code, "CORRELATION_TIMEOUT")
+                sway.windows.assert_called_once_with()
+
+    def test_classify_requires_positive_integer_container(self):
+        for identity in (None, True, 0, -1, "42"):
+            sway = Mock()
+            sway.windows.return_value = [surface(con_id=identity)]
+            with self.subTest(identity=identity):
+                with self.assertRaises(Failure) as caught: classify(sway, CLASSIFY)
+                self.assertEqual(caught.exception.code, "WINDOW_CLASS_UNSUPPORTED")
+
+    def test_classify_does_not_extend_map_to_webapp(self):
+        code, answers = self.wire(frame(CLASSIFY) + frame(MAP), serve=True, nodes=[surface(WEBAPP)])
+        self.assertEqual(code, 0)
+        self.assertEqual(answers, [{"result": "OK", "kind": "managed-webapp",
+                                   "runtime_token": CLASSIFY["runtime_token"], "con_id": 42},
+                                  {"result": "CORRELATION_TIMEOUT"}])
+        self.assert_no_observations()
+
+    def test_classify_interleaved_browser_map_and_bootstrap_remain_compatible(self):
+        code, answers = self.wire(frame(REQUEST) + frame(CLASSIFY) + frame(MAP) + frame(CLASSIFY), serve=True)
+        self.assertEqual(code, 0)
+        classification = {"result": "OK", "kind": "browser",
+                          "runtime_token": CLASSIFY["runtime_token"], "con_id": 42}
+        self.assertEqual(answers, [{"result": "OK", "baseline_enrollment_allowed": True}, classification,
+                                  {"result": "OK", "uuid": MAP["uuid"], "con_id": 42}, classification])
+        observations = [p for p in (self.root / "runtime").rglob("*.json") if p.stem.isdigit()]
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0].name, "42.json")
+        self.assertEqual(json.loads(observations[0].read_text())["uuid"], MAP["uuid"])
+        self.assertFalse(self.store.exists())
+
+    def test_classify_rejects_wrong_operation(self):
+        with self.assertRaises(Failure) as caught: classify(Mock(), MAP)
+        self.assertEqual(caught.exception.code, "OP_NOT_ALLOWED")
 
     def test_checkpoint_created_between_observations(self):
         self.prepare()

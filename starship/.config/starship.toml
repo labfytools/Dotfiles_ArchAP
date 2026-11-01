@@ -1,12 +1,15 @@
 #"$schema" = 'https://starship.rs/config-schema.json'
-format = """
-$os$username$hostname$directory$git_branch$git_status$python$lua$rust$php$nodejs${custom.venv}
-$character
-"""
-right_format = """
-$time$battery
-"""
-add_newline = true
+# WHY: /tmp can contain thousands of entries; the 30 ms default intermittently
+# aborts project detection before the prompt's language modules are resolved.
+# CONTRACT: This is a scan ceiling, not a delay or an external-command timeout.
+# INVARIANT: Scanning stays bounded; this setting does not run a command.
+scan_timeout = 75
+# WHY: Keep identity and location stable while showing project context only when present.
+# CONTRACT: The final line is always the input character; contextual modules share one compact line.
+# INVARIANT: No decorative subprocess or unconditional clock is needed for this layout.
+format = "$os$username$hostname$directory\n($git_branch$git_status$python$lua$rust$php$nodejs${env_var.VIRTUAL_ENV}$cmd_duration\n)$character"
+right_format = "$battery"
+add_newline = false
 
 palette = "catppuccin_mocha"
 
@@ -51,6 +54,8 @@ symbol = " "
 read_only = " 󰌾"
 truncation_length = 3
 truncation_symbol = '…/'
+style = "bold lavender"
+format = '[$path]($style)[$read_only]($read_only_style)'
 
 [docker_context]
 symbol = " "
@@ -82,6 +87,24 @@ symbol = " "
 
 [git_branch]
 symbol = " "
+format = '[$symbol$branch]($style) '
+style = "bold blue"
+truncation_length = 32
+truncation_symbol = "…"
+
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+style = "peach"
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕"
+untracked = "?"
+stashed = "*"
+modified = "!"
+staged = "+"
+renamed = "»"
+deleted = "✘"
 
 [git_commit]
 tag_symbol = '  '
@@ -108,7 +131,7 @@ symbol = " "
 disabled = false
 ssh_only = false
 format = "[@$hostname]($style) "
-style = "bold lavender"
+style = "subtext0"
 ssh_symbol = " "
 
 [java]
@@ -127,7 +150,7 @@ disabled = false
 
 [lua]
 symbol = " "
-format = 'via [ $version](bold blue) '
+format = '[ $version](mauve) '
 
 [memory_usage]
 symbol = "󰍛 "
@@ -143,14 +166,14 @@ symbol = " "
 
 [nodejs]
 symbol = " "
-format = 'via [ $version](bold green) '
+format = '[ $version](mauve) '
 
 [ocaml]
 symbol = " "
 
 [os]
 disabled = false
-format = "[$symbol]($style)-"
+format = "[$symbol]($style)"
 style = "bold lavender"
 
 [os.symbols]
@@ -212,7 +235,7 @@ symbol = " "
 
 [php]
 symbol = " "
-format = 'via [ $version](147 bold) '
+format = '[ $version](mauve) '
 
 [pijul_channel]
 symbol = " "
@@ -222,7 +245,7 @@ symbol = "󰏗 "
 
 [python]
 symbol = " "
-style = "bold yellow"
+style = "mauve"
 format = '[$symbol($virtualenv )]($style) '
 python_binary = ["./.venv/bin/python", "python", "python3"]
 
@@ -234,7 +257,7 @@ symbol = " "
 
 [rust]
 symbol = "󱘗 "
-format = 'via [󱘗  $version](red bold)'
+format = '[󱘗 $version](mauve) '
 
 [scala]
 symbol = " "
@@ -253,7 +276,7 @@ symbol = " "
 symbol = " "
 
 [time]
-disabled = false
+disabled = true
 format = "[$time]($style) "
 time_format = "%H:%M"        # 24h, heures:minutes
 style = "blue"
@@ -265,10 +288,14 @@ format = "[$user]($style)"
 style_user = "bold lavender"
 style_root = "bold red"
 
-[custom.venv]
-command = "echo VENV-ACTIVE"
-when = '[[ -n "$VIRTUAL_ENV" ]]'
-format = '[ $output ](bold red) '
+# WHY: Presence of VIRTUAL_ENV is enough; the previous custom module spawned a shell.
+# CONTRACT: Retain the visible VENV-ACTIVE marker without external execution.
+[env_var.VIRTUAL_ENV]
+format = '[VENV-ACTIVE](mauve) '
+
+[cmd_duration]
+min_time = 2_000
+format = '[󰔟 $duration](subtext0) '
 
 [xmake]
 symbol = " "

@@ -167,8 +167,20 @@ def run_case(case):
                 thread.start()
                 return []
             class Provider:
-                def resolve(self, expected, nodes):
-                    assert expected == [UUID] and len(nodes) == 1
+                def __init__(self): self.resolutions = 0
+                def resolve(self, expected, nodes, timeout=6):
+                    assert set(expected) == {UUID} and len(nodes) == 1
+                    self.resolutions += 1
+                    if self.resolutions == 1:
+                        # Admission is read-only; these scenarios inject races
+                        # only at the later transactional identity resolution.
+                        assert not (runtime / JOURNAL).exists()
+                        assert not (runtime / 'session-v2-restore-attempt.json').exists()
+                        assert evidence['commands'] == []
+                        observe('provider-admission')
+                        return {UUID: nodes[0]['id']}
+                    assert self.resolutions == 2
+                    assert (runtime / JOURNAL).exists() and evidence['commands']
                     observe('provider-resolve')
                     if case == 'focus-third-party':
                         lab.command(f'[con_id={foreign_node["id"]}] focus')
@@ -188,7 +200,7 @@ def run_case(case):
                         kitty = next(n for n in sway.windows() if n['app_id'] == 'kitty')
                         lab.command(f'[con_id={kitty["id"]}] move container to workspace "TEST_ONLY_MOVED"')
                     return {UUID: nodes[0]['id']}
-                def capture(self, nodes): return {UUID: nodes[0]['id']}
+                def capture(self, nodes, timeout=6): return {UUID: nodes[0]['id']}
             runtime = private_dir(lab.directory / 'runtime')
             helper = lab.spawn(['/usr/bin/python', '/usr/bin/autotiling', '--debug']) if case == 'autotiling' else None
             def helpers(path):
@@ -339,11 +351,162 @@ def run_case(case):
     return evidence
 
 
+
+def nested_focus_layout(lab, apps, history):
+    """Synthetic equivalent of the admitted unary ancestry, plus one owned leaf.
+
+    Deleting a nonfocused unary branch can update the hidden global seat stack
+    without changing the direct-child focus arrays published by IPC.
+    """
+    from session_v2.ipc import walk, workspace
+    lab.command('workspace "1"')
+    ids = {}
+    for name in "ABCDX":
+        node = apps.create("TEST_ONLY_app-" + name)
+        ids[name] = node["id"]
+        lab.command(f'[con_id={node["id"]}] mark TEST_ONLY_{name}')
+    lab.command(f'[con_id={ids["B"]}] splitv')
+    lab.command(f'[con_id={ids["C"]}] move container to mark TEST_ONLY_B')
+    lab.command(f'[con_id={ids["C"]}] splith')
+    lab.command(f'[con_id={ids["D"]}] move container to mark TEST_ONLY_C')
+    lab.command(f'[con_id={ids["X"]}] move container to mark TEST_ONLY_D')
+    for name in "ABCDX":
+        lab.command(f'[con_id={ids[name]}] splitv')
+    parent = next(n for n in walk(lab.tree()) if any(c["id"] == ids["A"] for c in n.get("nodes", [])))
+    lab.command(f'[con_id={parent["id"]}] layout tabbed')
+    lab.command(f'[con_id={ids["A"]}] splitv')
+    lab.command(f'[con_id={parent["id"]}] layout splitv')
+    for _ in range(2):
+        lab.command(f'[con_id={ids["B"]}] focus')
+        for _depth in range(20):
+            if focused(lab.tree())["con_id"] is None: break
+            lab.command("focus parent")
+        else: raise AssertionError("TEST_ONLY_WORKSPACE_FOCUS_DEPTH")
+        lab.command("splith")
+    for name in "ADCB":
+        lab.command(f'[con_id={ids[name]}] focus')
+    lab.command(f'[con_id={ids["C"]}] focus')
+    if history == "raw-reap":
+        lab.command(f'[con_id={ids["B"]}] focus')
+    lab.command(f'[con_id={ids["X"]}] move container to workspace "TEST_ONLY_OTHER"')
+    if history == "ordinary":
+        lab.command(f'[con_id={ids["B"]}] focus')
+    ids["outer"] = workspace(lab.tree(), "1")["nodes"][0]["id"]
+    return ids
+
+
+def run_nested_native():
+    from session_v2.recovery import command_focus
+    from session_v2.ipc import walk
+    evidence = {"test_only": True, "real_login_validated": False, "real_applications": False,
+                "scenario": "nested-focus-stack", "histories": []}
+    for history in ("ordinary", "raw-reap"):
+        with Lab() as lab:
+            apps = Surfaces(lab, build_helper(lab.directory))
+            try:
+                ids = nested_focus_layout(lab, apps, history)
+                before = lab.tree()
+                row = {"history": history, "version": lab.ipc(kind="get_version"), "ids": ids,
+                       "admission": before, "moves": []}
+                for name in "AB":
+                    tree = lab.tree()
+                    op = 'move container to workspace "TEST_ONLY_STAGE"'
+                    expected = command_focus(tree, ids[name], op)
+                    lab.command(f'[con_id={ids[name]}] ' + op)
+                    row["moves"].append({"target": name, "predicted": expected, "actual": focused(lab.tree())})
+                expected_id = ids["outer"] if history == "ordinary" else ids["C"]
+                row["requirement_met"] = row["moves"][-1]["actual"] == {"con_id": expected_id, "workspace": "1"}
+                evidence["histories"].append(row)
+            finally: apps.close()
+    # IDs are allocated in identical order. Prove the relevant public topology
+    # and each direct-child focus order agree before the same moves.
+    def public(tree):
+        return [(n["id"], n.get("type"), n.get("layout"), n.get("app_id"), n.get("focused"),
+                 n.get("focus", []), [c["id"] for c in n.get("nodes", [])],
+                 [c["id"] for c in n.get("floating_nodes", [])]) for n in walk(tree)]
+    evidence["same_public_tree"] = public(evidence["histories"][0]["admission"]) == public(evidence["histories"][1]["admission"])
+    evidence["requirement_met"] = evidence["same_public_tree"] and all(r["requirement_met"] for r in evidence["histories"])
+    evidence["outcome"] = "distinct-native-focus" if evidence["requirement_met"] else "native-fixture-mismatch"
+    atomic(private_dir(EVIDENCE) / "login-focus-nested-focus-stack.json", evidence)
+    return evidence
+
+
+def run_nested_staging(case="nested-staging"):
+    from session_v2.ipc import walk
+    from lab import shape
+    evidence = {"test_only": True, "real_login_validated": False, "real_applications": False,
+                "scenario": case, "commands": []}
+    with Lab() as lab:
+        apps = Surfaces(lab, build_helper(lab.directory))
+        try:
+            ids = nested_focus_layout(lab, apps, "raw-reap")
+            if case == "nested-staging-internal":
+                branch = next(n for n in walk(lab.tree()) if n.get("type") == "con" and
+                              not n.get("app_id") and
+                              {c["id"] for c in walk(n) if c.get("app_id")} == {ids["C"], ids["D"]})
+                lab.command(f'[con_id={branch["id"]}] focus')
+                evidence["initial_internal_focus"] = branch["id"]
+            if case == "nested-staging-foreign":
+                lab.command(f'[con_id={ids["X"]}] move container to workspace "1"')
+                lab.command('rename workspace "1" to "TEST_ONLY_SOURCE"')
+                lab.command(f'[con_id={ids["B"]}] focus')
+            data = fixture({"splith": ["A", {"splitv": ["B", {"splith": ["C", "D"]}]}]}, "1")
+            data["focus"] = "B"
+            sway = Sway(lab.socket)
+            runtime = private_dir(lab.directory / "runtime")
+            evidence.update(version=lab.ipc(kind="get_version"), ids=ids, before=sway.tree())
+            raw_command = sway.command
+            def command(text):
+                row = {"command": text, "before": focused(sway.tree())}
+                evidence["commands"].append(row)
+                try: return raw_command(text)
+                finally: row["after"] = focused(sway.tree())
+            sway.command = command
+            try:
+                with patch("session_v2.guard.discover", return_value=[]):
+                    Executor(sway, catalog(data), None, runtime, build(lab.directory), lab.env).apply(data, True)
+                evidence["outcome"] = "success"
+            except Failure as exc:
+                evidence["outcome"] = exc.code
+            evidence.update(after=sway.tree(),
+                            journal=read(runtime / JOURNAL) if (runtime / JOURNAL).exists() else None,
+                            report=read(runtime / "session-v2-restore-attempt.json")
+                                   if (runtime / "session-v2-restore-attempt.json").exists() else None)
+            report, journal = evidence["report"], evidence["journal"]
+            if case == "nested-staging-foreign":
+                evidence["requirement_met"] = (
+                    evidence["outcome"] == "RESTORE_FOCUS_STAGING_UNPROVEN" and
+                    report is None and journal is None and evidence["commands"] == [] and
+                    focused(sway.tree()) == {"con_id": ids["B"], "workspace": "TEST_ONLY_SOURCE"} and
+                    {n["id"] for n in sway.windows()} == {ids[n] for n in "ABCDX"})
+                return evidence
+            evidence["requirement_met"] = (
+                evidence["outcome"] == "success" and report["final_tree_verified"] and
+                report["final_focus_verified"] and report["anchors_swapped"] == 4 and
+                report["slots_filled"] == 4 and journal["status"] == "complete" and
+                focused(sway.tree()) == {"con_id": ids["B"], "workspace": "1"} and
+                shape(sway.tree(), "1", {ids[n]: n for n in "ABCD"}) ==
+                    {"splith": ["A", {"splitv": ["B", {"splith": ["C", "D"]}]}]})
+            assert not any(n.get("app_id", "").startswith("labfy-v2-anchor-") for n in sway.windows())
+            assert location(sway.tree(), ids["X"])[0] == "TEST_ONLY_OTHER"
+            if evidence["requirement_met"]:
+                staged = [int(r["command"].split("=", 1)[1].split("]", 1)[0])
+                          for r in evidence["commands"] if r["command"].endswith(json.dumps(journal["stage"]))
+                          and r["command"].startswith("[con_id=")]
+                assert staged[:4] == [ids[n] for n in ("ABCD" if case == "nested-staging-internal" else "ACDB")], staged
+                assert not any(location(sway.tree(), n["id"])[0] == journal["stage"] for n in sway.windows())
+        finally:
+            atomic(private_dir(EVIDENCE) / ("login-focus-" + case + ".json"), evidence)
+            apps.close()
+    return evidence
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', choices=['natural','launch-failure-retry','preserve-empty-workspace','preserve-foreign','focus-third-party','focus-same-client','unowned-map','pinned-map','map-in-ipc-gap','provider-placement','crash-mid-ipc','autotiling','focus-helper-late','focus-external-late','focus-finish-late'], default='natural')
+    parser.add_argument('--case', choices=['nested-focus-stack','nested-staging','nested-staging-internal','nested-staging-foreign','natural','launch-failure-retry','preserve-empty-workspace','preserve-foreign','focus-third-party','focus-same-client','unowned-map','pinned-map','map-in-ipc-gap','provider-placement','crash-mid-ipc','autotiling','focus-helper-late','focus-external-late','focus-finish-late'], default='natural')
     args = parser.parse_args()
-    row = run_case(args.case)
+    row = (run_nested_native() if args.case == "nested-focus-stack" else
+           run_nested_staging(args.case) if args.case.startswith("nested-staging") else run_case(args.case))
     print(json.dumps({'scenario': args.case, 'requirement_met': row['requirement_met'],
                       'outcome': row['outcome'], 'real_login_validated': False}))
     raise SystemExit(0 if row['requirement_met'] else 2)

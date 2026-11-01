@@ -42,6 +42,9 @@ Rectangle {
                 anchors.fill: parent
                 source: card.player ? card.player.trackArtUrl : ""
                 fillMode: Image.PreserveAspectCrop
+                // WHY: displayed at 72 logical px; bound decoded pixels even
+                // when MPRIS provides a multi-megapixel artwork.
+                sourceSize: Qt.size(144, 144)
                 asynchronous: true
                 visible: status === Image.Ready
             }

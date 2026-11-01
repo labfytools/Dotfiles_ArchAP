@@ -2,7 +2,7 @@
 import time
 from .errors import require
 from .schema import validate, PROVIDER
-from .ipc import walk, location
+from .ipc import walk, location, surface_identity
 
 
 def capture(sway, catalog, provider, reason="manual"):
@@ -11,7 +11,7 @@ def capture(sway, catalog, provider, reason="manual"):
         # Les titres, tokens et métadonnées applicatives ne participent pas à
         # cette empreinte éphémère. Détecter aussi déplacement/focus durant capture.
         return (node.get("id"), node.get("layout"), node.get("name") if node.get("type") in ("workspace", "output") else None,
-                node.get("app_id"), node.get("window"), node.get("pid"), node.get("scratchpad_state", "none"), node.get("focused"), node.get("fullscreen_mode"), node.get("floating"), node.get("rect"),
+                surface_identity(node), node.get("window"), node.get("pid"), node.get("scratchpad_state", "none"), node.get("focused"), node.get("fullscreen_mode"), node.get("floating"), node.get("rect"),
                 tuple(topology(c) for c in node.get("nodes", [])), tuple(topology(c) for c in node.get("floating_nodes", [])))
     nodes = [n for n in walk(tree) if n.get("app_id") or n.get("window")]
     require(len(nodes) <= 256, "WINDOW_LIMIT")
@@ -25,6 +25,7 @@ def capture(sway, catalog, provider, reason="manual"):
     for s in specs.values():
         if s.application_id in apps: continue
         members = [n for n in nodes if specs[n["id"]].application_id == s.application_id]
+        require(s.strategy != "single-window" or len(members) == 1, "APPLICATION_POLICY_MISMATCH")
         apps[s.application_id] = {"application_id": s.application_id, "desktop_entry": s.desktop_entry,
             "strategy": s.strategy, "expected_windows": len(members),
             "managed_by": (s.managed_by or "autostart") if s.strategy == "managed-autostart" else None, "identity_provider": s.provider}

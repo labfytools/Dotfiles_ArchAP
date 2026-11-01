@@ -1,15 +1,88 @@
 # Companion Firefox Session Restore V2
 
-Candidat local **1.1.1 non signé**, même ID `session-v2@labfy.org`, même clé
+Sources de la version **1.1.2**, même ID `session-v2@labfy.org`, même clé
 `labfy.session.window_uuid`, mêmes permissions `sessions`, `nativeMessaging`.
-La version signée 1.0.0 installée n'est pas modifiée par ces sources.
+Le build local produit un XPI non signé. Son installation permanente nécessite
+une signature Mozilla, en conservant cet ID et les identités de fenêtres existantes.
 Aucun accès aux profils, au runtime utilisateur ou au socket Sway réel n'est
-nécessaire pour les validations décrites ici. Aucun déploiement réalisé.
+nécessaire pour les validations décrites ici. Elles ne réalisent aucun déploiement permanent.
 
 L'expérience visée est **installation seule, puis Firefox normal, Ctrl+N compris**.
 Le bouton et le panneau provisoires de 1.1.0 sont supprimés. Le background ne
 crée aucune fenêtre. Une fenêtre ambiguë peut rester sans identité et faire
 échouer la capture ; aucune action quotidienne de remplacement n'est imposée.
+
+## Correctif 1.1.2 : séparer les webapps du lot UUID
+
+Une fenêtre Firefox Taskbar Tab peut être exposée par l'API WebExtension comme
+`type: normal`, alors que SessionStore l'exclut du stockage de session. Un UUID
+attribué dans sa fenêtre pendant une session peut donc manquer au login suivant.
+La 1.1.1 validait l'ensemble des fenêtres normales avant toute publication : une
+webapp sans UUID bloquait aussi la capture du navigateur ordinaire. Si toutes
+les valeurs étaient présentes, l'ordre des fenêtres pouvait masquer ce défaut :
+le host ne corrélait que `firefox`/`org.mozilla.firefox`, et un navigateur publié
+avant la webapp pouvait suffire au backend avant l'échec ultérieur du lot.
+
+Sources Firefox vérifiées, y compris dans les `omni.ja` installés :
+`TaskbarTabsWindowManager.sys.mjs` ouvre avec toolbar et sans dialog ;
+[WindowBase.type](https://searchfox.org/firefox-main/source/toolkit/components/extensions/parent/ext-tabs-base.js)
+classe alors la fenêtre comme normale ;
+[windows.getAll](https://searchfox.org/firefox-main/source/browser/components/extensions/parent/ext-windows.js)
+filtre ce type seulement. Dans SessionStore, `getCurrentState()` et la collecte
+des fenêtres fermées excluent explicitement `isTaskbarTab`. L'API Window ne
+fournit aucun attribut public `isTaskbarTab` ou `app_id` permettant ce filtrage.
+
+La 1.1.2 ajoute une classification native avant toute lecture ou attribution
+UUID. Elle conserve les permissions `sessions` et `nativeMessaging`, l'ID de
+l'extension et la clé de session existants. La demande est exactement :
+
+```json
+{"op":"classify-window","runtime_token":"0123456789abcdef0123456789abcdef"}
+```
+
+Le host corrèle le préfixe éphémère, puis vérifie les app_ids exacts des entrées
+Firefox et WhatsApp gérée du catalogue. Sa réponse fermée comporte `result`,
+`kind`, `runtime_token` réémis et `con_id` positif. `kind` vaut exclusivement
+`browser` ou `managed-webapp`. Un app_id inconnu, une autre webapp, une collision,
+un timeout ou une réponse invalide refuse l'opération ; aucune erreur n'est
+interprétée comme une permission d'ignorer une fenêtre. La classification ne
+publie aucun enregistrement UUID. `map-window` reste réservé à Firefox ordinaire.
+
+Le background exclut seulement une webapp positivement attestée avant
+`getWindowValue`, validation, observation ou mint. Une fenêtre normale sans UUID
+continue à refuser la capture exacte. Les règles de protection des anciennes
+fenêtres et d'attribution aux nouveaux Ctrl+N restent identiques.
+
+Les preuves `{kind, con_id}` sont bornées à 256 fenêtres, locales à l'instance et
+supprimées sur fermeture. La première observation classe une fenêtre une fois ;
+une erreur n'est pas retentée par la boucle idle. Chaque capture reclassifie
+fraîchement toutes les fenêtres, y compris celles qui seront exclues, puis
+revalide après l'attente d'extData. Chaque mint revalide aussi la classe avant
+écriture. Un changement de classe ou de con_id interdit l'opération jusqu'à la
+fermeture de cette fenêtre. L'ensemble brut des fenêtres doit rester stable
+pendant l'opération. Aucun marquage ou `map-window` périodique permanent n'est
+ajouté en veille.
+
+La corrélation ajoute des préfixes brefs lors du premier classement, d'une capture
+ou d'un mint ; elle utilise les mêmes garanties de nettoyage et limites API que
+le protocole existant. Elle ne rend pas le sessionstore transactionnel. Un host
+ancien ne comprenant pas la classification provoque un refus conservateur ; le
+nouveau host reste compatible avec les messages de l'extension 1.1.1.
+
+Les tests VM de cette révision couvrent la webapp au premier ID sans UUID, son
+exclusion des lectures et écritures, la normale sans UUID toujours refusée, les
+réponses non exactes, le changement de classe/con_id, l'invalidation sur close,
+le changement d'ensemble et l'absence de marquage répété en idle. Le code testé
+est celui du XPI. La validation Python du host reste séparée de tout profil ou
+socket utilisateur. La régression a également été reproduite puis corrigée sous
+Firefox réel 158.0.1 dans un profil vierge et un Sway privé (détails plus bas).
+
+La mise à jour nécessite un nouveau XPI signé Mozilla, avec le même ID. Déployer
+le host compatible avant l'installation de l'extension signée ; son redémarrage
+déconnectera l'ancien port natif et ouvrira le nouveau host. Ne pas modifier le
+contenu d'un XPI signé, désactiver les signatures ou réattribuer les anciens UUID.
+Le build ci-dessous prépare seulement le XPI déterministe non signé : aucune
+signature, publication AMO ou installation n'est réalisée par le build.
 
 ## Preuves disponibles et limite fondamentale
 
@@ -54,7 +127,7 @@ ancienne arrivant entre la dernière lecture et l'écriture peut encore être
 ou d'absence d'écrasement de données jamais encore observées n'est revendiquée.**
 Garantir cela pour toutes les restaurations exigerait une preuve supplémentaire
 fournie par Firefox ; refuser tout mint sur `onCreated` supprimerait l'auto Ctrl+N.
-La 1.1.1 retient l'automatisme demandé avec refus des ambiguïtés observables.
+L'automatisme de 1.1.1 est conservé avec refus des ambiguïtés observables.
 
 ## Initialisation : BOOT, READY, PROTECTED
 
@@ -63,8 +136,9 @@ sans populate, capture les IDs de la baseline. Une fenêtre émise **avant la
 résolution** de cette photographie reste ambiguë, même si `getAll` la contient.
 Un événement reçu ensuite, y compris pendant BOOT, devient candidat potentiel :
 `type` normal ou absent, sans `sessionId` positif. Sa présence dans
-`getAll({windowTypes:["normal"]})` sera exigée avant toute écriture. Les types
-explicitement différents de normal sont ignorés.
+`getAll({windowTypes:["normal"]})` et une classification native fraîche `browser`
+seront exigées avant toute écriture. Les types explicitement différents de normal
+sont ignorés ; une webapp de type normal est exclue seulement après attestation.
 
 **Auto-baseline sans clic, sous attestation native.** L'événement
 `onInstalled(reason=install)` est mémorisé qu'il précède ou suive le premier
@@ -192,7 +266,8 @@ Les titres eux-mêmes ne sont jamais lus.
 Une seule opération active (initialisation/nettoyage, auto-mint ou capture) ;
 captures concurrentes coalescées sans queue, sans accumuler des opérations.
 Une demande native en vol ; timeout 5 secondes ; reconnexion au plus une fois par
-seconde, sans map en idle. Le backend existant garde son timeout de 6 secondes :
+seconde, sans map-window en idle. Les classifications de première observation
+sont mises en cache, sans répétition périodique. Le backend existant garde son timeout de 6 secondes :
 un checkpoint trop tôt ou durant un mint peut échouer, il ne reçoit pas de faux
 succès ni d'identité inventée par la capture.
 
@@ -203,8 +278,8 @@ annulables et un effet tardif reste possible. Les lectures sœurs sont toutes
 attendues même si l'une rejette. Limite locale conservée : 256 fenêtres.
 Les ensembles en mémoire sont bornés aux fenêtres suivies et nettoyés sur close.
 Le provider Python exact, le format et le contenu des checkpoints et les
-applications SwayFX restent inchangés. Le host ajoute uniquement l’opération
-d’observation bootstrap au protocole existant. Une capture refusée ne publie pas un message d'erreur incompatible :
+applications SwayFX restent inchangés. Le host ajoute les opérations
+d'observation bootstrap et de classification au protocole de mapping existant. Une capture refusée ne publie pas un message d'erreur incompatible :
 le provider existant échoue faute du lot demandé. Le diagnostic facultatif
 `runtime.sendMessage({op: "identity-status"})`, réservé à cette extension, retourne
 phase, résultat WAIT/READY/REFUSED, dernier motif et compteurs ; il n'attribue rien.
@@ -254,9 +329,15 @@ erreurs et timeout, collisions, close, déplacements d'onglets, restart/update,
 concurrence et reconnexion. Les 46 tests Node présents dans la copie initiale sont conservés avec leur
 comportement protecteur lorsque le host n'atteste pas l'absence. Le nouveau P0
 échoue contre le background pré-protocole conservé en preuve, puis passe contre
-le correctif. La suite compte **58 tests Node** et **63 tests Python** (les
-43 backend préexistants et 20 tests bootstrap). Les nouveaux tests Python passent par
-le framing stdio réel du host avec HOME/XDG privés et un faux socket Sway
+le correctif. La validation historique 1.1.1 comptait **58 tests Node** et **63 tests Python**
+(les 43 backend préexistants et 20 tests bootstrap). La révision 1.1.2 conserve ces
+58 scénarios Node et ajoute 10 régressions de classification : **68/68 PASS**.
+Les tests ciblés du host passent **30/30** : les 20 tests bootstrap existants et
+10 tests de classification. Ils vérifient l'enveloppe fermée, le jeton exact, les
+classes du catalogue, les collisions même avec une surface inconnue, la réponse
+sans contenu, l'absence de publication UUID et le refus de mapper une webapp.
+Ces tests Python passent par le framing stdio réel du host avec HOME/XDG privés
+et un faux socket Sway
 possédé, y compris aller-retour bootstrap/map/bootstrap, checkpoint présent,
 valide, corrompu ou inaccessible, sauvegarde nommée seule sans `last.json`,
 répertoires vides, entrées inattendues dans `sessions`, liens, FIFO, permissions,
@@ -267,11 +348,40 @@ la relecture avant écriture, le checkpoint apparu entre écritures et les
 reconnexions sans retry baseline. Le risque de restauration indiscernable est
 exposé par un test ; il ne constitue pas une preuve de classification parfaite.
 
-Cette validation ne prouve pas la persistance physique au logout/login ni le
-comportement réel de sessionstore. Aucun Firefox réel n'a été lancé.
-Le minimum de manifeste reste Firefox 157. Le déploiement ultérieur de 1.1.1
-avec le même ID demanderait une signature Mozilla et une installation autorisée
-séparément ; aucune signature, publication AMO ni installation n'a lieu ici.
+Les validations VM historiques 1.1.1 ne lançaient pas Firefox réel et ne
+prouvaient pas le comportement physique de SessionStore. Le test réel 1.1.2
+ci-dessous ajoute une preuve de capture ; il ne constitue pas un logout/login
+de la session utilisateur. Le minimum de manifeste reste Firefox 157. Le
+déploiement permanent de 1.1.2 avec le même ID nécessite une signature Mozilla
+et une installation autorisée ; les tests et le build ne signent ni ne publient.
+
+### Régression Firefox réelle 1.1.2
+
+Le 27 octobre 2026, le scénario a été exécuté sous Firefox **158.0.1** avec un
+profil vierge, HOME/XDG privés, serveur HTTP loopback et Sway headless privés.
+Marionette et l'installation temporaire de l'extension sont confinés à ce
+profil TEST_ONLY ; aucun profil, cookie, checkpoint ou fenêtre utilisateur
+n'est utilisé. La webapp est créée avant la fenêtre normale, sans UUID ;
+la normale reçoit une identité fixture stable avant l'installation temporaire.
+
+Avec la 1.1.1, la capture reproduit
+`FIREFOX_IDENTITY_PROVIDER_UNAVAILABLE`. Avec le XPI 1.1.2 et le host de cette
+révision, elle réussit : correspondance exacte UUID/con_id de la normale,
+UUID normal inchangé et aucun UUID attribué à la webapp. Cela confirme aussi
+que le préfixe éphémère d'une vraie Taskbar Tab atteint Sway et permet sa
+classification native. Résultat final : **PASS**.
+
+Reproduction du candidat construit dans cette copie :
+
+```sh
+python3 -B tests/session_v2/firefox_webapp_runtime.py \
+  --extension build/session-v2/labfy-session-v2-unsigned.xpi --expect success
+```
+
+Le script émet un résultat JSON avec seulement les verdicts et la version,
+dans son répertoire temporaire TEST_ONLY. Il ferme ses processus et ressources
+privés. Cette validation ne prouve pas la persistance au prochain login réel,
+la signature AMO ni le déploiement permanent de l'extension.
 
 ## Native host
 
@@ -288,8 +398,10 @@ autre packaging Firefox, vérifier le répertoire Native Messaging utilisé avan
 installation. Créer le manifeste avec permissions 0600 ; ne pas écraser un
 host actif lors d’une simple mise à jour de documentation.
 
-Le host accepte `map-window` avec UUID et jeton runtime, ainsi que
-`bootstrap-eligibility` sans autre champ. Les deux schémas sont fermés.
+Le host accepte `map-window` avec UUID et jeton runtime, `classify-window`
+avec son seul jeton runtime, ainsi que `bootstrap-eligibility` sans autre champ.
+Les trois schémas sont fermés. La classification atteste seulement le type local ;
+elle ne crée, ne modifie ni ne publie d'UUID.
 Les messages sont bornés à 4096 octets ; la sortie standard est réservée au
 framing Native Messaging. Le host lit l’arbre Sway uniquement pour corréler le préfixe
 éphémère, sans exécuter de commande Sway mutatrice. L’extension retire ce
@@ -305,7 +417,7 @@ par Firefox, pas par une lecture de sessionstore côté Labfy.
 Voir [Session Restore V2](../../docs/session-restore-v2.md) pour le cycle complet,
 les tests et les limites.
 
-## Verdict du correctif local
+## Verdict historique du correctif 1.1.1
 
 **SOURCE_TESTED — AUTO_BOOTSTRAP_CONDITIONNEL** : dans la VM, première
 installation avec deux fenêtres sans UUID et absence attestée de checkpoint :
@@ -314,10 +426,11 @@ présent, contrôle inaccessible ou erreur : refus conservateur. Les Ctrl+N rest
 automatiques. Les preuves, empreintes, logs et patch non commité sont conservés
 dans `build/bootstrap-evidence/` de cette copie privée.
 
-**Firefox Release non installé et non testé ici.** Aucun PASS de login réel,
-de persistance physique ou de déploiement n'est revendiqué. Le XPI 1.1.1 reste
-non signé ; signature AMO et installation autorisée seront nécessaires
-ultérieurement. La provenance d'une restauration tardive sans signal reste
+**État de la validation historique 1.1.1 : Firefox Release n'avait pas été
+lancé par cette validation VM.** Aucun PASS de login réel, de persistance
+physique ou de déploiement n'était revendiqué. L'artefact 1.1.1 alors construit
+était non signé ; il nécessitait une signature AMO et une installation
+ultérieures. Le test Firefox réel ajouté pour 1.1.2 est décrit ci-dessus. La provenance d'une restauration tardive sans signal reste
 inconnue ; une ancienne valeur jamais encore visible peut toujours arriver entre
 la dernière lecture et l'écriture. Aucune garantie absolue de CAS ou de protection
 d'une identité jamais observée n'est annoncée. Aucune réparation d'UUID perdu,

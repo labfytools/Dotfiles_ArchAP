@@ -110,24 +110,43 @@ def _exec_quoted(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def terminal_launch_info(app):
+def desktop_executable(app):
+    # GIO's get_executable() can retain Exec quotes or truncate a spaced path.
+    # Parse only for validation; UWSM/GIO still launch the installed desktop ID
+    # and expand its field codes, without passing Exec through a shell.
+    commandline = app.get_commandline()
+    if not commandline:
+        raise ValueError("Commande d'application absente")
+    _, argv = GLib.shell_parse_argv(commandline)
+    if not argv or not argv[0]:
+        raise ValueError("Commande d'application invalide")
+    return argv[0]
+
+
+def uwsm_launch_info(app, *, terminal=False):
+    """Let GIO expand Exec fields, then give UWSM the resulting command."""
     filename = app.get_filename()
     if not filename:
-        raise ValueError("Entrée terminal sans fichier desktop")
+        raise ValueError("Entrée d’application sans fichier desktop")
     keyfile = GLib.KeyFile()
     keyfile.load_from_file(filename, GLib.KeyFileFlags.NONE)
     original = keyfile.get_string("Desktop Entry", "Exec")
-    # WHY: a keyfile-created DesktopAppInfo has no source filename for %k.
-    # Preserve that field while GLib expands the remaining desktop field codes.
+    # A keyfile-created DesktopAppInfo has no source filename for %k.
     original = re.sub(r"(?<!%)%k", _exec_quoted(filename), original)
-    executable = os.path.basename(app.get_executable() or "")
     prefix = "uwsm app -t service -- "
-    if executable != "kitty":
+    if terminal and os.path.basename(desktop_executable(app)) != "kitty":
         prefix += "kitty -- "
     keyfile.set_string("Desktop Entry", "Exec", prefix + original)
     keyfile.set_boolean("Desktop Entry", "Terminal", False)
     keyfile.set_boolean("Desktop Entry", "DBusActivatable", False)
-    return GioUnix.DesktopAppInfo.new_from_keyfile(keyfile)
+    result = GioUnix.DesktopAppInfo.new_from_keyfile(keyfile)
+    if result is None:
+        raise ValueError("Entrée d’application invalide")
+    return result
+
+
+def terminal_launch_info(app):
+    return uwsm_launch_info(app, terminal=True)
 
 
 def launch(identifier, runner=subprocess.run, loader=GioUnix.DesktopAppInfo.new):
@@ -138,8 +157,8 @@ def launch(identifier, runner=subprocess.run, loader=GioUnix.DesktopAppInfo.new)
     app = loader(identifier)
     if app is None or app.get_is_hidden() or app.get_nodisplay() or not app.should_show():
         raise ValueError("Application indisponible")
-    executable = app.get_executable()
-    if not app.get_boolean("DBusActivatable") and executable and not shutil.which(executable):
+    if (not app.get_boolean("DBusActivatable")
+            and not shutil.which(desktop_executable(app))):
         raise ValueError("Exécutable introuvable")
     if app.get_boolean("Terminal"):
         if not shutil.which("kitty") or not shutil.which("uwsm"):
@@ -150,6 +169,15 @@ def launch(identifier, runner=subprocess.run, loader=GioUnix.DesktopAppInfo.new)
     if app.get_boolean("DBusActivatable"):
         if not app.launch([], None):
             raise ValueError("Activation D-Bus refusée")
+        return
+    if identifier == "com.nextcloud.desktopclient.nextcloud.desktop":
+        # UWSM 0.27 rejects the valid CloudProviders group through pyxdg.
+        # Keep the installed metadata intact; only this launch descriptor
+        # passes GIO-expanded command arguments to UWSM instead of a desktop ID.
+        if not shutil.which("uwsm"):
+            raise ValueError("UWSM indisponible")
+        if not uwsm_launch_info(app).launch([], None):
+            raise ValueError("Demande de lancement refusée")
         return
     result = runner(["uwsm", "app", "-t", "service", "--", identifier],
                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,

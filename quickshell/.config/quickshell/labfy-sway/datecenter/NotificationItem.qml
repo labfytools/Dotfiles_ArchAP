@@ -43,7 +43,7 @@ Rectangle {
         }
         Text { width: parent.width; text: card.notification.summary; textFormat: Text.PlainText; color: Theme.foreground; font.pixelSize: 12; font.bold: true; elide: Text.ElideRight }
         Text { id: bodyText; width: parent.width; visible: text.length > 0; text: card.notification.body || ""; textFormat: Text.PlainText; color: Theme.subtext1; font.pixelSize: 11; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
-        Image { id: image; width: parent.width; height: status === Image.Ready ? Math.min(110, implicitHeight) : 0; visible: status === Image.Ready; source: card.notification.image || ""; fillMode: Image.PreserveAspectFit }
+        Image { id: image; sourceSize: Qt.size(840, 220); width: parent.width; height: status === Image.Ready ? Math.min(110, implicitHeight) : 0; visible: status === Image.Ready; source: card.notification.image || ""; fillMode: Image.PreserveAspectFit }
         Flow {
             id: actions
             width: parent.width

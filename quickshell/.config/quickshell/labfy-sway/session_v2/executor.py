@@ -11,7 +11,7 @@ from pathlib import Path
 from .errors import Failure, Deferred, require
 from .schema import validate, PROVIDER
 from .storage import lock, private_dir
-from .ipc import location, workspace, walk
+from .ipc import location, workspace, walk, surface_identity
 from .applications import launch_count, launch
 from .anchors import Anchors
 from .guard import Guard
@@ -28,6 +28,34 @@ def process_owner(pid):
     except OSError: raise Failure("TARGET_IDENTITY_CHANGED") from None
 
 
+
+def staging_order(tree, nodes):
+    """Keep a disappearing focused branch until its workspace can become empty.
+
+    Sway's IPC focus lists expose sibling order, not the global cross-depth
+    inactive stack. Removing a focused leaf can therefore choose an internal
+    ancestor or a surviving view with the same public tree. Avoid that unknown
+    transition; never infer a replacement focus or loosen Recovery's checks.
+    """
+    nodes = list(nodes)
+    selected = next((n for n in walk(tree) if n.get("focused")), None)
+    if not selected or selected.get("type") == "workspace":
+        return nodes
+    descendants = {n["id"] for n in walk(selected) if n.get("app_id") or n.get("window")}
+    staged = {n["id"] for n in nodes}
+    if descendants and descendants.issubset(staged):
+        where = location(tree, selected["id"])
+        source = workspace(tree, where[0]) if where else None
+        require(source is not None, "RESTORE_FOCUS_STAGING_UNPROVEN")
+        remaining = {n["id"] for n in walk(source) if n.get("app_id") or n.get("window")} - staged
+        # This includes foreign clients and shown scratchpads outside the focused
+        # branch. Hidden scratchpads on __i3_scratch do not occupy this workspace.
+        require(not remaining, "RESTORE_FOCUS_STAGING_UNPROVEN")
+    # If a non-staged descendant remains, the focused internal node survives.
+    # Moving its selected leaves last still preserves that exact focus identity.
+    return ([n for n in nodes if n["id"] not in descendants] +
+            [n for n in nodes if n["id"] in descendants])
+
 def preflight(data, sway, catalog, provider):
     validate(data)
     active = {o["name"] for o in sway.outputs() if o.get("active")}
@@ -38,7 +66,7 @@ def preflight(data, sway, catalog, provider):
     nodes = sway.windows()
     admitted = set()
     for a in data["applications"]:
-        members = [n for n in nodes if n.get("app_id") in specs[a["application_id"]].app_ids]
+        members = [n for n in nodes if surface_identity(n) in specs[a["application_id"]].app_ids]
         launch_count(a, len(members))
         admitted.update(n["id"] for n in members)
     tree = sway.tree()
@@ -46,6 +74,9 @@ def preflight(data, sway, catalog, provider):
         ws = workspace(tree, w["workspace"])
         if ws:
             require(all(n["id"] in admitted for n in walk(ws) if n.get("app_id") or n.get("window")), "WORKSPACE_OCCUPIED")
+    # Refuse an unprovable focused-source transition before durable journals.
+    staging_order(tree, [n for n in walk(tree) if (n.get("app_id") or n.get("window")) and
+                         n["id"] in admitted and scratchpad_state(n, location(tree, n["id"])[0]) == "none"])
     return specs
 
 
@@ -69,9 +100,12 @@ class Executor:
                 require(recovery_status(self.runtime)["status"] in ("idle", "complete", "recovered"), "RECOVERY_REQUIRED")
                 receipt = resume_pending(self.sway, self.runtime, self.process_identity)
                 require(not receipt or receipt["status"] != "RECOVERY_REQUIRED", "RECOVERY_REQUIRED")
-                try: proof, prepared = self._prewarm(data, timeout)
+                try:
+                    proof, prepared = self._prewarm(data, timeout)
+                    self._admit_providers(data, proof, prepared, min(timeout, 6))
                 except Failure as exc:
-                    if exc.code in ("APPLICATION_LAUNCH_FAILED", "APPLICATION_WINDOWS_INCOMPLETE"):
+                    if exc.code in ("APPLICATION_LAUNCH_FAILED", "APPLICATION_WINDOWS_INCOMPLETE", "FIREFOX_IDENTITY_PROVIDER_UNAVAILABLE",
+                                    "RESTORE_FOCUS_STAGING_UNPROVEN"):
                         raise Deferred(exc.code) from None
                     raise
                 return self._apply(data, timeout, lock_fd, proof, prepared)
@@ -79,6 +113,30 @@ class Executor:
                 if isinstance(exc, Deferred) or exc.code in ("RESTORE_FOCUS_UNAVAILABLE", "RESTORE_FOCUS_UNSTABLE"):
                     record_deferred(self.runtime, self.sway.session, exc.code)
                 raise
+
+    def _admit_providers(self, data, proof, prepared, timeout):
+        """Prove the complete Firefox identity set before any layout mutation.
+
+        An absent publisher is deferred. A missing saved UUID remains an exact
+        identity failure. External waits cannot silently replace the admitted
+        window batch or its focus proof; later transaction checks still apply.
+        """
+        applications = [a for a in data["applications"] if a["identity_provider"] == PROVIDER]
+        if not applications: return
+        specs = preflight(data, self.sway, self.catalog, self.provider)
+        for app in applications:
+            members = [n for n in self.sway.windows()
+                       if surface_identity(n) in specs[app["application_id"]].app_ids]
+            expected = {s["identity_evidence"]["id"] for s in data["window_slots"]
+                        if s["application_id"] == app["application_id"] and s["identity_requirement"] == "exact"}
+            mapping = (self.provider.resolve(expected, members, timeout=timeout) if expected
+                       else self.provider.capture(members, timeout=timeout))
+            require(expected.issubset(mapping), "EXACT_WINDOW_IDENTITY_MISSING")
+            require(set(mapping.values()) == {n["id"] for n in members}, "FIREFOX_IDENTITY_PROVIDER_UNAVAILABLE")
+            require(self.sway.session == proof[0], "SWAY_SESSION_CHANGED")
+            self._check_prepared(prepared, self._observe_prepared())
+            preflight(data, self.sway, self.catalog, self.provider)
+            require(focus_proof(self.sway) == proof, "RESTORE_FOCUS_UNSTABLE")
 
     def _observe_prepared(self, exclude=lambda node: False):
         """Identités runtime volatiles ; aucune attribution causale du focus.
@@ -217,10 +275,14 @@ class Executor:
                 require(n["id"] in targets, "TARGET_IDENTITY_CHANGED")
                 recovery.admit(n)
                 self.sway.command(f'[con_id={n["id"]}] move container to workspace ' + json.dumps(stage))
-            for n in targets.values():
-                # Hidden scratchpads stay detached throughout staging; neither
-                # workspace moves nor floating-disable may expose them.
-                if prepared[n["id"]]["scratchpad"] == "none": stage_node(n)
+            # Check the whole captured batch before interpreting focus admission:
+            # a newly mapped client is a membership change, not a staging deferral.
+            check_batch()
+            # Recheck after Guard, using the same exact admitted batch.
+            # Both hidden and shown scratchpads keep their existing treatment.
+            staged = [n for n in targets.values() if prepared[n["id"]]["scratchpad"] == "none"]
+            for n in staging_order(self.sway.tree(), staged):
+                stage_node(n)
             def progress(phase, count):
                 values = {"phase": phase}
                 if phase == "anchor": values["anchors_created"] = count
@@ -235,7 +297,7 @@ class Executor:
             start = time.monotonic()
             for app in data["applications"]:
                 spec = specs[app["application_id"]]
-                count = sum(n.get("app_id") in spec.app_ids for n in self.sway.windows())
+                count = sum(surface_identity(n) in spec.app_ids for n in self.sway.windows())
                 missing = launch_count(app, count)
                 require(missing == 0 and count == app["expected_windows"], "APPLICATION_WINDOWS_INCOMPLETE")
                 # PHASE 0 possède les lancements ; aucun nouveau mapping attendu
@@ -245,7 +307,7 @@ class Executor:
             groups = {}
             while True:
                 nodes = self.sway.windows()
-                groups = {a["application_id"]: [n for n in nodes if n.get("app_id") in specs[a["application_id"]].app_ids] for a in data["applications"]}
+                groups = {a["application_id"]: [n for n in nodes if surface_identity(n) in specs[a["application_id"]].app_ids] for a in data["applications"]}
                 require(all(len(groups[a["application_id"]]) <= a["expected_windows"] for a in data["applications"]), "UNEXPECTED_EXTRA_WINDOW")
                 if all(len(groups[a["application_id"]]) == a["expected_windows"] for a in data["applications"]): break
                 require(time.monotonic() < end, "APPLICATION_WINDOWS_INCOMPLETE")
@@ -272,7 +334,7 @@ class Executor:
             # lot phase0, même si un remplacement conserve la cardinalité.
             check_batch()
             require(set(captured) == set(targets), "APPLICATION_MEMBERSHIP_CHANGED")
-            live_ids = {n["id"] for n in self.sway.windows() if n.get("app_id") in all_ids}
+            live_ids = {n["id"] for n in self.sway.windows() if surface_identity(n) in all_ids}
             require(live_ids == set(captured), "APPLICATION_MEMBERSHIP_CHANGED")
             # Un intrus hors catalogue n'est pas rendu admissible par son absence
             # des groupes applicatifs. Les seules cartes temporaires autorisées
@@ -437,7 +499,7 @@ class Executor:
         nodes = self.sway.windows()
         for a in data["applications"]:
             if a["identity_provider"] != PROVIDER: continue
-            members = [n for n in nodes if n.get("app_id") in specs[a["application_id"]].app_ids]
+            members = [n for n in nodes if surface_identity(n) in specs[a["application_id"]].app_ids]
             identities = self.provider.capture(members)
             for s in data["window_slots"]:
                 if s["application_id"] == a["application_id"] and s["identity_requirement"] == "exact":
@@ -462,12 +524,12 @@ class Executor:
         require(all(output_for.get(w["workspace"]) == w["output"] for w in data["workspaces"]), "FINAL_OUTPUT_MISMATCH")
         nodes = [n for n in walk(tree) if n.get("app_id") or n.get("window")]
         for a in data["applications"]:
-            observed = sum(n.get("app_id") in specs[a["application_id"]].app_ids for n in nodes)
+            observed = sum(surface_identity(n) in specs[a["application_id"]].app_ids for n in nodes)
             require(observed >= a["expected_windows"], "APPLICATION_WINDOWS_INCOMPLETE")
             require(observed <= a["expected_windows"], "UNEXPECTED_EXTRA_WINDOW")
         for s in data["window_slots"]:
             n = next((n for n in nodes if n["id"] == mapping[s["slot_id"]]), None)
-            require(n and n.get("app_id") in specs[s["application_id"]].app_ids, "TARGET_IDENTITY_CHANGED")
+            require(n and surface_identity(n) in specs[s["application_id"]].app_ids, "TARGET_IDENTITY_CHANGED")
             scratch = s["state"]["scratchpad"]
             require(scratchpad_state(n, location(tree, n["id"])[0]) == ("none" if scratch is False else scratch), "FINAL_SCRATCHPAD_MISMATCH")
             if s["state"]["floating"]:

@@ -8,7 +8,7 @@ from .errors import require
 
 SCHEMA = "labfy.sway.session-v2"
 LAYOUTS = {"splith", "splitv", "tabbed", "stacked"}
-STRATEGIES = {"managed-autostart", "single-window", "multi-instance", "terminal", "browser-self-restore", "unknown"}
+STRATEGIES = {"managed-autostart", "single-window", "multi-instance", "terminal", "browser-self-restore", "application-self-restore", "unknown"}
 PROVIDER = "firefox-session-window-uuid"
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
 IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
@@ -52,6 +52,7 @@ def validate(data):
         text(a["desktop_entry"])
         require(a["desktop_entry"].endswith(".desktop"), "SCHEMA_DESKTOP_ENTRY")
         require(type(a["strategy"]) is str and a["strategy"] in STRATEGIES, "SCHEMA_STRATEGY")
+        require(data["version"] == 2 or a["strategy"] != "application-self-restore", "SCHEMA_STRATEGY")
         integer(a["expected_windows"], 1, 256)
         require(a["managed_by"] in (None, "autostart", "sway-autostart"), "SCHEMA_MANAGED_BY")
         require(a["identity_provider"] in (None, PROVIDER), "SCHEMA_PROVIDER")

@@ -46,11 +46,14 @@ def run_case(case):
             engine = Executor(sway, Catalog(), None, private_dir(lab.directory / 'restore'), build(lab.directory), lab.env)
             identities = {UUID: first['id'], UUID2: second['id']}
             class Provider:
-                def resolve(self, expected, nodes):
+                calls = 0
+                def resolve(self, expected, nodes, timeout=6):
+                    self.calls += 1
+                    if self.calls == 1: return identities.copy()
                     row['commands_avant_provider'] = len(row['commands'])
                     if case == 'provider-unaire': inject('provider')
                     return identities.copy()
-                def capture(self, nodes): return identities.copy()
+                def capture(self, nodes, timeout=6): return identities.copy()
             engine.provider = Provider()
             raw_command = sway.command
             def command(text):

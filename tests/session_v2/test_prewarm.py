@@ -7,7 +7,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from common import *
-from login_focus import checkpoint
+from login_focus import checkpoint, UUID
 from session_v2.executor import Executor
 from session_v2.applications import Catalog
 from session_v2.recovery import Recovery, JOURNAL, focused, focus_proof
@@ -38,13 +38,23 @@ class Sway:
         return node
 
 
+class Provider:
+    def capture(self, nodes, timeout=6):
+        assert len(nodes) == 1
+        return {UUID: nodes[0]["id"]}
+    def resolve(self, expected, nodes, timeout=6):
+        mapping = self.capture(nodes, timeout)
+        assert set(expected).issubset(mapping)
+        return mapping
+
+
 class PrewarmTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.runtime = Path(self.tmp.name)
         self.sway = Sway()
-        self.engine = Executor(self.sway, Catalog(), object(), self.runtime, '/forbidden')
+        self.engine = Executor(self.sway, Catalog(), Provider(), self.runtime, '/forbidden')
         self.data = checkpoint()
         self.launches = []
         self.threads = []

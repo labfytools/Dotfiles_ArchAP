@@ -94,31 +94,14 @@ export STARSHIP_CONFIG="$HOME/.config/starship.toml"
 command -v starship >/dev/null && eval "$(starship init zsh)"
 
 # =========================
-# Atuin
+# FZF + zoxide + Atuin
 # =========================
-
-eval "$(atuin init zsh)"
-
-# =========================
-# Fzf + zoxide
-# =========================
-command -v bat >/dev/null && export FZF_DEFAULT_OPTS="
-    fd 
-    --type f 
-    --hidden 
-    --follow 
-    --exclude .git
-"
-export FZF_CTRL_T_COMMAND="
-    $FZF_DEFAULT_COMMAND
-"
-export FZF_ALT_C_COMMAND="
-    fd 
-    --type d 
-    --hidden 
-    --follow 
-    --exclude .git
-"
+# CONTRAT: fd produit les chemins; FZF_DEFAULT_OPTS contient uniquement les options UI.
+export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+# Ctrl+R appartient a Atuin, Ctrl+F reste disponible pour l'historique FZF.
+export FZF_CTRL_R_COMMAND=''
 export FZF_DEFAULT_OPTS="
     --height=30%
     --layout=reverse
@@ -132,11 +115,12 @@ export FZF_DEFAULT_OPTS="
     --color=border:#6C7086,label:#CDD6F4
 "
 
-[ -r /usr/share/fzf/key-bindings.zsh ] && source /usr/share/fzf/key-bindings.zsh
-[ -r /usr/share/fzf/completion.zsh ]   && source /usr/share/fzf/completion.zsh
+# Le chargeur fzf --zsh fournit deja ces deux integrations.
 
-command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
 command -v fzf >/dev/null && eval "$(fzf --zsh)"
+command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
+# Atuin installe ses bindings apres FZF : Ctrl+R reste reserve a Atuin.
+command -v atuin >/dev/null && eval "$(atuin init zsh)"
 
 # =========================
 # Aliases de base
@@ -150,7 +134,8 @@ alias b='yazi'
 alias n='nvim'
 
 # Git
-alias g='ga && gc && gp'
+# Ne jamais enchaîner automatiquement staging, commit et push.
+alias g='git status --short'
 alias gs='git status'
 alias ga='git add .'
 gc() {
@@ -158,25 +143,34 @@ gc() {
     read msg
     git commit -m "$msg"
 }
-alias gp='git push'
-alias gl='git log --oneline --graph --decorate'
-gpall() {
-    local branch
-
+gp() {
+    local branch target
     branch="$(git branch --show-current)" || return 1
-
     if [[ -z "$branch" ]]; then
         print -u2 "Erreur : aucune branche Git active."
         return 1
     fi
-
-    print "Push vers Forgejo..."
-    git push origin "$branch" || return 1
-
-    print "Push vers GitHub..."
-    git push github "$branch" || return 1
-
-    print "Synchronisation terminée pour la branche : $branch"
+    # URL de fetch : une destination unique, même si origin déclare plusieurs pushurl.
+    target="$(git remote get-url origin)" || return 1
+    print -r -- "Push vers une seule destination : $target ($branch)"
+    git push "$target" "$branch"
+}
+alias gl='git log --oneline --graph --decorate'
+gpall() {
+    local branch answer
+    branch="$(git branch --show-current)" || return 1
+    if [[ -z "$branch" ]]; then
+        print -u2 "Erreur : aucune branche Git active."
+        return 1
+    fi
+    print 'Destinations de publication configurees pour origin :'
+    git remote get-url --push --all origin || return 1
+    read -r 'answer?Confirmer le push sur TOUTES ces destinations (taper OUI) : ' || return 1
+    if [[ "$answer" != 'OUI' ]]; then
+        print 'Publication annulee.'
+        return 1
+    fi
+    git push origin "$branch"
 }
 # Grep / ripgrep
 alias grep='grep --color=auto'

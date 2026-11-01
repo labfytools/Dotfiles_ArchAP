@@ -34,8 +34,8 @@ def run_case(case):
                 lab.command('layout splitv')
                 injected.append(True)
             class Provider:
-                def resolve(self, expected, nodes): return {UUID: nodes[0]['id']}
-                def capture(self, nodes):
+                def resolve(self, expected, nodes, timeout=6): return {UUID: nodes[0]['id']}
+                def capture(self, nodes, timeout=6):
                     captures.append(True)
                     # Trois vérifications : avant focus, après resume, après finish.
                     if case in ('last-capture-layout', 'last-capture-swap') and len(captures) == 3:

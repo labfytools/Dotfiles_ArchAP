@@ -9,6 +9,31 @@ import time
 from .errors import Failure, require
 
 
+X11_CLASS_PREFIX = "x11-class:"
+
+
+def surface_identity(node):
+    """Pure application key; the compositor's raw tree remains untouched.
+
+    Wayland app_ids cannot impersonate the reserved X11 namespace. X11 keys
+    require a real X window ID plus an exact WM_CLASS; missing identities stay
+    unknown and cannot match a catalogue entry. This key is runtime evidence,
+    never a command or an identity persisted in a session snapshot.
+    """
+    app_id = node.get("app_id")
+    if isinstance(app_id, str) and app_id:
+        require(not app_id.startswith(X11_CLASS_PREFIX), "SURFACE_IDENTITY_RESERVED")
+        return app_id
+    if app_id is not None or type(node.get("window")) is not int or node["window"] <= 0:
+        return None
+    properties = node.get("window_properties")
+    wm_class = properties.get("class") if isinstance(properties, dict) else None
+    if (not isinstance(wm_class, str) or not 0 < len(wm_class) <= 256 - len(X11_CLASS_PREFIX)
+            or any(ord(c) < 32 for c in wm_class)):
+        return None
+    return X11_CLASS_PREFIX + wm_class
+
+
 def walk(node):
     yield node
     for c in node.get("nodes", []) + node.get("floating_nodes", []): yield from walk(c)

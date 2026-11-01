@@ -353,3 +353,43 @@ aucun schéma de checkpoint/Recovery et ne résout pas automatiquement un
 Implémentation, audit PAM (aucun patch applicable établi), tests isolés,
 installation et rollback :
 [trousseau avant restauration](session-v2-keyring-before-restore-v1.md).
+
+
+## ChatGPT XWayland et WhatsApp Web (27 octobre 2026)
+
+Le catalogue ajoute deux applications précises à Firefox, Kitty et Limusic :
+
+| Application | Identité observée | Politique |
+| --- | --- | --- |
+| ChatGPT | Fenêtre X11 avec WM_CLASS exactement `Chatgpt` | `single-window`, lancement `/usr/bin/chatgpt` si absent |
+| WhatsApp Web | `firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded` | `managed-autostart`, propriétaire `sway-autostart` |
+
+L'identité X11 est une clé runtime réservée `x11-class:Chatgpt`. Elle exige un
+identifiant de fenêtre X11 et une classe exacte ; un app_id Wayland ne peut pas
+usurper ce préfixe. Les arbres IPC restent bruts. La classification, les
+observations de récupération, le préchauffage, les swaps et les contrôles finaux
+emploient la même clé, toujours avec con_id, PID et starttime. Un ancien journal
+X11 sans classe ne reçoit pas rétroactivement une identité prouvée.
+
+La capture refuse plusieurs fenêtres ChatGPT avec cette politique singleton.
+Les applications absentes du catalogue restent refusées explicitement ; elles
+ne sont pas retirées silencieusement de la sauvegarde. Le snapshot conserve son
+format version 2 et ne contient ni commande, ni chemin de document, ni contenu
+de conversation.
+
+WhatsApp est assignée au workspace 9. La ligne d’autostart corrigée par
+l’utilisateur lance directement Firefox avec `-taskbar-tab`, `-new-window` et
+`-container 0`, sans intermédiaire `bash -c` et sans `-profile`.
+La restauration attend cette fenêtre et ne lance pas une deuxième instance.
+Le provider Firefox reste responsable des fenêtres du navigateur ordinaire.
+
+Les tests ciblés XWayland sont dans `tests/session_v2/test_xwayland.py` et les
+tests existants de préchauffage/autostart restent applicables. Le scénario
+`tests/session_v2/xwayland_runtime.py` restaure deux surfaces synthétiques dans
+un Sway privé : Chatgpt via XWayland et WhatsApp via Wayland. Il vérifie aussi
+la préservation stricte d’une fenêtre X11 inconnue hors du lot. La capture du
+bureau réel a également été contrôlée avec ChatGPT puis avec WhatsApp ouverte.
+Une capture réussie ne vaut pas validation d'une déconnexion/reconnexion physique.
+Un incident antérieur `RECOVERY_REQUIRED` continue de demander le traitement
+nominatif décrit dans `session-v2-focus-recovery-fix-v1.md`, indépendamment de
+la création d'un nouveau checkpoint.

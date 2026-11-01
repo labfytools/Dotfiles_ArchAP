@@ -175,6 +175,7 @@
             "multi-instance",
             "terminal",
             "browser-self-restore",
+            "application-self-restore",
             "unknown"
           ]
         },

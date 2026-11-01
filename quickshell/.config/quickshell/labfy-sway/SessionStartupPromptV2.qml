@@ -103,7 +103,13 @@ PanelWindow {
         awaitingUserFocus = retryAllowed;
         const prewarmDeferred = retryAllowed && (value.reason === "APPLICATION_LAUNCH_FAILED"
                                                    || value.reason === "APPLICATION_WINDOWS_INCOMPLETE");
-        failureMessage = prewarmDeferred
+        const providerDeferred = retryAllowed && value.reason === "FIREFOX_IDENTITY_PROVIDER_UNAVAILABLE";
+        const stagingDeferred = retryAllowed && value.reason === "RESTORE_FOCUS_STAGING_UNPROVEN";
+        failureMessage = stagingDeferred
+            ? "Restauration différée : une fenêtre qui doit rester en place empêche de préparer l’espace actif. Activez vous-même un autre espace de travail avec vos raccourcis Sway, puis cliquez Réessayer. Aucune fenêtre n’a été déplacée."
+            : providerDeferred
+            ? "La restauration attend le composant Firefox. Vérifiez que Firefox et l’extension Labfy sont prêts, puis cliquez Réessayer. Les fenêtres ouvertes sont conservées sans déplacement."
+            : prewarmDeferred
             ? "Préparation incomplète. Les fenêtres ouvertes sont conservées, sans déplacement. Vérifiez les applications, puis cliquez Réessayer. Aucune application déjà présente ne sera relancée."
             : retryAllowed
             ? "Restauration différée : aucun focus stable n’est prouvé. Ce dialogue ne capte plus le clavier. Activez vous-même une fenêtre ou un espace avec vos raccourcis Sway, puis cliquez Réessayer. Sinon, choisissez Nouvelle session."

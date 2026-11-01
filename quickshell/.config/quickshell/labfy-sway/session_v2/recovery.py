@@ -1,7 +1,9 @@
 """EXPERIMENTAL : journal local borné et reprise d'emplacement, jamais rollback ACID.
 
 WHY : une intention durable précède l'IPC ; sa postcondition seule autorise une
-reprise. CONTRACT : identité session/con_id/app_id/PID/starttime et état observé.
+reprise. CONTRACT : identité session/con_id/clé de surface/PID/starttime et état observé.
+Le champ runtime app_id porte la clé typée de surface, y compris WM_CLASS X11.
+Une ancienne observation X11 sans classe reste distincte et ne gagne aucune preuve.
 INVARIANT : aucun kill client, aucune propriété déduite du nom du workspace.
 """
 import copy
@@ -10,7 +12,7 @@ import re
 import time
 from pathlib import Path
 from .errors import require
-from .ipc import walk, location, workspace, until, canonical
+from .ipc import walk, location, workspace, until, canonical, surface_identity
 from .storage import atomic, read
 
 JOURNAL = "session-v2-recovery.json"
@@ -36,7 +38,7 @@ def observe(tree, node, start):
                    if any(w.get("type") == "workspace" and w.get("name") == where[0] for w in walk(o))), None)
     require(output is not None, "RECOVERY_OUTPUT_MISSING")
     floating = node.get("type") == "floating_con" or node.get("floating") in ("user_on", "auto_on")
-    return {"con_id": node["id"], "app_id": node.get("app_id"), "pid": node.get("pid"),
+    return {"con_id": node["id"], "app_id": surface_identity(node), "pid": node.get("pid"),
             "starttime": start(node["pid"]), "workspace": where[0], "output": output,
             "path": list(where[1]), "scratchpad": scratchpad_state(node, where[0]), "floating": floating, "geometry": dict(node["rect"]) if floating else None}
 
@@ -143,7 +145,7 @@ def focus_proof(sway):
     session = sway.session
     def sample():
         tree = sway.tree()
-        topology = [(n["id"], n.get("type"), n.get("app_id"), n.get("pid"),
+        topology = [(n["id"], n.get("type"), surface_identity(n), n.get("pid"),
                      n.get("focused", False), n.get("focus", []),
                      [c["id"] for c in n.get("nodes", [])],
                      [c["id"] for c in n.get("floating_nodes", [])]) for n in walk(tree)]
@@ -382,7 +384,7 @@ class Recovery:
         require(self.sway.session == self.data["session"], "SWAY_SESSION_CHANGED")
         state = self.snapshot(node["id"])
         require(self.sway.session == self.data["session"], "SWAY_SESSION_CHANGED")
-        require(state and state["pid"] == node.get("pid") and state["app_id"] == node.get("app_id"), "TARGET_IDENTITY_CHANGED")
+        require(state and state["pid"] == node.get("pid") and state["app_id"] == surface_identity(node), "TARGET_IDENTITY_CHANGED")
         return state
 
     def admit(self, node, observed=None):
@@ -408,7 +410,7 @@ class Recovery:
 
     def baseline(self, allowed):
         tree = self.sway.tree()
-        nodes = [n for n in walk(tree) if (n.get("app_id") or n.get("window")) and n.get("app_id") not in allowed]
+        nodes = [n for n in walk(tree) if (n.get("app_id") or n.get("window")) and surface_identity(n) not in allowed]
         require(len(nodes) <= 256, "RECOVERY_WINDOW_LIMIT")
         self.data["foreign"] = [observe(tree, n, self.start) for n in nodes]
         self.publish()
@@ -428,7 +430,7 @@ class Recovery:
         require(self.data["operations"] < 4096 and len(command) <= 2048, "RECOVERY_OPERATION_LIMIT")
         tree = self.sway.tree()
         if focused(tree) != self.data["focus_expected"]:
-            focus_node = next((n for n in walk(tree) if n.get("focused") and n.get("app_id")), None)
+            focus_node = next((n for n in walk(tree) if n.get("focused") and (n.get("app_id") or n.get("window"))), None)
             if not focus_node or not self.anchor_owned(focus_node):
                 self.record_focus_conflict({"phase": "before-command", "command": command,
                                             "before": self.data["focus_expected"], "observed": focused(tree)})

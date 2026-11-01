@@ -137,6 +137,7 @@ PopupWindow {
     // fermeture/réouverture ; le prendre dès MAIN garde le clavier disponible
     // pour le mot de passe Wi-Fi et l'alias Bluetooth après navigation interne.
     grabFocus: true
+    Keys.onEscapePressed: visible = false
     color: "transparent"
 
     Rectangle {

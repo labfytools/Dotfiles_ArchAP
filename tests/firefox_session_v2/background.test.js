@@ -15,7 +15,7 @@ afterEach(() => {
   for (const f of fixtures.splice(0)) assert.deepEqual(f.forbiddenReads, []);
 });
 const plain = value => JSON.parse(JSON.stringify(value));
-const flush = async () => { for (let i = 0; i < 80; ++i) await Promise.resolve(); };
+const flush = async () => { for (let i = 0; i < 240; ++i) await Promise.resolve(); };
 function event() {
   const listeners = [];
   return {addListener: fn => listeners.push(fn), emit: (...args) => listeners.map(fn => fn(...args))};
@@ -25,6 +25,8 @@ async function fixture(options = {}) {
   const timers = new Map(), values = options.values || new Map();
   const state = {ids: options.ids || [1], values, forbiddenReads: [], writes: [], maps: [], updates: [], ports: [], reads: [], mode: "ok", creates: 0, read: options.read, write: options.write, enumerate: options.enumerate};
   state.bootstrap = options.bootstrap; state.bootstraps = [];
+  state.classifications = []; state.kinds = options.kinds || new Map();
+  state.conIds = options.conIds || new Map();
   fixtures.push(state);
   const schedule = (fn, ms, interval = 0) => { const id = ++sequence; timers.set(id, {at: now + ms, fn, interval}); return id; };
   // Poisoned properties make any navigation/content inspection fail the test.
@@ -45,6 +47,18 @@ async function fixture(options = {}) {
         postMessage(message) {
           assert.equal(p.disconnected, false);
           const m = plain(message);
+          if (m.op === "classify-window") {
+            assert.deepEqual(Object.keys(m).sort(), ["op", "runtime_token"]);
+            const marked = state.updates.findLast(u => u.titlePreface === `[LABFY:${m.runtime_token}] `);
+            assert.ok(marked, "classification must correlate its own prefix");
+            state.classifications.push({id: marked.id, ...m});
+            if (state.classifyHook) return state.classifyHook(p, m, marked.id);
+            const kind = state.kinds.get(marked.id) || "browser";
+            if (!["browser", "managed-webapp"].includes(kind)) p.onMessage.emit({result: "WINDOW_CLASS_UNSUPPORTED"});
+            else p.onMessage.emit({result: "OK", kind, runtime_token: m.runtime_token,
+              con_id: state.conIds.get(marked.id) ?? 1000 + marked.id});
+            return;
+          }
           if (m.op === "bootstrap-eligibility") {
             assert.deepEqual(m, {op: "bootstrap-eligibility"});
             state.bootstraps.push({port: state.ports.indexOf(p)});
@@ -59,7 +73,12 @@ async function fixture(options = {}) {
           state.maps.push({port: state.ports.indexOf(p), ...m});
           if (state.mode === "throw") throw new Error("synthetic post failure");
           if (state.mode === "disconnect") { p.disconnect(); return; }
-          if (state.mode === "ok") p.onMessage.emit({result: "OK", uuid: m.uuid, con_id: 100 + state.maps.length});
+          if (state.mode === "ok") {
+            const marked = state.updates.findLast(u => u.titlePreface === `[LABFY:${m.runtime_token}] `);
+            assert.ok(marked, "mapping must correlate its own prefix");
+            if ((state.kinds.get(marked.id) || "browser") !== "browser") p.onMessage.emit({result: "CORRELATION_TIMEOUT"});
+            else p.onMessage.emit({result: "OK", uuid: m.uuid, con_id: state.conIds.get(marked.id) ?? 1000 + marked.id});
+          }
         }};
       state.ports.push(p);
       return p;
@@ -506,7 +525,7 @@ test("capture en vol retarde bootstrap ; onInstalled ne poste rien en concurrenc
   f.install(); await f.tick(3000);
   assert.equal(f.bootstraps.length, 0);
   assert.equal(f.maps.length, 1);
-  f.ports.at(-1).onMessage.emit({result: "OK", uuid: A, con_id: 42});
+  f.ports.at(-1).onMessage.emit({result: "OK", uuid: A, con_id: 1001});
   f.mode = "ok"; await f.tick(40000);
   assert.equal(f.writes.length, 0); assert.equal(f.bootstraps.length, 0);
 });
@@ -576,4 +595,113 @@ test("bootstrap : réponses natives non exactes refusées sans écriture baselin
     assert.equal(f.bootstraps.length, 1);
     f.open(2); await f.tick(6000); assert.deepEqual(f.writes.map(w => w.id), [2]);
   }
+});
+
+
+// Régression webapp : son type WebExtension est normal, mais ses extData ne
+// sont pas persistées par Firefox. Seul le host peut attester son exclusion.
+test("webapp premier ID sans UUID : seule la fenêtre navigateur est publiée", async () => {
+  const f = await fixture({ids: [1, 2], kinds: new Map([[1, "managed-webapp"]]), values: new Map([[2, B]])});
+  assert.equal((await capture(f)).result, "OK");
+  assert.deepEqual(f.maps.map(m => m.uuid), [B]);
+  assert.ok(f.classifications.some(c => c.id === 1));
+  assert.ok(f.reads.every(r => r.id === 2));
+  assert.deepEqual(f.writes, []);
+});
+
+test("webapp exclue de tout mint baseline ou Ctrl+N, navigateur nouveau conservé", async () => {
+  const f = await fixture({ids: [1, 2], install: true, bootstrap: true,
+    kinds: new Map([[1, "managed-webapp"]]), values: new Map([[2, B]])});
+  await ready(f); f.kinds.set(3, "managed-webapp"); f.open(3); f.open(4);
+  await f.tick(10000);
+  assert.deepEqual(f.writes.map(w => w.id), [4]);
+  assert.ok(f.reads.every(r => ![1, 3].includes(r.id)));
+  assert.equal(f.values.has(1), false); assert.equal(f.values.has(3), false);
+  assert.equal((await capture(f)).result, "OK");
+});
+
+test("navigateur normal sans UUID reste refusé même avec une webapp exclue", async () => {
+  const f = await fixture({ids: [1, 2], kinds: new Map([[1, "managed-webapp"]])});
+  const result = await capture(f);
+  assert.equal(result.result, "REFUSED"); assert.equal(result.reason, "INVALID_UUID");
+  assert.deepEqual(f.maps, []); assert.deepEqual(f.writes, []);
+  await f.tick(70000);
+  assert.equal((await f.status()).result, "REFUSED"); assert.deepEqual(f.writes, []);
+});
+
+test("classe inconnue : refus avant lecture, aucun retry périodique de marquage", async () => {
+  const f = await fixture({kinds: new Map([[1, "unknown"]]), values: new Map([[1, A]])});
+  await f.tick(2000);
+  const count = f.classifications.length;
+  await f.tick(70000);
+  assert.equal(f.classifications.length, count); assert.equal(count, 1);
+  assert.equal((await capture(f)).reason, "WINDOW_CLASS_UNAVAILABLE");
+  assert.deepEqual(f.reads, []); assert.deepEqual(f.maps, []); assert.deepEqual(f.writes, []);
+});
+
+test("classe ou con_id converti : preuve fraîche refusée durablement jusqu'au close", async () => {
+  for (const change of ["kind", "con_id"]) {
+    const f = await fixture({values: new Map([[1, A]])});
+    assert.equal((await capture(f)).result, "OK");
+    const published = f.maps.length;
+    if (change === "kind") f.kinds.set(1, "managed-webapp"); else f.conIds.set(1, 9999);
+    assert.equal((await capture(f)).reason, "WINDOW_CLASS_CHANGED");
+    f.kinds.clear(); f.conIds.clear();
+    assert.equal((await capture(f)).reason, "WINDOW_CLASS_CHANGED");
+    assert.equal(f.maps.length, published); assert.deepEqual(f.writes, []);
+    f.close(1); f.open(1); f.values.set(1, A);
+    assert.equal((await capture(f)).result, "OK");
+  }
+});
+
+test("webapp devenue navigateur : ne jamais conserver une exclusion ancienne", async () => {
+  const f = await fixture({ids: [1, 2], kinds: new Map([[1, "managed-webapp"]]), values: new Map([[2, B]])});
+  assert.equal((await capture(f)).result, "OK");
+  f.kinds.set(1, "browser"); f.values.set(1, A);
+  assert.equal((await capture(f)).reason, "WINDOW_CLASS_CHANGED");
+  assert.deepEqual(f.maps.map(m => m.uuid), [B]); assert.deepEqual(f.writes, []);
+});
+
+test("ensemble changé pendant classification : aucun UUID lu ni publié", async () => {
+  const f = await fixture({values: new Map([[1, A]])});
+  f.classifyHook = (p, m, id) => {
+    f.open(2); f.classifyHook = null;
+    p.onMessage.emit({result: "OK", kind: "browser", runtime_token: m.runtime_token, con_id: 1000 + id});
+  };
+  await f.capture();
+  assert.equal((await f.captureResult).reason, "WINDOW_SET_CHANGED");
+  // Before the next independent autoStep, this refused capture read no UUID.
+  assert.deepEqual(f.reads, []); assert.deepEqual(f.maps, []); assert.deepEqual(f.writes, []);
+});
+
+test("cache borné : aucun marquage idle après le premier classement", async () => {
+  const f = await fixture({values: new Map([[1, A]])});
+  await f.tick(2000); const classified = f.classifications.length, updates = f.updates.length;
+  await f.tick(90000);
+  assert.equal(classified, 1); assert.equal(f.classifications.length, classified);
+  assert.equal(f.updates.length, updates); assert.deepEqual(f.maps, []);
+  assert.equal((await capture(f)).result, "OK");
+  assert.equal(f.classifications.length, classified + 2);
+});
+
+test("réponse classification fermée : jeton, classe, con_id et champs exacts", async () => {
+  for (const change of [{runtime_token: "0".repeat(32)}, {kind: "skip"}, {con_id: 0}, {con_id: true}, {extra: true}]) {
+    const f = await fixture({values: new Map([[1, A]])});
+    f.classifyHook = (p, m) => p.onMessage.emit({result: "OK", kind: "browser", runtime_token: m.runtime_token, con_id: 1001, ...change});
+    assert.equal((await capture(f)).reason, "WINDOW_CLASS_UNAVAILABLE");
+    assert.deepEqual(f.reads, []); assert.deepEqual(f.maps, []); assert.deepEqual(f.writes, []);
+  }
+});
+
+
+test("conversion juste avant mint : aucune écriture sous une classe périmée", async () => {
+  const f = await fixture({values: new Map([[1, A]])}); await ready(f);
+  f.classifyHook = (p, m, id) => {
+    const count = f.classifications.filter(c => c.id === id).length;
+    p.onMessage.emit({result: "OK", kind: id === 2 && count > 1 ? "managed-webapp" : "browser",
+      runtime_token: m.runtime_token, con_id: 1000 + id});
+  };
+  f.open(2); await f.tick(6000);
+  assert.deepEqual(f.writes, []); assert.equal(f.values.has(2), false);
+  assert.equal((await capture(f)).reason, "WINDOW_CLASS_CHANGED");
 });

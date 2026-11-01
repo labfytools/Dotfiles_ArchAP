@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import stat
 import subprocess
 import sys
 import tempfile
@@ -14,10 +15,36 @@ import time
 IMAGE = re.compile(r"^\[\[ binary data .*?\b(png|jpeg|jpg|bmp|webp)\b", re.I)
 MIMES = {"png": "image/png", "jpeg": "image/jpeg", "jpg": "image/jpeg", "bmp": "image/bmp", "webp": "image/webp"}
 MAX_DECODE_BYTES = 256 * 1024 * 1024
+_cache_fd = None
+_cache_public = None
 
 
 def command(db, action):
-    return ["cliphist"] + (["-db-path", db] if db else []) + [action]
+    # CONTRACT: validate nature/owner before tightening metadata. No database
+    # bytes are inspected here; symlinks and hardlinks are never repaired.
+    path = Path(db) if db else Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")) / "cliphist/db"
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = path.parent.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise RuntimeError("Répertoire historique non privé")
+    parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        except FileNotFoundError:
+            fd = None
+        if fd is not None:
+            try:
+                info = os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+                    raise RuntimeError("Base historique non privée")
+                os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
+    finally:
+        os.close(parent)
+    return ["cliphist", "-db-path", str(path), action]
 
 
 def entries(db):
@@ -87,15 +114,29 @@ def decode(db, ident, output):
 
 
 def cache_dir():
+    global _cache_fd, _cache_public
     # CONTRACT: le test graphique peut isoler les miniatures sans changer le
     # socket Wayland fourni par XDG_RUNTIME_DIR.
-    runtime = Path(os.environ.get("LABFY_CLIPHIST_TEST_CACHE_DIR") or
-                   os.environ.get("XDG_RUNTIME_DIR", tempfile.gettempdir()))
+    value = os.environ.get("LABFY_CLIPHIST_TEST_CACHE_DIR") or os.environ.get("XDG_RUNTIME_DIR")
+    if not value or not Path(value).is_absolute():
+        raise RuntimeError("Runtime privé indisponible")
+    runtime = Path(value)
+    info = runtime.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise RuntimeError("Runtime non privé")
     path = runtime / ("labfy-cliphist-panel-" + str(os.getuid()))
     path.mkdir(mode=0o700, exist_ok=True)
-    if path.is_symlink() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    info = os.fstat(fd)
+    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        os.close(fd)
         raise RuntimeError("Répertoire temporaire non privé")
-    return path
+    # INVARIANT: all temporary/cache operations stay on the validated inode.
+    if _cache_fd is not None:
+        os.close(_cache_fd)
+    _cache_fd, _cache_public = fd, path
+    return Path(f"/proc/{os.getpid()}/fd/{fd}")
 
 
 def main():
@@ -110,7 +151,7 @@ def main():
     elif args.action == "clean":
         path = cache_dir()
         for file in path.glob("*.png"):
-            if file.is_file() and not file.is_symlink():
+            if stat.S_ISREG(file.lstat().st_mode):
                 file.unlink()
         print('{"ok":true}')
     elif args.action == "wipe":
@@ -139,7 +180,14 @@ def main():
                 print('{"ok":true}')
             else:
                 path = cache_dir() / (item["id"] + ".png")
-                if not path.exists():
+                if path.is_symlink():
+                    raise RuntimeError("Miniature non privée")
+                if path.exists():
+                    info = path.lstat()
+                    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+                        raise RuntimeError("Miniature non privée")
+                else:
                     with tempfile.NamedTemporaryFile(dir=path.parent, prefix="thumb-", suffix=".png", delete=False) as out:
                         temporary = Path(out.name)
                         try:
@@ -152,13 +200,14 @@ def main():
                             os.replace(temporary, path)
                         finally:
                             temporary.unlink(missing_ok=True)
-                print(json.dumps({"path": path.as_uri()}))
+                print(json.dumps({"path": (_cache_public / path.name).as_uri()}))
 
 
 if __name__ == "__main__":
+    os.umask(0o077)
     try:
         main()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError, ValueError) as error:
         # CONTRACT: aucun aperçu ni contenu décodé n'est écrit dans les journaux.
-        print(json.dumps({"error": str(error)}))
+        print(json.dumps({"error": "Opération presse-papiers indisponible"}))
         sys.exit(1)

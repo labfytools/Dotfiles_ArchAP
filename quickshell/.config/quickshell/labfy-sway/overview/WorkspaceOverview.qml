@@ -19,8 +19,7 @@ PanelWindow {
     property string message: ""
     property bool refreshPending: false
     property string actionName: ""
-    property var dirtyCaptures: []
-    property bool skipDismissCaptures: false
+    property bool captureEnabled: false
     property bool closing: false
     property var pendingWindowNumbers: []
     property var activeWindowNumbers: []
@@ -53,46 +52,29 @@ PanelWindow {
         closing = true;
         dropTarget = 0;
         visible = false;
-        // WHY: grim inclurait cette surface overlay. Après sa disparition,
-        // seules les sorties visibles dont l'arbre a changé sont recapturées.
-        for (const card of skipDismissCaptures ? [] : dirtyCaptures) {
-            Quickshell.execDetached(["python3", "-B", backend, "capture", "--output", card.output,
-                "--number", String(card.number), "--workspace-id", String(card.workspaceId),
-                "--revision", card.revision,
-                "--settle-ms", "300"]);
-        }
+        cancelCaptures();
         overviewDismissed();
     }
+    function cancelCaptures() {
+        // CONTRACT: closing destroys the helper; Python SIGTERM cleanup reaps
+        // its grim child. No detached capture is scheduled after dismissal.
+        debounce.stop(); windowCaptureDebounce.stop(); policyRefresh.stop();
+        pendingWindowNumbers = []; activeWindowNumbers = []; windowCaptureCursor = 0;
+        windowCapture.running = false;
+    }
     function applyState(data) {
+        if (closing) return;
         const next = data.cards || [];
         const changedWindows = [];
-        if (!cards.length) {
-            for (const current of next)
-                if (current.windows.length && (current.visible
-                        || current.windows.some(window => !window.preview)))
-                    changedWindows.push(current.number);
-        }
-        if (cards.length) {
-            for (const current of next) {
-                const old = cards.find(value => value.number === current.number);
-                if (old && current.windows.length && (old.revision !== current.revision
+        const wasEnabled = captureEnabled;
+        captureEnabled = data.captureEnabled === true;
+        for (const current of next) {
+            const old = cards.find(value => value.number === current.number);
+            if (current.windows.some(window => !window.excluded)
+                    && (!old || !wasEnabled || old.revision !== current.revision
                         || (!old.visible && current.visible))) changedWindows.push(current.number);
-                if (!old || old.revision === current.revision || !current.visible
-                        || !current.output) continue;
-                if (current.windows.length === 0) {
-                    dirtyCaptures = dirtyCaptures.filter(value => value.output !== current.output);
-                    continue;
-                }
-                // CONTRACT: comparer les arbres avant/après repère aussi bien
-                // la source que la destination d'un déplacement confirmé IPC.
-                dirtyCaptures = dirtyCaptures.filter(value => value.output !== current.output)
-                    .concat([{ output: current.output, number: current.number,
-                        workspaceId: current.workspaceId, revision: current.revision }]);
-                if (current.output !== screen.name && !captureDebounce.running)
-                    captureDebounce.start();
-            }
         }
-        if (changedWindows.length) queueWindowCaptures(changedWindows);
+        if (changedWindows.length && captureEnabled) queueWindowCaptures(changedWindows);
         if (JSON.stringify(cards) !== JSON.stringify(next)) cards = next;
         if (!initialSelectionSet || !cards.some(value => value.number === selectedWorkspace && value.exists)) {
             const focused = cards.find(value => value.focused);
@@ -103,12 +85,13 @@ PanelWindow {
         if (selectedWindow === 0) moveTarget = 0;
     }
     function queueWindowCaptures(numbers) {
+        if (closing || !visible || !captureEnabled) return;
         for (const number of numbers)
             if (!pendingWindowNumbers.includes(number)) pendingWindowNumbers.push(number);
         if (!windowCapture.running && !windowCaptureDebounce.running) windowCaptureDebounce.start();
     }
     function startWindowCapture() {
-        if (windowCapture.running) return;
+        if (closing || !visible || !captureEnabled || windowCapture.running) return;
         if (windowCaptureCursor === 0) {
             if (!pendingWindowNumbers.length) return;
             activeWindowNumbers = pendingWindowNumbers;
@@ -119,6 +102,7 @@ PanelWindow {
         windowCapture.running = true;
     }
     function refresh() {
+        if (closing) return;
         if (reader.running) { refreshPending = true; return; }
         reader.running = true;
     }
@@ -177,25 +161,10 @@ PanelWindow {
 
     Component.onCompleted: refresh()
     Timer { id: debounce; interval: 220; repeat: false; onTriggered: overview.refresh() }
-    Timer {
-        id: captureDebounce
-        interval: 350; repeat: false
-        onTriggered: overview.captureNextOtherOutput()
-    }
-    Timer {
-        id: windowCaptureDebounce
-        interval: 250; repeat: false
-        onTriggered: overview.startWindowCapture()
-    }
-    function captureNextOtherOutput() {
-        if (otherCapture.running) return;
-        const card = dirtyCaptures.find(value => value.output !== screen.name);
-        if (!card) return;
-        otherCapture.command = ["python3", "-B", backend, "capture", "--output", card.output,
-            "--number", String(card.number), "--workspace-id", String(card.workspaceId),
-            "--revision", card.revision];
-        otherCapture.running = true;
-    }
+    // WHY: rate-limit batches and coalesce structural events; no timer exists
+    // once this LazyLoader-owned panel closes. Policy is rechecked while open.
+    Timer { id: windowCaptureDebounce; interval: 1000; repeat: false; onTriggered: overview.startWindowCapture() }
+    Timer { id: policyRefresh; interval: 2000; repeat: true; running: !overview.closing && overview.visible; onTriggered: overview.refresh() }
     Timer { interval: 120; running: true; onTriggered: keyboardRoot.forceActiveFocus() }
     I3IpcListener {
         subscriptions: ["window"]
@@ -230,25 +199,10 @@ PanelWindow {
         }
     }
     Process {
-        id: otherCapture
-        stdout: StdioCollector { id: otherCaptureOutput; waitForEnd: true }
-        onExited: (code, status) => {
-            let result = {};
-            try { result = JSON.parse(otherCaptureOutput.text); } catch (_) {}
-            const args = otherCapture.command;
-            const output = args[args.indexOf("--output") + 1];
-            if (code === 0 && result.captured)
-                overview.dirtyCaptures = overview.dirtyCaptures.filter(value =>
-                    value.output !== output || value.revision !== result.revision);
-            overview.refresh();
-            if (result.captured && overview.dirtyCaptures.some(value => value.output !== overview.screen.name))
-                captureDebounce.restart();
-        }
-    }
-    Process {
         id: windowCapture
         stdout: StdioCollector { id: windowCaptureOutput; waitForEnd: true }
         onExited: (code, status) => {
+            if (overview.closing) return;
             let result = {};
             try { result = JSON.parse(windowCaptureOutput.text); } catch (_) {}
             overview.refresh();
@@ -532,6 +486,9 @@ PanelWindow {
                                                     visible: !workspaceCard.modelData.snapshot
                                                         && windowVisual.modelData.preview !== ""
                                                     fillMode: Image.PreserveAspectCrop
+                                                    // WHY: bound decoded pixels to the card, not source window size.
+                                                    sourceSize: Qt.size(Math.min(800, Math.ceil(width * 2)),
+                                                        Math.min(600, Math.ceil(height * 2)))
                                                     asynchronous: true
                                                     cache: false
                                                 }

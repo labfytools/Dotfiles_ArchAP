@@ -14,6 +14,7 @@ import "theme"
 import "clipboard"
 import "overview"
 import "applications"
+import "systemmonitor"
 
 PanelWindow {
     id: bar
@@ -29,21 +30,55 @@ PanelWindow {
     required property var keepAwakeController
     required property var drawerService
     required property var osdService
+    required property var monitorService
     screen: modelData
     FileView {
         id: lockCaptureGuardFile
+        watchChanges: true
+        onFileChanged: reload()
         path: (Quickshell.env("XDG_RUNTIME_DIR") || "") + "/labfy-lock.capture-guard"
         printErrors: false
     }
     readonly property bool lockCaptureGuard: lockCaptureGuardFile.text().trim() === "active"
     onLockCaptureGuardChanged: {
         if (lockCaptureGuard) {
-            overviewCapture.running = false;
-            overviewCaptureRefresh.stop();
             closeOverview();
+            overviewPurge.running = true;
         }
     }
 
+    // CONTRACT: one ShellRoot collector owns all outputs; this bar only owns
+    // the transient popup on its own screen.
+    function closeMonitor() {
+        if (monitorService.activeOutput === screen.name) monitorService.close();
+    }
+    function toggleMonitor() {
+        if (authenticationActive) return;
+        if (monitorService.activeOutput === screen.name) { closeMonitor(); return; }
+        closeApplications(); closeOverview(); closeClipboard();
+        controlCenter.visible = false; dateCenter.requestClose();
+        windowStrip.closeMenu(); rightStatusArea.closeRemovableMedia();
+        rightStatusArea.closePrinting(); rightStatusArea.closePhotoBackup(); closeDrawer();
+        monitorService.open(screen.name);
+    }
+    Connections {
+        target: monitorService
+        function onActiveOutputChanged() {
+            if (monitorService.activeOutput === bar.screen.name)
+                monitorLoader.active = true;
+            else monitorLoader.active = false;
+        }
+    }
+    LazyLoader {
+        id: monitorLoader
+        active: false
+        MonitorPanel {
+            barWindow: bar
+            indicator: monitorIndicator
+            service: bar.monitorService
+            onDismissed: bar.closeMonitor()
+        }
+    }
     function closeDrawer() { drawerIndicator.close(false) }
     function toggleDrawer() { drawerIndicator.toggle() }
 
@@ -144,11 +179,10 @@ PanelWindow {
     Connections {
         target: bar.applicationCoordinator
         function onAuthenticationOpening() {
+            bar.closeMonitor();
             bar.closeApplications();
             // INVARIANT: no Overview screenshot may contain the auth surface.
-            overviewCapture.running = false;
-            overviewCaptureRefresh.stop();
-            if (overviewLoader.item) overviewLoader.item.skipDismissCaptures = true;
+            if (overviewLoader.item) overviewLoader.item.cancelCaptures();
             bar.closeOverview();
             bar.closeClipboard();
             controlCenter.visible = false;
@@ -160,6 +194,7 @@ PanelWindow {
             bar.closeDrawer();
         }
         function onApplicationsOpening(output) {
+            bar.closeMonitor();
             bar.closeOverview();
             bar.closeClipboard();
             controlCenter.visible = false;
@@ -207,6 +242,7 @@ PanelWindow {
     }
     // CONTRACT: clic et IPC suivent la même exclusion que les panneaux de barre.
     function toggleClipboard() {
+        closeMonitor();
         if (authenticationActive) return false;
         if (clipboardLoader.active) {
             closeClipboard();
@@ -225,14 +261,15 @@ PanelWindow {
         return true;
     }
 
-    // CONTRACT: un seul écran reçoit l'Overview ; une capture sans overlay
-    // précède l'ouverture afin de montrer le workspace actif tel qu'affiché.
+    // CONTRACT: IPC and cached previews appear immediately. Only the loaded
+    // Overview owns capture work; a closed bar never schedules screenshots.
     function closeOverview() {
         overviewRequested = false;
         if (overviewLoader.item) overviewLoader.item.dismiss();
         return true;
     }
     function openOverview() {
+        closeMonitor();
         if (authenticationActive || lockCaptureGuard) return false;
         // INVARIANT: deux ouvertures ne créent ni une seconde capture ni une fermeture.
         if (overviewRequested || overviewLoader.active) return true;
@@ -246,7 +283,7 @@ PanelWindow {
         rightStatusArea.closePhotoBackup();
         bar.closeDrawer();
         overviewRequested = true;
-        if (!overviewCapture.running) overviewCapture.running = true;
+        overviewLoader.active = true;
         return true;
     }
     function toggleOverview() {
@@ -281,42 +318,11 @@ PanelWindow {
                 } : null });
         }
     }
+    // WHY: the existing lock guard precedes mapping of the authentication UI.
+    // Purging invalidates old pixels; in-flight helpers also check this guard.
     Process {
-        id: overviewCapture
-        command: ["python3", "-B", bar.overviewBackend, "capture", "--output", bar.screen.name]
-        onExited: (code, status) => {
-            if (bar.overviewRequested && !bar.authenticationActive && !bar.lockCaptureGuard) overviewLoader.active = true;
-            else if (code !== 0) console.warn("Capture du workspace impossible");
-        }
-    }
-    // CONTRACT: un workspace nouvellement visible reçoit une capture après
-    // que Sway a présenté sa première frame, sans attendre le cycle de 15 s.
-    Connections {
-        target: I3
-        function onRawEvent(event) {
-            if (event.type === "workspace") overviewCaptureRefresh.restart();
-        }
-    }
-    Timer {
-        id: overviewCaptureRefresh
-        interval: 350; repeat: false
-        onTriggered: {
-            if (!bar.authenticationActive && !bar.lockCaptureGuard && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
-                    && !applicationsLoader.active
-                    && !controlCenter.visible && !dateCenter.visible)
-                overviewCapture.running = true;
-        }
-    }
-    // Un seul snapshot toutes les 15 secondes pour le workspace actuellement
-    // visible ; aucune boucle de capture pendant l'Overview ou un autre panneau.
-    Timer {
-        interval: 15000; repeat: true; running: true; triggeredOnStart: true
-        onTriggered: {
-            if (!bar.authenticationActive && !bar.lockCaptureGuard && !overviewCapture.running && !overviewLoader.active && !clipboardLoader.active
-                    && !applicationsLoader.active
-                    && !controlCenter.visible && !dateCenter.visible)
-                overviewCapture.running = true;
-        }
+        id: overviewPurge
+        command: ["python3", "-B", bar.overviewBackend, "purge"]
     }
     LazyLoader {
         id: overviewLoader
@@ -332,6 +338,7 @@ PanelWindow {
     IpcHandler {
         target: "appearanceUi-" + bar.screen.name
         function openPage(page: string): bool {
+            bar.closeMonitor();
             if (bar.authenticationActive) return false;
             if (controlCenter.pages[page] === undefined) return false;
             bar.closeApplications();
@@ -350,6 +357,7 @@ PanelWindow {
             bar.toggleDateCenter(); return true;
         }
         function openWindowMenu(): bool {
+            bar.closeMonitor();
             if (bar.authenticationActive) return false;
             bar.closeApplications();
             bar.closeClipboard();
@@ -399,6 +407,7 @@ PanelWindow {
 
     // Le bouton de sauvegarde utilise la même exclusion que les autres popups.
     function togglePhotoBackup() {
+        closeMonitor();
         if (authenticationActive || !rightStatusArea.photoBackupVisible) return false;
         const opening = !rightStatusArea.photoBackupOpen;
         closeApplications();
@@ -426,6 +435,7 @@ PanelWindow {
 
     // CONTRACT: toute la capsule centrale partage le même popup et la même exclusion XOR.
     function toggleDateCenter() {
+        closeMonitor();
         if (authenticationActive) return;
         const opening = !dateCenter.visible && !dateCenter.opening;
         closeApplications();
@@ -444,6 +454,7 @@ PanelWindow {
     // CONTRACT: le tiroir prend le focus clavier sur une seule sortie et
     // libère tous les autres panneaux transitoires avant son ouverture.
     function prepareDrawer() {
+        closeMonitor();
         closeApplications();
         closeOverview();
         closeClipboard();
@@ -557,6 +568,7 @@ PanelWindow {
             anchors.verticalCenter: parent.verticalCenter
             maxWidth: Math.max(0, leftArea.width - x - 8)
             onMenuOpened: {
+                bar.closeMonitor();
                 bar.closeApplications();
                 bar.closeOverview();
                 bar.closeClipboard();
@@ -588,11 +600,22 @@ PanelWindow {
         height: bar.height
         clip: true
 
+        Rectangle {
+            id: monitorIndicator
+            anchors.right: parent.right; anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 26; height: 26; radius: 4
+            color: monitorService.activeOutput === bar.screen.name ? Theme.buttonPressed : "transparent"
+            Text { anchors.centerIn: parent; text: "󰍛"; color: Theme.lavender
+                font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 17 }
+            MouseArea { anchors.fill: parent; onClicked: bar.toggleMonitor() }
+        }
+
         // INVARIANT: la zone droite s'étend depuis le bord sans modifier l'ancrage central.
         RightStatusArea {
             id: rightStatusArea
-            anchors.right: parent.right
-            anchors.rightMargin: 8
+            anchors.right: monitorIndicator.left
+            anchors.rightMargin: 5
             anchors.verticalCenter: parent.verticalCenter
             barWindow: bar
             wifiDevice: controlCenter.wifiDevice
@@ -603,6 +626,7 @@ PanelWindow {
             keepAwakeController: bar.keepAwakeController
             clipboardOpen: clipboardLoader.active && !!clipboardLoader.item && !clipboardLoader.item.closing
             onOpenPageRequested: page => {
+                bar.closeMonitor();
                 bar.closeApplications();
                 bar.closeOverview();
                 bar.closeClipboard();
@@ -616,6 +640,7 @@ PanelWindow {
                 controlCenter.visible = true;
             }
             onToggleControlCenterRequested: {
+                bar.closeMonitor();
                 bar.closeApplications();
                 bar.closeOverview();
                 const opening = !controlCenter.visible;
@@ -630,6 +655,7 @@ PanelWindow {
                 controlCenter.visible = opening;
             }
             onToggleRemovableMediaRequested: {
+                bar.closeMonitor();
                 bar.closeApplications();
                 bar.closeOverview();
                 const opening = !rightStatusArea.removableMediaOpen;
@@ -643,6 +669,7 @@ PanelWindow {
                 bar.closeDrawer();
             }
             onTogglePrintingRequested: {
+                bar.closeMonitor();
                 if (bar.authenticationActive) return;
                 const opening = !rightStatusArea.printingOpen;
                 bar.closeApplications();

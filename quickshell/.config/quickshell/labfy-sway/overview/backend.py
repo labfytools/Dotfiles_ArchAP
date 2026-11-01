@@ -5,6 +5,11 @@ import argparse
 import hashlib
 import json
 import os
+import fnmatch
+import stat
+import signal
+import fcntl
+import resource
 from pathlib import Path
 import re
 import subprocess
@@ -13,30 +18,165 @@ import tempfile
 import time
 
 
+# CONTRACT: local operational bounds, never a bound on the Sway inventory.
+MAX_CACHE_FILES = 256
+MAX_CACHE_BYTES = 32 * 1024 * 1024
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+MAX_BATCH = 4
+CAPTURE_SECONDS = 2
+_cache_fd = None
+_cache_identity = None
+_cache_public = None
+_deadline = None
+
+
 def lock_capture_guard_active():
-    # CONTRACT: capture is denied while the dedicated lock may render an auth
-    # surface. A crash leaves the guard active until authenticated recovery.
+    # WHY: malformed/inaccessible guards fail closed; absence means unlocked.
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if not runtime:
-        return False
+        return True
     try:
-        return (Path(runtime) / "labfy-lock.capture-guard").read_text() == "active\n"
-    except OSError:
+        fd = os.open(Path(runtime) / "labfy-lock.capture-guard", os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as stream:
+            return stream.read(32) != b"released\n"
+    except FileNotFoundError:
         return False
+    except OSError:
+        return True
+
+
+def lock_revision():
+    try:
+        info = (Path(os.environ["XDG_RUNTIME_DIR"]) / "labfy-lock.capture-guard").lstat()
+        return [info.st_ino, info.st_mtime_ns, info.st_size]
+    except FileNotFoundError:
+        return []
 
 
 def sway(kind):
+    remaining = 5 if _deadline is None else min(5, _deadline - time.monotonic())
+    if remaining <= 0:
+        raise RuntimeError("Budget capture expiré")
     result = subprocess.run(["swaymsg", "-t", kind, "-r"], capture_output=True,
-                            text=True, timeout=5, check=True)
+                            text=True, timeout=remaining, check=True)
     return json.loads(result.stdout)
 
 
 def cache_dir():
-    # CONTRACT: cache éphémère et privé ; aucune capture de bureau sur disque durable.
-    base = Path(os.environ.get("XDG_RUNTIME_DIR", tempfile.gettempdir()))
-    path = base / "labfy-workspace-overview"
-    path.mkdir(mode=0o700, exist_ok=True)
-    return path
+    global _cache_fd, _cache_identity, _cache_public
+    # CONTRACT: no /tmp fallback. Pin the directory inode so replacements and
+    # symlinks cannot redirect reads, grim output, or cleanup outside this cache.
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime or not Path(runtime).is_absolute():
+        raise RuntimeError("Runtime privé indisponible")
+    base = Path(runtime)
+    info = base.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise RuntimeError("Runtime non privé")
+    parent = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(parent)
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise RuntimeError("Runtime non privé")
+        try:
+            os.mkdir("labfy-workspace-overview", 0o700, dir_fd=parent)
+        except FileExistsError:
+            pass
+        fd = os.open("labfy-workspace-overview", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    finally:
+        os.close(parent)
+    info = os.fstat(fd)
+    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        os.close(fd)
+        raise RuntimeError("Cache non privé")
+    identity = (info.st_dev, info.st_ino)
+    if _cache_identity == identity and _cache_fd is not None:
+        os.close(fd)
+    else:
+        if _cache_fd is not None:
+            os.close(_cache_fd)
+        _cache_fd, _cache_identity = fd, identity
+    _cache_public = base / "labfy-workspace-overview"
+    return Path(f"/proc/{os.getpid()}/fd/{_cache_fd}")
+
+
+def image_url(path):
+    return (_cache_public / path.name).as_uri()
+
+
+def private_file(path, limit):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    info = os.fstat(fd)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size > limit):
+        os.close(fd)
+        raise ValueError("Fichier de cache non privé")
+    return os.fdopen(fd, "rb"), info
+
+
+def policy():
+    # CONTRACT: missing policy enables per-window captures. Invalid policy
+    # disables them. Rules match app_id or XWayland class, never window titles.
+    path = Path(os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")) / "labfy-sway/overview-capture.json"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise ValueError()
+            raw = stream.read(16385)
+        if len(raw) > 16384:
+            raise ValueError()
+        data = json.loads(raw)
+        rules = data.get("excludeApps", [])
+        if (not isinstance(data.get("enabled", True), bool) or not isinstance(rules, list)
+                or len(rules) > 64 or any(not isinstance(r, str) or len(r) > 200 for r in rules)):
+            raise ValueError()
+        return {"enabled": data.get("enabled", True), "excludeApps": rules}
+    except FileNotFoundError:
+        return {"enabled": True, "excludeApps": []}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {"enabled": False, "excludeApps": []}
+
+
+def excluded(window, rules):
+    return not rules["enabled"] or any(fnmatch.fnmatchcase(window.get("app", ""), rule) for rule in rules["excludeApps"])
+
+
+def purge():
+    # INVARIANT: unlink only cache-owned names, without following symlinks.
+    for path in cache_dir().iterdir():
+        if re.fullmatch(r"(?:window-[0-9]+|[A-Za-z0-9_.-]+-workspace-[0-9]+|tmp[A-Za-z0-9_-]+)\.(?:jpg|json)", path.name):
+            if not stat.S_ISDIR(path.lstat().st_mode):
+                path.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+def enforce_quota():
+    entries = []
+    for path in cache_dir().iterdir():
+        if not re.fullmatch(r"(?:window-[0-9]+|[A-Za-z0-9_.-]+-workspace-[0-9]+|tmp[A-Za-z0-9_-]+)\.(?:jpg|json)", path.name):
+            continue
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
+            if not stat.S_ISDIR(info.st_mode):
+                path.unlink(missing_ok=True)
+            continue
+        entries.append((info.st_mtime_ns, path, info.st_size))
+    total = sum(item[2] for item in entries)
+    count = len(entries)
+    for _, path, size in sorted(entries):
+        if count <= MAX_CACHE_FILES and total <= MAX_CACHE_BYTES:
+            break
+        path.unlink(missing_ok=True)
+        count -= 1
+        total -= size
+
+
+def overview_open():
+    return any(surface.get("namespace") == "labfy-workspace-overview"
+               for output in sway("get_outputs") if output.get("active")
+               for surface in output.get("layer_shell_surfaces") or [])
 
 
 def snapshot_path(output, number):
@@ -64,16 +204,20 @@ def valid_window_preview(con_id, foreign_id):
     path = window_preview_path(con_id)
     metadata_path = window_preview_metadata_path(con_id)
     try:
-        image_stat = path.stat()
-        if image_stat.st_size == 0 or metadata_path.stat().st_size > 2048:
+        image, image_stat = private_file(path, MAX_IMAGE_BYTES)
+        image.close()
+        if image_stat.st_size == 0:
             return None
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        stream, _ = private_file(metadata_path, 2048)
+        with stream:
+            metadata = json.load(stream)
         if (metadata.get("version") != 1 or metadata.get("conId") != con_id
                 or metadata.get("foreignId") != foreign_id
                 or metadata.get("imageMtimeNs") != image_stat.st_mtime_ns
+                or metadata.get("lockRevision") != lock_revision()
                 or not isinstance(metadata.get("capturedNs"), int)):
             return None
-        return path.as_uri(), str(metadata["capturedNs"])
+        return image_url(path), str(metadata["capturedNs"])
     except (OSError, ValueError, AttributeError, TypeError, json.JSONDecodeError):
         return None
 
@@ -90,7 +234,7 @@ def prune_window_previews(live_ids):
     cutoff = time.time() - 600
     for path in cache_dir().glob("tmp*.*"):
         try:
-            if path.suffix in (".jpg", ".json") and path.stat().st_mtime < cutoff:
+            if path.suffix in (".jpg", ".json") and path.lstat().st_mtime < cutoff:
                 path.unlink(missing_ok=True)
         except OSError:
             pass
@@ -136,18 +280,22 @@ def valid_snapshot(output, number, workspace_id, revision):
     path = snapshot_path(output, number)
     metadata_path = snapshot_metadata_path(output, number)
     try:
-        image_stat = path.stat()
-        if image_stat.st_size == 0 or metadata_path.stat().st_size > 2048:
+        image, image_stat = private_file(path, MAX_IMAGE_BYTES)
+        image.close()
+        if image_stat.st_size == 0:
             return None
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        stream, _ = private_file(metadata_path, 2048)
+        with stream:
+            metadata = json.load(stream)
         if (metadata.get("version") != 1 or metadata.get("output") != output
                 or metadata.get("number") != number
                 or metadata.get("workspaceId") != workspace_id
                 or metadata.get("revision") != revision
                 or metadata.get("imageMtimeNs") != image_stat.st_mtime_ns
+                or metadata.get("lockRevision") != lock_revision()
                 or not isinstance(metadata.get("capturedNs"), int)):
             return None
-        return path.as_uri(), str(metadata["capturedNs"])
+        return image_url(path), str(metadata["capturedNs"])
     except (OSError, ValueError, AttributeError, TypeError, json.JSONDecodeError):
         return None
 
@@ -178,6 +326,16 @@ def windows_in(node):
 
 
 def state():
+    rules = policy()
+    cache_ok = True
+    try:
+        if lock_capture_guard_active() or not rules["enabled"]:
+            purge()
+        enforce_quota()
+    except (OSError, ValueError, RuntimeError):
+        # CONTRACT: an unsafe/unavailable cache disables images, never IPC
+        # navigation. Do not repair or traverse a suspicious directory.
+        cache_ok = False
     tree = sway("get_tree")
     workspaces = sway("get_workspaces")
     outputs = sway("get_outputs")
@@ -202,18 +360,28 @@ def state():
         workspace = by_number.get(number)
         node = workspace_nodes.get(workspace["id"]) if workspace else None
         output = workspace.get("output") if workspace else ""
-        forget_other_outputs(number, output)
+        if cache_ok:
+            forget_other_outputs(number, output)
         windows = windows_in(node) if node else []
         for window in windows:
-            preview = valid_window_preview(window["id"], window["foreignId"])
+            window["excluded"] = excluded(window, rules)
+            if cache_ok and window["excluded"]:
+                window_preview_path(window["id"]).unlink(missing_ok=True)
+                window_preview_metadata_path(window["id"]).unlink(missing_ok=True)
+            preview = (None if not cache_ok or window["excluded"] or lock_capture_guard_active()
+                       else valid_window_preview(window["id"], window["foreignId"]))
             window["preview"] = preview[0] if preview else ""
             window["previewTime"] = preview[1] if preview else ""
         revision = (structure_revision(node, workspace, output_info.get(output, {}).get("rect"))
                     if node and workspace else "")
-        snapshot = valid_snapshot(output, number, workspace["id"], revision) if revision else None
+        # WHY: composed output pixels cannot safely exclude an application.
+        # Retire legacy output snapshots even when their geometry is compatible.
+        if cache_ok and output:
+            forget_snapshot(output, number)
+        snapshot = None
         if not windows:
             snapshot = None
-            if output:
+            if cache_ok and output:
                 forget_snapshot(output, number)
         cards.append({"number": number, "exists": bool(workspace),
                       "workspaceId": workspace["id"] if workspace else 0,
@@ -228,84 +396,71 @@ def state():
                       # INVARIANT: l'URL QML change à chaque remplacement, même
                       # si deux captures surviennent pendant la même seconde.
                       "snapshotTime": snapshot[1] if snapshot else ""})
-    prune_window_previews({window["id"] for card in cards for window in card["windows"]})
+    if cache_ok:
+        prune_window_previews({window["id"] for card in cards for window in card["windows"]})
     return {"cards": cards, "outputs": [item["name"] for item in outputs if item.get("active")],
             "focusedOutput": next((item["name"] for item in outputs if item.get("focused")), ""),
-            "overlayOutputs": overlay_outputs}
+            "overlayOutputs": overlay_outputs, "captureEnabled": cache_ok and rules["enabled"] and not lock_capture_guard_active()}
 
 
 def capture(output, expected_number=None, expected_workspace_id=None,
             expected_revision=None, settle_ms=0):
-    if lock_capture_guard_active():
-        return {"captured": False}
-    if settle_ms < 0 or settle_ms > 1000:
-        raise ValueError("Délai de capture invalide")
-    if settle_ms:
-        time.sleep(settle_ms / 1000)
-    before = state()
-    current = next((card for card in before["cards"] if card["visible"] and card["output"] == output), None)
-    if (output in before["overlayOutputs"] or not current or not current["windows"]
-            or (expected_number is not None and current["number"] != expected_number)
-            or (expected_workspace_id is not None and current["workspaceId"] != expected_workspace_id)
-            or (expected_revision is not None and current["revision"] != expected_revision)):
-        return {"captured": False}
-    path = snapshot_path(output, current["number"])
-    metadata_path = snapshot_metadata_path(output, current["number"])
-    # WHY: grim capture uniquement une sortie effectivement affichée. Écriture
-    # atomique pour qu'un Image QML ne voie jamais un JPEG partiel.
-    with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".jpg", delete=False) as temp:
-        temporary = Path(temp.name)
-    try:
-        if lock_capture_guard_active():
-            return {"captured": False}
-        subprocess.run(["grim", "-o", output, "-s", "0.25", "-t", "jpeg", "-q", "72",
-                        str(temporary)], check=True, timeout=8, capture_output=True)
-        if not temporary.is_file() or temporary.stat().st_size == 0:
-            raise RuntimeError("Capture vide")
-        after = state()
-        updated = next((card for card in after["cards"] if card["number"] == current["number"]), None)
-        # INVARIANT: un changement pendant grim ou la présence de l'Overview
-        # interdit de publier une image associée au mauvais arbre.
-        if (lock_capture_guard_active() or output in after["overlayOutputs"] or not updated or not updated["visible"]
-                or updated["output"] != output or updated["workspaceId"] != current["workspaceId"]
-                or updated["revision"] != current["revision"]):
-            return {"captured": False}
-        temporary.replace(path)
-        metadata = {"version": 1, "output": output, "number": current["number"],
-                    "workspaceId": current["workspaceId"], "revision": current["revision"],
-                    "capturedNs": time.time_ns(), "imageMtimeNs": path.stat().st_mtime_ns}
-        # WHY: le manifeste est publié après le JPEG ; un lecteur concurrent
-        # n'associe jamais l'ancienne révision aux nouveaux pixels.
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
-                                         suffix=".json", delete=False) as temp_meta:
-            json.dump(metadata, temp_meta, separators=(",", ":"))
-            temporary_meta = Path(temp_meta.name)
-        try:
-            temporary_meta.replace(metadata_path)
-        finally:
-            temporary_meta.unlink(missing_ok=True)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return {"captured": True, "number": current["number"], "path": path.as_uri(),
-            "revision": current["revision"]}
+    # CONTRACT: retained CLI returns a fallback; whole-output capture is disabled
+    # because it cannot honor per-application exclusions, even before opening.
+    return {"captured": False}
+
+
+def grim_limits():
+    # WHY: grim uses file-backed Wayland buffers before encoding the JPEG.
+    # RLIMIT_FSIZE also limits those buffers and can kill a valid capture with
+    # SIGXFSZ even when its final JPEG is small. The timeout and address-space
+    # limit bound the child; the encoded file is checked before publication.
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
 
 
 def capture_windows(numbers, cursor=0):
-    if lock_capture_guard_active():
+    global _deadline
+    _deadline = time.monotonic() + 8
+    # CONTRACT: serialize all output panels using a private advisory lock.
+    # A busy batch falls back without spawning another grim process.
+    fd = os.open(cache_dir() / "capture.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise ValueError("Verrou de cache non privé")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {"captured": [], "nextCursor": 0}
+        return _capture_windows(numbers, cursor)
+    finally:
+        _deadline = None
+        os.close(fd)
+
+
+def _capture_windows(numbers, cursor=0):
+    if lock_capture_guard_active() or not policy()["enabled"]:
+        purge()
+        return {"captured": [], "nextCursor": 0}
+    if not overview_open():
         return {"captured": [], "nextCursor": 0}
     if cursor < 0:
         raise ValueError("Curseur de capture invalide")
+    generation = lock_revision()
     before = state()
     candidates = [window for card in before["cards"] if card["number"] in numbers
                   for window in card["windows"]
-                  if re.fullmatch(r"[0-9a-f]{32}", window["foreignId"])]
-    # CONTRACT: une invocation capture au plus 16 fenêtres ; l'interface peut
-    # reprendre au curseur suivant sans créer de service ou de pool permanent.
-    batch = candidates[cursor:cursor + 16]
+                  if not excluded(window, policy()) and re.fullmatch(r"[0-9a-f]{32}", window["foreignId"])]
+    # CONTRACT: at most four windows, two seconds each and six seconds per batch.
+    # The panel retries only on a new open/structural event, never while closed.
+    batch = candidates[cursor:cursor + MAX_BATCH]
     captures = []
+    deadline = min(time.monotonic() + 6, _deadline or float("inf"))
     try:
         for window in batch:
-            if lock_capture_guard_active():
+            if (lock_capture_guard_active() or generation != lock_revision() or not overview_open()
+                    or time.monotonic() >= deadline or excluded(window, policy())):
                 break
             with tempfile.NamedTemporaryFile(dir=cache_dir(), suffix=".jpg", delete=False) as temp:
                 temporary = Path(temp.name)
@@ -313,8 +468,10 @@ def capture_windows(numbers, cursor=0):
             try:
                 result = subprocess.run(["grim", "-T", window["foreignId"], "-s", "0.25",
                                          "-t", "jpeg", "-q", "72", str(temporary)],
-                                        capture_output=True, timeout=5, check=False)
-                if result.returncode != 0 or temporary.stat().st_size == 0:
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                        timeout=min(CAPTURE_SECONDS, max(.01, deadline - time.monotonic())),
+                                        preexec_fn=grim_limits, check=False)
+                if result.returncode != 0 or not 0 < temporary.stat().st_size <= MAX_IMAGE_BYTES:
                     temporary.unlink(missing_ok=True)
             except (OSError, subprocess.TimeoutExpired):
                 temporary.unlink(missing_ok=True)
@@ -322,15 +479,18 @@ def capture_windows(numbers, cursor=0):
         current = {window["id"]: window for card in after["cards"] for window in card["windows"]}
         published = []
         for window, temporary in captures:
-            if lock_capture_guard_active():
+            if lock_capture_guard_active() or generation != lock_revision() or not overview_open():
                 break
+            if excluded(current.get(window["id"], {}), policy()):
+                continue
             if not temporary.is_file() or current.get(window["id"], {}).get("foreignId") != window["foreignId"]:
                 continue
             path = window_preview_path(window["id"])
             metadata_path = window_preview_metadata_path(window["id"])
             temporary.replace(path)
             metadata = {"version": 1, "conId": window["id"], "foreignId": window["foreignId"],
-                        "capturedNs": time.time_ns(), "imageMtimeNs": path.stat().st_mtime_ns}
+                        "capturedNs": time.time_ns(), "lockRevision": generation,
+                        "imageMtimeNs": path.stat().st_mtime_ns}
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache_dir(),
                                              suffix=".json", delete=False) as temp_meta:
                 json.dump(metadata, temp_meta, separators=(",", ":"))
@@ -344,6 +504,7 @@ def capture_windows(numbers, cursor=0):
         for _, temporary in captures:
             temporary.unlink(missing_ok=True)
     next_cursor = cursor + len(batch) if cursor + len(batch) < len(candidates) else 0
+    enforce_quota()
     return {"captured": published, "nextCursor": next_cursor}
 
 
@@ -379,7 +540,7 @@ def command(action, number=None, con_id=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("state", "capture", "capture-windows", "move", "focus", "workspace"))
+    parser.add_argument("action", choices=("state", "capture", "capture-windows", "move", "focus", "workspace", "purge"))
     parser.add_argument("--output")
     parser.add_argument("--number", type=int)
     parser.add_argument("--con-id", type=int)
@@ -389,7 +550,9 @@ def main():
     parser.add_argument("--numbers")
     parser.add_argument("--cursor", type=int, default=0)
     args = parser.parse_args()
-    if args.action == "state":
+    if args.action == "purge":
+        result = purge()
+    elif args.action == "state":
         result = state()
     elif args.action == "capture":
         if not args.output or args.output not in state()["outputs"]:
@@ -407,8 +570,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # CONTRACT: Quickshell cancels this helper on close/reload. Raising through
+    # subprocess.run kills and reaps grim instead of leaving an orphan capture.
+    def cancelled(signum, frame):
+        raise InterruptedError("Capture annulée")
+    signal.signal(signal.SIGTERM, cancelled)
     try:
         main()
     except (ValueError, RuntimeError, subprocess.SubprocessError, OSError, json.JSONDecodeError) as error:
-        print(json.dumps({"error": str(error)}, ensure_ascii=False))
+        print(json.dumps({"error": "Opération Overview indisponible"}))
         sys.exit(1)

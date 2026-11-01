@@ -47,75 +47,49 @@ et les opérations IPC explicites peuvent ensuite être supprimés s'ils ne sont
 plus utilisés ; les raccourcis clavier et le reste de l'Overview continuent de
 fonctionner.
 
-## Provenance des miniatures
+## Politique de captures STEP15A
 
-`grim -o <sortie> -s 0.25 -t jpeg -q 72` prend un **snapshot réel de la sortie
-visible**. Une capture a lieu à l'ouverture, puis lors du changement de
-workspace après 350 ms et au plus toutes les 15 s pendant que l'Overview est
-fermée. Les images sont remplacées atomiquement dans
-`$XDG_RUNTIME_DIR/labfy-workspace-overview/`. Le cache est éphémère et privé.
-Chaque JPEG possède un manifeste JSON avec l'identité du workspace, sa sortie,
-une empreinte de la hiérarchie et de la géométrie Sway, l'horodatage et le
-`mtime` du fichier. `state()` ne fournit l'image que si ces données correspondent
-à l'arbre courant. Les titres et le focus ne font pas partie de l'empreinte.
-Une modification de taille, disposition, flottement ou composition de fenêtres
-masque immédiatement l'ancien snapshot complet. Les images individuelles
-disponibles restent affichées dans les nouveaux rectangles des fenêtres.
-Un workspace devenu vide efface son ancienne image et son manifeste. Les
-workspaces inchangés conservent leur capture.
+Les cartes utilisent immédiatement l'arbre IPC et les miniatures individuelles
+valides. Seule l'ouverture de l'Overview ou un changement structurel pendant
+qu'elle est visible déclenche `grim -T <foreign_toplevel_identifier>`.
+La barre ne lance aucune capture périodique lorsqu'elle est fermée et la
+fermeture annule sa file de travail. Les fenêtres sans image gardent la
+reconstruction géométrique, leurs titres et les actions IPC existantes.
+Les captures complètes de sortie ont été désactivées : elles ne permettent pas
+d'exclure les pixels d'une application sensible. Leurs anciennes images sont
+retirées du cache lors de la prochaine lecture de l'état.
 
-La sortie qui porte l'Overview ne peut pas être capturée tant que sa surface
-overlay est visible. Après un changement structurel, elle montre donc la
-reconstruction jusqu'à la fermeture du panneau ; une capture différée de
-300 ms est alors tentée. Le helper vérifie avant et après `grim` la présence
-de l'overlay, l'identité et l'empreinte du workspace. Une sortie visible
-différente de celle du panneau peut être recapturée pendant l'ouverture,
-après 350 ms, si elle ne porte pas l'overlay. Ces captures multi-écrans n'ont
-pas été vérifiées sur matériel. Une capture peut contenir une autre application
-superposée à la sortie entre deux vérifications ; elle reste désignée comme
-dernière capture.
+La politique est lue dans
+`$XDG_CONFIG_HOME/labfy-sway/overview-capture.json` (ou
+`~/.config/labfy-sway/overview-capture.json`). L'absence de fichier autorise
+les miniatures individuelles. Un fichier invalide désactive les miniatures.
+Exemple pour les désactiver :
 
-`grim -T <identifiant>` capture réellement une fenêtre de cette session
-SwayFX 0.6, même lorsque son workspace est caché. Le backend lit
-`foreign_toplevel_identifier` sur la fenêtre dans `get_tree`, puis associe
-l'image obtenue au vrai `con_id`. Passer le `con_id` à `grim -T` échoue : ce
-sont deux identités distinctes. Chaque image individuelle a un manifeste
-contenant les deux identifiants, son horodatage et le `mtime` du JPEG. Elle
-reste utilisable après un déplacement ou un redimensionnement, et disparaît
-du cache à la fermeture de la fenêtre. L'ouverture de l'Overview rafraîchit
-la sortie visible et les fenêtres sans capture ; un changement structurel
-recapture les fenêtres des workspaces concernés, par lots de 16 au plus.
-Cette capture par toplevel n'inclut pas l'overlay de l'Overview.
+```json
+{"enabled": false, "excludeApps": []}
+```
 
-La capture d'une fenêtre cachée peut refléter sa dernière frame si
-l'application cesse de dessiner hors écran. `grim -T` ne fournit pas le rendu
-composé d'un workspace caché. **Aucune carte n'est présentée comme live.**
-Un workspace dont la capture complète est encore compatible montre ce
-snapshot. Après un changement, la carte place les dernières images des
-fenêtres encore présentes selon `get_tree`. Si une fenêtre n'a pas de capture
-individuelle valide, son rectangle reste une reconstruction géométrique.
-Les rectangles reprennent la géométrie réelle,
-le focus, la position flottante et le titre de l'application. Les onglets et
-les piles sont représentés par les rectangles et titres des feuilles ; leur
-ornement Sway exact n'est pas reproduit.
+Exemple d'exclusion par `app_id` Wayland ou classe XWayland :
 
-Les sorties sont obtenues par `get_outputs`, les workspaces par
-`get_workspaces`, les fenêtres par `get_tree`. Les changements `window`,
-`workspace` et `output` déclenchent une relecture regroupée à 220 ms lorsque
-la vue est ouverte. Chaque barre capture uniquement sa propre sortie. La
-sélection du panneau passe par la sortie focalisée de Sway. Une seule sortie a
-été vérifiée réellement ; les déplacements et captures entre plusieurs
-sorties demandent un contrôle sur matériel multi-écrans.
+```json
+{"enabled": true, "excludeApps": ["org.keepassxc.KeePassXC", "*password*", "proton-pass"]}
+```
 
-La commande de déplacement valide le `con_id`, attend la réponse de Sway, puis
-compare les arbres avant et après. Les numéros source et destination, ainsi que
-les workspaces dont l'empreinte a changé, sont renvoyés à l'interface. Les
-événements IPC provoquent aussi une relecture regroupée pour les changements
-externes. La sélection clavier initiale suit le workspace réellement focalisé.
-Le cache éphémère garde au plus une paire JPEG/manifeste par fenêtre encore
-présente dans les workspaces 1 à 10, plus les captures complètes compatibles
-des sorties ; les fichiers temporaires interrompus sont retirés après une
-période de grâce. Aucun service supplémentaire n'est lancé.
+Le motif suit `fnmatch` et ne regarde pas le titre. Il ne détecte pas toutes
+les fenêtres contenant des secrets. Les règles sont relues pendant l'ouverture
+et les images devenues exclues sont purgées. L'inventaire IPC des workspaces
+et les fonctions focus/déplacement restent accessibles lorsque les images
+sont désactivées.
+
+Le cache privé dans `XDG_RUNTIME_DIR` refuse les chemins douteux et garde au
+plus 256 fichiers reconnus et 32 Mio. Une image est limitée à 4 Mio. Un seul
+lot de capture s'exécute à la fois ; chaque lot tente au plus quatre fenêtres,
+avec deux secondes par fenêtre et huit secondes pour l'ensemble du helper.
+Un verrouillage ferme l'Overview, annule les programmations et purge les JPEG.
+Les manifestes antérieurs au verrouillage ne sont pas réutilisés au déverrouillage.
+Les miniatures sont des images ponctuelles et peuvent montrer une dernière
+frame ancienne d'une fenêtre cachée ; aucune carte n'est présentée comme live.
+La validation multi-écran physique reste à effectuer.
 
 ## Interactions
 

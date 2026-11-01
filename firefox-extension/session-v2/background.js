@@ -30,6 +30,12 @@ const candidates = new Set();
 const quarantine = new Set();
 const attempted = new Set();
 const known = new Map();
+// Preuves locales, jamais persistées ni déduites d'un titre/contenu. Le host
+// distingue les app_ids exacts du catalogue avant toute lecture/mint UUID.
+const classifications = new Map();
+const classificationErrors = new Map();
+const classificationConflicts = new Set();
+let operationWindows = null;
 let halted = false;
 let port = null;
 let pending = null;
@@ -95,12 +101,68 @@ async function request(message) {
     }
   });
 }
-async function ids() {
+async function rawIds() {
   const windows = await api(() => browser.windows.getAll({populate: false, windowTypes: ["normal"]}));
   if (windows.length > 256) throw new Error("WINDOW_LIMIT");
   const result = windows.map(w => w.id).sort((a, b) => a - b);
   if (result.some(id => !Number.isSafeInteger(id) || id < 0) || new Set(result).size !== result.length) throw new Error("WINDOW_IDS");
   return result;
+}
+const sameIds = (a, b) => a.length === b.length && a.every((id, i) => id === b[i]);
+async function classifyWindow(id) {
+  if (classificationConflicts.has(id)) throw new Error("WINDOW_CLASS_CHANGED");
+  const runtime_token = crypto.randomUUID().replaceAll("-", "");
+  let answer;
+  try {
+    await mark(id, runtime_token);
+    answer = await request({op: "classify-window", runtime_token});
+  } finally {
+    await api(() => browser.windows.update(id, {titlePreface: ""}));
+  }
+  if (!answer || Object.keys(answer).sort().join(",") !== "con_id,kind,result,runtime_token"
+      || answer.result !== "OK" || answer.runtime_token !== runtime_token
+      || !["browser", "managed-webapp"].includes(answer.kind)
+      || !Number.isSafeInteger(answer.con_id) || answer.con_id <= 0) {
+    throw new Error("WINDOW_CLASS_UNAVAILABLE");
+  }
+  const proof = {kind: answer.kind, con_id: answer.con_id};
+  const prior = classifications.get(id);
+  if (prior && (prior.kind !== proof.kind || prior.con_id !== proof.con_id)) {
+    classificationConflicts.add(id);
+    throw new Error("WINDOW_CLASS_CHANGED");
+  }
+  return proof;
+}
+async function ids(fresh = false) {
+  const current = await rawIds();
+  if (operationWindows === null) operationWindows = current;
+  if (!sameIds(current, operationWindows)) throw new Error("WINDOW_SET_CHANGED");
+  if (new Set([...classifications.keys(), ...classificationErrors.keys(), ...current]).size > 256) throw new Error("WINDOW_LIMIT");
+  const eligible = [];
+  for (const id of current) {
+    if (classificationConflicts.has(id)) throw new Error("WINDOW_CLASS_CHANGED");
+    if (!fresh && classificationErrors.has(id)) throw new Error(classificationErrors.get(id));
+    if (fresh || !classifications.has(id)) {
+      try {
+        const proof = await classifyWindow(id);
+        if (!sameIds(await rawIds(), current)) throw new Error("WINDOW_SET_CHANGED");
+        classifications.set(id, proof);
+        classificationErrors.delete(id);
+      } catch (error) {
+        // Une panne du host ne provoque pas un clignotement en boucle idle.
+        // Une capture explicite peut réessayer ; jamais une classe conflictuelle.
+        if (failureReason(error) !== "WINDOW_SET_CHANGED") classificationErrors.set(id, failureReason(error));
+        throw error;
+      }
+    }
+    if (classifications.get(id).kind === "browser") eligible.push(id);
+    else {
+      // Une webapp gérée n'entre dans aucun lot UUID, même sans extData.
+      candidates.delete(id); quarantine.delete(id); protectedBaseline.delete(id);
+    }
+  }
+  if (!sameIds(await rawIds(), current)) throw new Error("WINDOW_SET_CHANGED");
+  return eligible;
 }
 function validate(rows, complete = true) {
   const seen = new Set();
@@ -166,6 +228,9 @@ async function publish(rows) {
   validate(rows);
   // Valider le lot complet avant le premier message, puis chaque UUID juste
   // avant usage. Ce protocole n'est pas un CAS avec le sessionstore Firefox.
+  // Revalider aussi les exclusions après l'attente d'extData ; une conversion
+  // de classe ou un con_id remplacé ne devient pas une nouvelle autorisation.
+  await ids(true);
   const fresh = await sample(rows.map(row => row.id));
   if (fresh.some((row, i) => row.uuid !== rows[i].uuid)) throw new Error("IDENTITY_CHANGED");
   for (const row of rows) {
@@ -174,7 +239,8 @@ async function publish(rows) {
     try {
       await mark(row.id, runtime_token);
       const answer = await request({op: "map-window", uuid: row.uuid, runtime_token});
-      if (answer.result !== "OK" || answer.uuid !== row.uuid || !Number.isSafeInteger(answer.con_id)) throw new Error("PROVIDER_ERROR");
+      if (answer.result !== "OK" || answer.uuid !== row.uuid || !Number.isSafeInteger(answer.con_id)
+          || answer.con_id !== classifications.get(row.id).con_id) throw new Error("PROVIDER_ERROR");
     } finally {
       await api(() => browser.windows.update(row.id, {titlePreface: ""}));
     }
@@ -186,14 +252,16 @@ async function cycle() {
   // message natif non supporté par le provider strict existant.
   if (active) return {result: "BUSY"};
   active = true;
+  operationWindows = null;
   try {
+    await ids(true);
     await publish(await observe());
     lastError = null;
     return {result: "OK"};
   } catch (error) {
     lastError = failureReason(error);
     return {result: "REFUSED", reason: lastError};
-  } finally { active = false; }
+  } finally { operationWindows = null; active = false; }
 }
 function changed() { changedAt = performance.now(); ++revision; }
 // CONTRACT : avant la résolution du premier getAll, la provenance est ambiguë.
@@ -213,6 +281,7 @@ browser.windows.onCreated.addListener(window => {
 browser.windows.onRemoved.addListener(id => {
   changed();
   candidates.delete(id); quarantine.delete(id); attempted.delete(id); known.delete(id); protectedBaseline.delete(id);
+  classifications.delete(id); classificationErrors.delete(id); classificationConflicts.delete(id);
   if (baseline) baseline.delete(id);
 });
 browser.sessions.onChanged.addListener(() => {
@@ -234,6 +303,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
 async function autoStep() {
   if (active || halted || phase === "PROTECTED") return;
   active = true;
+  operationWindows = null;
   let targets = [];
   try {
     const expected = await ids();
@@ -284,6 +354,7 @@ async function autoStep() {
       if (observed.some(row => row.id === id && row.uuid !== undefined)) throw new Error("IDENTITY_CHANGED");
       // Dernière lecture intégrale avant CHAQUE écriture. Les cibles sœurs
       // absentes restent isolées ; une ancienne ambiguïté ne devient pas cible.
+      await ids(true);
       const before = await sample(expected);
       if (epoch !== revision) throw new Error("WINDOW_ACTIVITY");
       if (before.find(row => row.id === id).uuid !== undefined) continue;
@@ -314,16 +385,16 @@ async function autoStep() {
     for (const id of transient ? targets : [...candidates]) {
       if (!transient || attempted.has(id)) { candidates.delete(id); quarantine.add(id); }
     }
-  } finally { active = false; }
+  } finally { operationWindows = null; active = false; }
 }
 async function start() {
   active = true;
   // La baseline est capturée avant les nettoyages ; les événements déjà reçus
   // restent protégés indépendamment de leur présence dans cette photographie.
-  try { baseline = new Set(await ids()); }
+  try { baseline = new Set(await rawIds()); }
   catch (error) { phase = "PROTECTED"; lastError = failureReason(error); }
   try {
-    for (const id of await ids()) {
+    for (const id of await rawIds()) {
       try { await api(() => browser.windows.update(id, {titlePreface: ""})); } catch {}
     }
   } catch { /* Une erreur d'énumération ne doit pas supprimer la reconnexion. */ }

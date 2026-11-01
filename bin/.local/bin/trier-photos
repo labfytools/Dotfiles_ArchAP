@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Classement manuel de A_trier, compatible avec la photothèque Labfy.
+
+Photos et vidéos -> Photos/AAAA/AAAA-MM-JJ/
+RAW et XMP liés -> Originaux/AAAA/AAAA-MM-JJ/
+Aucun fichier existant n'est remplacé. Les autres fichiers restent dans A_trier.
+"""
+
+import argparse
+from collections import defaultdict
+from datetime import date, datetime
+import errno
+import hashlib
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import unicodedata
+
+BASE = Path.home() / "Pictures" / "Phototheque"
+RAW = {".arw", ".dng", ".cr2", ".cr3", ".nef", ".nrw", ".raf",
+       ".orf", ".rw2", ".pef", ".srw", ".3fr", ".iiq"}
+PHOTO = {".jpg", ".jpeg", ".jpe", ".png", ".tif", ".tiff",
+         ".heic", ".heif", ".avif", ".webp", ".bmp"}
+VIDEO = {".mov", ".mp4", ".m4v", ".avi", ".mts", ".m2ts", ".3gp"}
+MEDIA = RAW | PHOTO | VIDEO
+DATE_NAME = re.compile(r"(?<!\d)((?:19|20)\d{2})[-_]?(\d{2})[-_]?(\d{2})(?!\d)")
+EXIFTOOL = shutil.which("exiftool")
+
+
+def valid_date(y, m, d):
+    try:
+        candidate = date(int(y), int(m), int(d))
+        return candidate if 1900 <= candidate.year <= 2100 else None
+    except ValueError:
+        return None
+
+
+def date_of(path):
+    """EXIF en priorité, ensuite le nom, puis date de modification."""
+    if EXIFTOOL:
+        try:
+            result = subprocess.run(
+                [EXIFTOOL, "-s3", "-d", "%Y-%m-%d",
+                 "-DateTimeOriginal", "-CreateDate",
+                 "-MediaCreateDate", "-TrackCreateDate", "--", str(path)],
+                capture_output=True, text=True, timeout=20, check=False,
+            )
+            for line in result.stdout.splitlines():
+                match = re.fullmatch(r"\s*(\d{4})-(\d{2})-(\d{2})\s*", line)
+                if match:
+                    found = valid_date(*match.groups())
+                    if found:
+                        return found, "EXIF"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    match = DATE_NAME.search(path.name)
+    if match:
+        found = valid_date(*match.groups())
+        if found:
+            return found, "nom du fichier"
+    return datetime.fromtimestamp(path.stat().st_mtime).date(), "modification"
+
+
+def stem_for_group(path):
+    name = path.name
+    if path.suffix.lower() == ".xmp":
+        name = name[:-4]
+        pre = Path(name)
+        if pre.suffix.lower() in MEDIA:
+            name = pre.stem
+    else:
+        name = path.stem
+    return name.casefold()
+
+
+def renamed(path, index):
+    if index == 0:
+        return path.name
+    if path.suffix.lower() == ".xmp":
+        without_xmp = path.name[:-4]
+        suffix = Path(without_xmp).suffix
+        if suffix.lower() in MEDIA:
+            return without_xmp[:-len(suffix)] + f"_{index}" + suffix + path.name[-4:]
+        return without_xmp + f"_{index}" + path.name[-4:]
+    return path.stem + f"_{index}" + path.suffix
+
+
+def target_root(path, group, photos, originaux):
+    if path.suffix.lower() in RAW:
+        return originaux
+    if path.suffix.lower() != ".xmp":
+        return photos
+    associated = Path(path.name[:-4]).suffix.lower()
+    if associated in RAW:
+        return originaux
+    if associated in PHOTO | VIDEO:
+        return photos
+    # XMP générique : privilégier les RAW s'ils sont présents.
+    return originaux if any(p.suffix.lower() in RAW for p in group) else photos
+
+
+def key(name):
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def existing_names(folder, cache):
+    if folder not in cache:
+        if folder.is_symlink():
+            raise ValueError(f"Dossier de destination symbolique : {folder}")
+        cache[folder] = {key(p.name) for p in folder.iterdir()} if folder.exists() else set()
+    return cache[folder]
+
+
+def digest(path):
+    hash_ = hashlib.sha256()
+    with path.open("rb") as file_:
+        for chunk in iter(lambda: file_.read(1024 * 1024), b""):
+            hash_.update(chunk)
+    return hash_.digest()
+
+
+def move_without_overwrite(source, target):
+    """Hardlink + unlink sur même volume, copie vérifiée sinon."""
+    try:
+        os.link(source, target, follow_symlinks=False)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        try:
+            with source.open("rb") as incoming, target.open("xb") as outgoing:
+                shutil.copyfileobj(incoming, outgoing, 1024 * 1024)
+                outgoing.flush()
+                os.fsync(outgoing.fileno())
+            shutil.copystat(source, target)
+            if digest(source) != digest(target):
+                raise OSError("Contrôle SHA-256 de la copie échoué")
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+    source.unlink()
+
+
+def run(args):
+    source = args.source.expanduser().absolute()
+    photos = args.photos.expanduser().absolute()
+    originaux = args.originaux.expanduser().absolute()
+    if not source.is_dir() or source.is_symlink():
+        raise ValueError(f"Source absente ou symbolique : {source}")
+    for dest in (photos, originaux):
+        if dest == source or source in dest.parents:
+            raise ValueError("La destination ne doit pas être dans A_trier.")
+        if dest.is_symlink():
+            raise ValueError(f"Destination symbolique refusée : {dest}")
+
+    groups = defaultdict(list)
+    ignored = 0
+    for current, dirs, names in os.walk(source, followlinks=False):
+        dirs[:] = [d for d in dirs if not (Path(current) / d).is_symlink()]
+        for name in names:
+            file_ = Path(current) / name
+            if file_.is_symlink() or not file_.is_file():
+                ignored += 1
+                continue
+            if file_.suffix.lower() not in MEDIA | {".xmp"}:
+                ignored += 1
+                continue
+            groups[(file_.parent, stem_for_group(file_))].append(file_)
+
+    occupied = {}
+    moved = 0
+    errors = 0
+    orphans = 0
+    for _, group in sorted(groups.items(), key=lambda x: str(x[0])):
+        media = [p for p in group if p.suffix.lower() in MEDIA]
+        if not media:
+            orphans += len(group)
+            continue  # Ne pas déplacer les XMP orphelins.
+        media.sort(key=lambda p: (p.suffix.lower() not in RAW,
+                                  p.suffix.lower() in VIDEO, p.name))
+        try:
+            taken, origin = date_of(media[0])
+            relative = Path(str(taken.year)) / taken.isoformat()
+            destinations = [
+                target_root(p, group, photos, originaux) / relative
+                for p in group
+            ]
+            index = 0
+            while True:
+                candidates = [folder / renamed(p, index)
+                              for p, folder in zip(group, destinations)]
+                identities = {(p.parent, key(p.name)) for p in candidates}
+                if len(identities) != len(candidates):
+                    raise ValueError("Noms incompatibles (casse/Unicode) dans le lot")
+                if all(key(p.name) not in existing_names(p.parent, occupied)
+                       for p in candidates):
+                    break
+                index += 1
+            for file_, target in zip(group, candidates):
+                if args.dry_run:
+                    print(f"[SIMULATION] {file_.relative_to(source)} -> "
+                          f"{target.relative_to(BASE) if target.is_relative_to(BASE) else target}"
+                          f"  ({origin})")
+                else:
+                    if target.parent.is_symlink():
+                        raise ValueError(f"Dossier symbolique : {target.parent}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    move_without_overwrite(file_, target)
+                    print(f"[OK] {file_.relative_to(source)} -> {target}")
+                existing_names(target.parent, occupied).add(key(target.name))
+                moved += 1
+        except (OSError, ValueError) as exc:
+            errors += 1
+            print(f"[ERREUR] {', '.join(p.name for p in group)} : {exc}",
+                  file=sys.stderr)
+
+    label = "prévus" if args.dry_run else "déplacés"
+    print(f"\nFichiers {label} : {moved} ; ignorés : {ignored} ; "
+          f"XMP orphelins : {orphans} ; erreurs : {errors}")
+    return 1 if errors else 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("-n", "--dry-run", action="store_true",
+                        help="simuler sans déplacer les fichiers")
+    parser.add_argument("--source", type=Path, default=BASE / "A_trier")
+    parser.add_argument("--photos", type=Path, default=BASE / "Photos")
+    parser.add_argument("--originaux", type=Path, default=BASE / "Originaux")
+    args = parser.parse_args()
+    try:
+        return run(args)
+    except (OSError, ValueError) as exc:
+        print(f"Erreur : {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

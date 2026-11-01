@@ -1,4 +1,4 @@
-"""Host production candidat : map-window et attestation bootstrap ; Sway GET_TREE/GET_VERSION en lecture seule.
+"""Host production candidat : classification, map-window et bootstrap ; IPC Sway en lecture seule.
 
 WHY : corrélation par jeton sans lire le suffixe sémantique ni l'exporter.
 CONTRACT : message natif <=4096, clés exactes, aucun shell/argv reçu.
@@ -17,18 +17,25 @@ from .schema import UUID, PROVIDER
 from .storage import loads, atomic, private_dir, state_path, read
 from .ipc import Sway
 from .firefox_identity import FirefoxProvider, process_start, validate_record
+from .applications import DEFAULT
 
 EXTENSION_ID = "session-v2@labfy.org"
-APP_IDS = {"firefox", "org.mozilla.firefox"}
+APP_IDS = {identity for spec in DEFAULT if spec.application_id == "firefox" for identity in spec.app_ids}
+WEBAPP_IDS = {identity for spec in DEFAULT
+              if spec.application_id == "whatsapp-web" and spec.strategy == "managed-autostart"
+              and spec.managed_by == "sway-autostart" for identity in spec.app_ids}
 
 
 def validate(message):
     require(type(message) is dict, "MESSAGE_SCHEMA")
     if message == {"op": "bootstrap-eligibility"}:
         return message
-    require(set(message) == {"op", "uuid", "runtime_token"}, "MESSAGE_SCHEMA")
-    require(message["op"] == "map-window", "OP_NOT_ALLOWED")
-    require(type(message["uuid"]) is str and UUID.fullmatch(message["uuid"]), "INVALID_UUID")
+    if message.get("op") == "classify-window":
+        require(set(message) == {"op", "runtime_token"}, "MESSAGE_SCHEMA")
+    else:
+        require(set(message) == {"op", "uuid", "runtime_token"}, "MESSAGE_SCHEMA")
+        require(message["op"] == "map-window", "OP_NOT_ALLOWED")
+        require(type(message["uuid"]) is str and UUID.fullmatch(message["uuid"]), "INVALID_UUID")
     require(type(message["runtime_token"]) is str and re.fullmatch(r"[0-9a-f]{32}", message["runtime_token"]), "INVALID_TOKEN")
     return message
 
@@ -123,6 +130,30 @@ def send(stream, value):
     stream.flush()
 
 
+def classify(sway, message):
+    """Preuve fraîche sans UUID ni publication ; le catalogue ferme les classes.
+
+    Le jeton doit désigner exactement une surface, même si une autre surface
+    marquée serait inconnue. Aucun titre/suffixe n'est renvoyé ou conservé.
+    """
+    validate(message)
+    require(message["op"] == "classify-window", "OP_NOT_ALLOWED")
+    prefix = "[LABFY:" + message["runtime_token"] + "] "
+    end = time.monotonic() + 2
+    while True:
+        found = [n for n in sway.windows() if (n.get("name") or "").startswith(prefix)]
+        require(len(found) <= 1, "EXACT_WINDOW_IDENTITY_COLLISION")
+        if found:
+            node = found[0]
+            app_id = node.get("app_id")
+            require(type(app_id) is str and app_id in APP_IDS | WEBAPP_IDS, "WINDOW_CLASS_UNSUPPORTED")
+            require(type(node.get("id")) is int and node["id"] > 0, "WINDOW_CLASS_UNSUPPORTED")
+            return {"result": "OK", "kind": "browser" if app_id in APP_IDS else "managed-webapp",
+                    "runtime_token": message["runtime_token"], "con_id": node["id"]}
+        require(time.monotonic() < end, "CORRELATION_TIMEOUT")
+        time.sleep(.02)
+
+
 def correlate(sway, message):
     validate(message)
     require(message["op"] == "map-window", "OP_NOT_ALLOWED")
@@ -164,6 +195,9 @@ def main():
             message = receive(sys.stdin.buffer.raw)
             if message["op"] == "bootstrap-eligibility":
                 send(sys.stdout.buffer, bootstrap_eligibility(sway))
+                continue
+            if message["op"] == "classify-window":
+                send(sys.stdout.buffer, classify(sway, message))
                 continue
             identity = correlate(sway, message)
             record = {"schema": PROVIDER, "version": 1, "session": sway.session, "uuid": message["uuid"],

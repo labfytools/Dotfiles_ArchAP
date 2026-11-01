@@ -10,7 +10,7 @@ import signal
 import subprocess
 import time
 from .errors import require
-from .ipc import until, canonical, location
+from .ipc import until, canonical, location, surface_identity
 from .layout import compile_plan, trees
 from .model import normalized
 
@@ -82,7 +82,7 @@ class Anchors:
         anchor = self.anchor(slot)
         before = self.sway.tree()
         live = next((n for n in self.sway.windows() if n["id"] == target["id"]), None)
-        require(live and live.get("pid") == target.get("pid") and live.get("app_id") == target.get("app_id") and live.get("app_id") in allowed_app_ids,
+        require(live and live.get("pid") == target.get("pid") and surface_identity(live) == surface_identity(target) and surface_identity(live) in allowed_app_ids,
                 "TARGET_IDENTITY_CHANGED")
         prior_a, prior_t = location(before, anchor["id"]), location(before, target["id"])
         require(prior_a and prior_a[0] == target_workspace and prior_t and prior_t[0] == stage, "SWAP_WORKSPACE_CHANGED")

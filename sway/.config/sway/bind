@@ -221,12 +221,12 @@ bindsym $mod+Alt+l exec ~/.local/bin/labfy-layout-toggle
 bindsym $mod+Alt+p exec proton-pass
 bindsym $mod+Alt+t exec ~/.local/bin/thunderbird-proton
 bindsym $mod+Alt+y exec kitty -- sh -c "yazi" 
-bindsym $mod+Alt+w exec gtk-launch chrome-hnpfjngllnobngcgfapefoaidbinmjnm-Default
 bindsym $mod+Alt+v exec ~/.config/sway/scripts/clipboard-quickshell
 bindsym $mod+Alt+c exec --no-startup-id kitty --app-id=lardon-freecad-log --title="Lardon · FreeCAD autopush" --directory=/home/fy59/Documents/Lardon /home/fy59/Documents/Lardon/tools/lardon-freecad-launcher
 bindsym $mod+Alt+s exec sqlitebrowser
 bindsym $mod+Alt+e exec sh -c 'cd /home/fy59/Documents/Investigations/Template/labfy-investigation && exec ./labfy-investigation'
 bindsym $mod+Alt+n exec ~/.local/bin/nextcloud-sync
+bindsym $mod+Alt+w exec "/usr/lib/firefox/firefox" "-taskbar-tab" "fcd72ebe-94c5-4209-b3f6-bbaa7784cded" "-new-window" "https://web.whatsapp.com/" "-container" "0"
 bindsym $mod+c exec codex-desktop
 
 ###############################################

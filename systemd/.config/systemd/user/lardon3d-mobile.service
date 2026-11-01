@@ -1,0 +1,18 @@
+[Unit]
+Description=Lardon3D LIVE capture over private Samsung hotspot (DEBUG HTTP)
+Documentation=file:///home/fy59/Documents/Development/lardon3d-live-pc-v1/tools/live_scan_pc/README.md
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fy59/Documents/Development/lardon3d-live-pc-v1
+ExecStart=/home/fy59/.local/share/lardon3d/mobile-scan-v1/start-mobile.sh
+Restart=on-failure
+RestartSec=30s
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

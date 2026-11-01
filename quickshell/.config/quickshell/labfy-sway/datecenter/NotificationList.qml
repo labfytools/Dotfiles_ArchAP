@@ -5,11 +5,12 @@ Item {
     id: list
     required property var service
     property bool confirmClear: false
+    property real maximumHeight: 335
     readonly property var rows: service.records
     // CONTRACT: l'état vide conserve une vraie zone sans réserver la place du player.
     // La liste seule défile au-delà de 307 px de contenu.
-    implicitHeight: rows.length ? 28 + Math.min(307, rows.length * 94) : 80
-    height: implicitHeight
+    implicitHeight: rows.length ? 28 + Math.min(307, Math.max(0, notificationView.contentHeight)) : 80
+    height: Math.min(implicitHeight, maximumHeight)
     Timer { interval: 5000; running: list.confirmClear; onTriggered: list.confirmClear = false }
     Text { id: title; text: "Notifications"; color: Theme.foreground; font.pixelSize: 14; font.bold: true }
     Text {
@@ -35,9 +36,10 @@ Item {
         color: Theme.secondaryForeground; font.pixelSize: 12
     }
     ListView {
+        id: notificationView
         anchors.top: title.bottom; anchors.topMargin: 8
         anchors.left: parent.left; anchors.right: parent.right
-        height: parent.height - title.height - 8
+        height: Math.max(0, parent.height - title.height - 8)
         visible: list.rows.length > 0
         clip: true; spacing: 7; boundsBehavior: Flickable.StopAtBounds
         model: list.rows

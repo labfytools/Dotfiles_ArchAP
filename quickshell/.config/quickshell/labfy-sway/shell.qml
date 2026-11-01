@@ -12,6 +12,7 @@ import "scratchpad"
 import "osd"
 import "applications"
 import "dock"
+import "systemmonitor"
 
 ShellRoot {
     id: shell
@@ -26,6 +27,7 @@ ShellRoot {
     // CONTRACT: le tiroir est global ; aucune barre n'installe son propre
     // abonnement window ni son propre ordonnanceur de commandes.
     DrawerService { id: shellDrawerService; authenticationActive: shell.authenticationActive }
+    MonitorService { id: shellMonitorService }
     OsdService { id: shellOsdService; authenticationActive: shell.authenticationActive }
     signal authenticationOpening()
     function choosePolkitScreen(output) {
@@ -260,6 +262,7 @@ ShellRoot {
         Bar {
             drawerService: shellDrawerService
             osdService: shellOsdService
+            monitorService: shellMonitorService
             applicationCoordinator: shell
             authenticationActive: shell.authenticationActive
             keepAwakeController: shell
