@@ -85,6 +85,34 @@ via les drop-ins systemd. La commande `trainlog` reste disponible.
 Le lien `labfy-investigation-web` a été préservé malgré sa cible
 actuellement absente, car son unité systemd référence encore ce chemin.
 
+## Entretien Zsh (novembre 2026)
+
+Le chargement interactif déduplique le tableau `path` après l'initialisation
+des outils (notamment pyenv). Les complétions Zsh utilisent désormais
+`${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump` et créent leur répertoire au
+premier démarrage. Les associations Ctrl+R (Atuin) et Ctrl+F (FZF) restent
+inchangées ; le shell et sa configuration sont gérés par les dotfiles.
+
+Pour les opérations potentiellement destructives :
+
+- `update` effectue `sudo pacman -Syu`, puis `aurupdate` uniquement si
+  la première commande a réussi ; plus de renouvellement sudo permanent ;
+- `orphans` transforme les noms de paquets Pacman en tableau Zsh afin de
+  conserver un argument distinct par paquet ; Pacman demande confirmation ;
+- `clean-exe --dry-run` affiche les seuls exécutables ELF réguliers du
+  répertoire courant et ignore les fichiers suivis par Git ; sans cette
+  option, il faut taper exactement `SUPPRIMER` avant la suppression ;
+- `vrm --dry-run` affiche uniquement les répertoires `venv`/`.venv`
+  contenant `pyvenv.cfg`, non symboliques ; une confirmation `SUPPRIMER`
+  est obligatoire avant suppression. Aucun répertoire autre que ces deux
+  noms n'est ciblé.
+
+Pour l'OSINT, `dns` utilise `dig` au lieu de `dog`, `geoip <IP>` interroge
+explicitement ipapi.co, `shot [full|region]` capture sous Wayland avec
+`grim` et éventuellement `slurp` dans `~/Pictures/`. `subdomains <domaine>`
+nécessite `subfinder` : son absence est signalée sans exécution de secours.
+Ces commandes réseau ne sont pas lancées lors de l'ouverture du shell.
+
 ## Données locales
 
 L'historique Zsh et le store Atuin sont des données utilisateur, pas de la

@@ -8,6 +8,8 @@
 # =========================
 # PATH & env
 # =========================
+# Un seul exemplaire de chaque chemin, y compris après pyenv.
+typeset -U path
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="$HOME/.local/npm/bin:$PATH"
@@ -29,7 +31,6 @@ setopt SHARE_HISTORY
 setopt HIST_IGNORE_ALL_DUPS
 setopt HIST_REDUCE_BLANKS
 setopt HIST_FIND_NO_DUPS
-HISTDUP=erase
 bindkey '^[[A' history-beginning-search-backward
 bindkey '^[[B' history-beginning-search-forward
 
@@ -48,7 +49,13 @@ bindkey '^[[3~' delete-char
 fpath=("$HOME/.zsh/completions" $fpath)
 
 autoload -Uz compinit
-compinit -d ~/.cache/zsh/zcompdump
+# Dump persistant des complétions, sous le cache XDG.
+ZSH_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
+if [[ -d "$ZSH_CACHE_DIR" ]] || command mkdir -p -m 700 -- "$ZSH_CACHE_DIR"; then
+    compinit -d "$ZSH_CACHE_DIR/zcompdump"
+else
+    compinit
+fi
 
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
@@ -187,14 +194,47 @@ alias lt='eza -T'
 # =========================
 
 alias whois-ip='whois'
-alias geoip='function _geoip() { curl -s "https://ipapi.co/$1/json/" | jq; }; _geoip'
+geoip() {
+    if (( $# != 1 )); then
+        print -u2 -- "Usage : geoip <adresse IP>"
+        return 2
+    fi
+    setopt localoptions pipefail
+    command curl -fsS --max-time 10 -- "https://ipapi.co/$1/json/" | command jq .
+}
 alias myip='curl -s ifconfig.me'
 alias headers='curl -sI'
-alias dns='dog'          # ou "dig"
-alias subdomains='subfinder -d'
+alias dns='dig'
+subdomains() {
+    if (( $# != 1 )); then
+        print -u2 -- "Usage : subdomains <domaine>"
+        return 2
+    fi
+    if ! command -v subfinder >/dev/null 2>&1; then
+        print -u2 -- "subfinder est absent : installer cet outil avant l'énumération."
+        return 127
+    fi
+    command subfinder -d "$1"
+}
 
 alias topcmd="history | awk '{print \$2}' | sort | uniq -c | sort -rn | head -20"
-alias shot='scrot ~/Pictures/osint_%Y%m%d_%H%M%S.png'
+# Wayland natif : capture complète ou sélection rectangulaire.
+shot() {
+    local mode="${1:-full}" target geometry
+    if (( $# > 1 )) || [[ "$mode" != full && "$mode" != region ]]; then
+        print -u2 -- "Usage : shot [full|region]"
+        return 2
+    fi
+    target="$HOME/Pictures/osint_$(date +%Y%m%d_%H%M%S_%N).png"
+    if [[ "$mode" == region ]]; then
+        geometry="$(command slurp)" || return 1
+        [[ -n "$geometry" ]] || return 1
+        command grim -g "$geometry" "$target" || return $?
+    else
+        command grim "$target" || return $?
+    fi
+    print -r -- "$target"
+}
 
 # =========================
 # Arch workflow
@@ -207,30 +247,21 @@ alias pQ='pacman -Q'
 alias pSs='pacman -Ss'
 alias pSyu='sudo pacman -Syu'
 orphans() {
-  local pkgs
-  pkgs="$(pacman -Qtdq 2>/dev/null)"
-
-  if [[ -n "$pkgs" ]]; then
-    sudo pacman -Rns $pkgs
-  else
-    echo "Aucun paquet orphelin"
-  fi
+    local -a pkgs
+    # Transformer la liste multiligne de pacman en vrai tableau Zsh.
+    pkgs=( ${(f)"$(pacman -Qtdq 2>/dev/null)"} )
+    if (( ${#pkgs[@]} == 0 )); then
+        print -- "Aucun paquet orphelin"
+        return 0
+    fi
+    print -r -- "Paquets orphelins : ${(j:, :)pkgs}"
+    sudo pacman -Rns -- "${pkgs[@]}"
 }
 
 update() {
-  sudo -v || return 1
-
-  while true; do
-    sudo -n true
-    sleep 60
-    kill -0 "$$" || exit
-  done 2>/dev/null &
-  local sudo_loop_pid=$!
-
-  trap 'kill $sudo_loop_pid 2>/dev/null' EXIT
-
-  sudo pacman -Syyu || return 1
-  aurupdate
+    # Pas de boucle sudo en arrière-plan et pas de -Syyu systématique.
+    sudo pacman -Syu || return $?
+    aurupdate
 }
 
 # =========================
@@ -300,7 +331,33 @@ va() {
 
 alias venv='python -m venv venv'
 alias vd='deactivate'
-alias vrm='rm -rf venv .venv'
+# Environnements Python reconnus, avec confirmation obligatoire.
+vrm() {
+    local -a envs
+    local candidate answer
+    if (( $# > 1 )) || { (( $# == 1 )) && [[ "$1" != "--dry-run" ]]; }; then
+        print -u2 -- "Usage : vrm [--dry-run]"
+        return 2
+    fi
+    if [[ "$PWD" == "$HOME" || "$PWD" == "/" ]]; then
+        print -u2 -- "Refus : lancer vrm dans un répertoire de projet."
+        return 1
+    fi
+    for candidate in venv .venv; do
+        if [[ -d "$candidate" && ! -L "$candidate" && -f "$candidate/pyvenv.cfg" ]]; then
+            envs+=("$candidate")
+        fi
+    done
+    if (( ${#envs[@]} == 0 )); then
+        print -- "Aucun environnement virtuel Python local à retirer."
+        return 0
+    fi
+    print -r -- "Environnements concernés : ${(j:, :)envs}"
+    [[ "${1:-}" == "--dry-run" ]] && return 0
+    read -r 'answer?Taper SUPPRIMER pour confirmer : ' || return 1
+    [[ "$answer" == "SUPPRIMER" ]] || { print -- "Annulé."; return 1; }
+    command rm -rf -- "${envs[@]}"
+}
 alias vreq='pip install -r requirements.txt'
 alias vfreeze='pip freeze > requirements.txt'
 
@@ -316,8 +373,36 @@ alias gcc-strict='gcc -Wall -Wextra -Werror -pedantic -std=c17'
 # Alias pour Valgrind
 alias valgrind-check='valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes'
 
-# Alias pour le nettoyage (limité au répertoire courant, non récursif)
-alias clean-exe='find . -maxdepth 1 -type f -executable -not -name "*.sh" -delete'
+# Nettoyage C : seulement les fichiers ELF exécutables au niveau courant.
+clean-exe() {
+    local -a binaries
+    local candidate answer
+    local in_git=0
+    command git rev-parse --is-inside-work-tree >/dev/null 2>&1 && in_git=1
+    if (( $# > 1 )) || { (( $# == 1 )) && [[ "$1" != "--dry-run" ]]; }; then
+        print -u2 -- "Usage : clean-exe [--dry-run]"
+        return 2
+    fi
+    for candidate in ./*(N.); do
+        [[ -x "$candidate" ]] || continue
+        command readelf -h -- "$candidate" >/dev/null 2>&1 || continue
+        # Ne jamais proposer la suppression d'un binaire suivi par Git.
+        if (( in_git )) && command git ls-files --error-unmatch -- "$candidate" >/dev/null 2>&1; then
+            continue
+        fi
+        binaries+=("$candidate")
+    done
+    if (( ${#binaries[@]} == 0 )); then
+        print -- "Aucun exécutable ELF local à retirer."
+        return 0
+    fi
+    print -- "Exécutables ELF candidats (aucune suppression automatique) :"
+    printf '  %s\n' "${binaries[@]}"
+    [[ "${1:-}" == "--dry-run" ]] && return 0
+    read -r 'answer?Taper SUPPRIMER pour confirmer : ' || return 1
+    [[ "$answer" == "SUPPRIMER" ]] || { print -- "Annulé."; return 1; }
+    command rm -- "${binaries[@]}"
+}
 
 # =========================
 # Ansible
@@ -402,3 +487,6 @@ export LESS_TERMCAP_us=$'\e[1;32m'     # underline
 # Android SDK
 export ANDROID_HOME="$HOME/Android/Sdk"
 export PATH="$PATH:$ANDROID_HOME/platform-tools"
+
+# Dédupliquer réellement le tableau après toutes les initialisations (pyenv inclus).
+path=("${path[@]}")
