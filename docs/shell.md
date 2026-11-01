@@ -57,10 +57,10 @@ Le package `bin` déploie des commandes dans `~/.local/bin`. Les familles
 principales sont :
 
 - maintenance Pacman/AUR (`aurinstall`, `aurremove`, `aursearch`, `aurupdate`) ;
-- énergie et batterie (`batlimit`, `battery-low-notify.sh`, `tlp-profile.sh`) ;
+- énergie et batterie (`batlimit`, `battery-low-notify.sh`) ;
 - session et applications (`sway-close`, `thunderbird-proton`,
   `vmware-on-demand`, `nextcloud-sync`) ;
-- développement local (`dcnvim`, `goose`, `pi-dev`, `opencode-away`) ;
+- développement local (`dcnvim`, `pi-dev`) ;
 - acquisition/3D (`colmap-amd`, `scan3d`, `scan3d-watch`) ;
 - intégrations Trainlog (`trainlog-bt-watch`) et autres projets locaux.
 
@@ -68,6 +68,22 @@ Ces scripts orchestrent des outils existants ; ils ne fournissent pas les
 projets externes, credentials ou binaires système qu'ils appellent. Consulter
 [`external-tools.md`](../.assets/external-tools.md) avant de les réutiliser sur
 une autre machine.
+
+
+
+Le 1er novembre 2026, les anciens helpers `cliphist-daemon.sh` (remplacé
+par deux unités systemd), `sway-layout-ws1.sh`, `tlp-profile.sh`,
+`kitty-ssh-add.sh` et `opencode-away` ont été retirés.
+Les exécutables non versionnés `goose` et `agy` ont été mis en quarantaine
+sous `~/.local/share/local-bin-archive/2026-11-01/`, hors du `PATH`.
+Ils restent récupérables sans téléchargement ; supprimer cette archive
+ultérieurement seulement après vérification de leur inutilité.
+Les liens cassés `labfy-remote-ui`, `trainlog-btd`, `trainlog-syncd`
+et `trainlog-sync-once` ont été retirés de `~/.local/bin` :
+les services Trainlog en cours utilisent leurs exécutables de déploiement
+via les drop-ins systemd. La commande `trainlog` reste disponible.
+Le lien `labfy-investigation-web` a été préservé malgré sa cible
+actuellement absente, car son unité systemd référence encore ce chemin.
 
 ## Données locales
 

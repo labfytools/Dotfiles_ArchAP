@@ -30,12 +30,8 @@ bin/.local/bin/android
 bin/.local/bin/arch-sentinel
 bin/.local/bin/codex
 bin/.local/bin/goose
-bin/.local/bin/labfy-remote-ui
 bin/.local/bin/trainlog
 bin/.local/bin/trainlog-bt-watch
-bin/.local/bin/trainlog-btd
-bin/.local/bin/trainlog-sync-once
-bin/.local/bin/trainlog-syncd
 
 # Session V2 : sorties locales reproductibles, jamais distribuées par Git.
 /build/session-v2/

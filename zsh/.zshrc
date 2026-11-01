@@ -405,19 +405,6 @@ export LESS_TERMCAP_so=$'\e[1;44;33m'  # standout (titres encadrés)
 export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 export LESS_TERMCAP_us=$'\e[1;32m'     # underline
 
-# Added by Antigravity CLI installer
-export PATH="/home/fy59/.local/bin:$PATH"
-
-export OPENCODE_ENABLE_EXA=1
-export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
-
-alias ocaway="$HOME/.local/bin/opencode-away"
-
-# Goose — bornes agentiques
-export GOOSE_MAX_TURNS=80
-export GOOSE_SUBAGENT_MAX_TURNS=12
-export GOOSE_MAX_BACKGROUND_TASKS=2
-
 # Android SDK
 export ANDROID_HOME="$HOME/Android/Sdk"
 export PATH="$PATH:$ANDROID_HOME/platform-tools"
