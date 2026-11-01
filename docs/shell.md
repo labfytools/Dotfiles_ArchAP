@@ -80,10 +80,11 @@ Ils restent récupérables sans téléchargement ; supprimer cette archive
 ultérieurement seulement après vérification de leur inutilité.
 Les liens cassés `labfy-remote-ui`, `trainlog-btd`, `trainlog-syncd`
 et `trainlog-sync-once` ont été retirés de `~/.local/bin` :
-les services Trainlog en cours utilisent leurs exécutables de déploiement
-via les drop-ins systemd. La commande `trainlog` reste disponible.
-Le lien `labfy-investigation-web` a été préservé malgré sa cible
-actuellement absente, car son unité systemd référence encore ce chemin.
+les services Trainlog utilisent maintenant directement les exécutables du
+rollout vérifié dans leurs unités de base. La commande `trainlog` reste disponible.
+Le lien `labfy-investigation-web` et son unité désactivée ont été
+retirés au second audit : l'exécutable du service Web n'existe plus.
+Le projet GTK de Labfy Investigation est indépendant de ce service Web.
 
 ## Entretien Zsh (novembre 2026)
 

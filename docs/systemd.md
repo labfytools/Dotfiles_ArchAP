@@ -27,6 +27,19 @@ mais il ne l'active pas. Les unités effectivement versionnées sous
 | Lardon | `lardon-freecad.service` | session FreeCAD liée au projet externe |
 | autres | `hyprwhspr.service`, `protonmail-bridge.service` | intégrations déclenchées selon l'usage |
 
+Les unités Trainlog Bluetooth et synchronisation pointent désormais directement
+vers les wrappers du rollout vérifié `program-recalage-v1-3a4ec34`, plutôt que
+vers les anciens scripts sous `~/Documents/Development/trainlog`. Les surcharges
+`program-recalage.conf` devenues redondantes ont été retirées. Le dépôt ne
+contient pas ce rollout : il faut l'installer séparément avant d'activer les
+services. La configuration sensible `sync-generation-config-v1.json` n'est pas
+versionnée. `systemctl --user daemon-reload` suffit à lire les nouvelles unités,
+sans redémarrer les processus en cours.
+
+L'unité Web historique `labfy-investigation-web.service` et son lien exécutable
+cassé ont été retirés : le service était désactivé et sa cible avait disparu.
+Cela ne concerne pas l'application GTK de Labfy Investigation.
+
 Les liens versionnés dans `default.target.wants/`,
 `graphical-session.target.wants/`, `wayland-session@sway.desktop.target.wants/`
 et `timers.target.wants/` expriment les
