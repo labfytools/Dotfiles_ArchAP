@@ -58,6 +58,9 @@ le déploiement réel. `docs/` et `.assets/` ne sont pas déployés.
 
 Installer les thèmes d’icônes utilisés via les paquets (cf. [icônes](icons.md)) :
 il n’est pas nécessaire de restaurer un dossier `~/.icons` versionné.
+**Exception pour l'apparence à l'identique :** la version locale de
+`Tela-circle-blue` diffère de celle de Pacman. Sauvegarder/restaurer l'archive
+`icons-active-local-20261101.tar.zst` hors Git si cette variante est souhaitée.
 
 ## 7. Restaurer les services
 

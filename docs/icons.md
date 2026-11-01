@@ -28,14 +28,49 @@ Il ne faut plus exécuter `stow icons` : le package `icons` est retiré du
 tableau des packages actifs. La présence de thèmes dans le répertoire système
 est indépendante de GNU Stow.
 
-## Migration de la machine actuelle
+## Migration locale : nettoyage du 1er novembre 2026
 
-Les copies sous `icons/.icons/` sont **désindexées sans suppression** via
-`git rm --cached`, et ignorées par Git ; elles restent disponibles via
-`~/.icons -> ~/.dotfiles/icons/.icons`. Ce changement réduit le poids et
-le nombre de fichiers des *nouveaux clones*, mais **ne récupère pas 1,3 Go
-sur le disque actuel**. Déplacer ou effacer les copies locales suppose
-d'avoir testé visuellement GTK, QuickShell et les thèmes non packagés.
+Les thèmes ont d'abord été désindexés (`git rm --cached`) et ignorés par Git.
+Au second passage, une comparaison a montré que les fichiers SVG du thème
+`Tela-circle-blue` local **diffèrent** de ceux fournis par Pacman. Pour ne
+pas changer les icônes GTK existantes, les deux répertoires suivants ont été
+**conservés** sous `icons/.icons/` :
 
-Les objets des anciens commits restent dans l'historique de Git ; aucune
+- `Tela-circle-blue/` : thème GTK local, environ 103 Mo ;
+- `default/` : réglage local du curseur, hérite de `Bibata-Modern-Ice`.
+
+Le lien `~/.icons -> ~/.dotfiles/icons/.icons` reste en place. QuickShell
+utilise toujours le thème distinct `Tela-circle-purple-dark` installé dans
+`/usr/share/icons`. Les 14 autres familles locales ont été archivées avant
+leur suppression. Le dossier local est passé d'environ 1,3 Go à 103 Mo.
+
+### Sauvegardes locales vérifiées (hors Git)
+
+Les deux archives Zstandard et leurs manifestes SHA-256 se trouvent dans
+`~/.local/share/dotfiles-archives/` :
+
+- `icons-inactive-20261101.tar.zst` (44 Mio) : les 14 thèmes supprimés,
+  266 869 entrées dans l'archive ;
+- `icons-active-local-20261101.tar.zst` (2,9 Mo) : copie de sauvegarde
+  des thèmes `Tela-circle-blue` et `default` toujours installés.
+
+Pour restaurer une copie locale après l'avoir vérifiée :
+
+```bash
+cd ~/.local/share/dotfiles-archives
+sha256sum -c icons-inactive-20261101.tar.zst.sha256
+mkdir -p ~/.dotfiles/icons/.icons
+tar -I zstd -xf icons-inactive-20261101.tar.zst -C ~/.dotfiles/icons/.icons
+```
+
+La même procédure fonctionne avec le nom de l'archive des thèmes actifs,
+mais **n'écraser les fichiers en place qu'après comparaison**. Sur une
+installation neuve, vérifier également l'existence du lien `~/.icons`.
+
+Ces archives sont sur **le même SSD** : elles permettent de revenir en
+arrière, mais ne protègent pas contre une perte du disque. Les copier vers
+une véritable sauvegarde si une reproduction visuelle identique est voulue.
+Sur Btrfs, d'anciens snapshots peuvent encore retenir des blocs supprimés.
+
+Les objets des anciens commits restent dans l'historique Git ; aucune
 réécriture d'historique ni publication forcée n'est entreprise.
