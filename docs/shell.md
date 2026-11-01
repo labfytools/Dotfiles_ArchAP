@@ -114,6 +114,15 @@ explicitement ipapi.co, `shot [full|region]` capture sous Wayland avec
 nécessite `subfinder` : son absence est signalée sans exécution de secours.
 Ces commandes réseau ne sont pas lancées lors de l'ouverture du shell.
 
+## Configuration OpenCode archivée
+
+Le client `opencode` n'est plus installé ; son ancien package Stow a été
+désactivé, et le lien `~/.config/opencode` retiré. Le fichier de configuration
+minimal et les anciens `node_modules` sont archivés dans
+`~/.local/share/dotfiles-archives/opencode-20261101.tar.zst` (hors Git).
+Cette archive peut être supprimée après vérification de son inutilité.
+Les outils Codex et Pi restent indépendants et opérationnels.
+
 ## Données locales
 
 L'historique Zsh et le store Atuin sont des données utilisateur, pas de la

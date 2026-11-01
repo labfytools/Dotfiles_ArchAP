@@ -46,7 +46,7 @@ Exemples de correspondance :
 | `zsh/.zprofile` | `~/.zprofile` |
 | `wallpapers/.wallpapers/` | `~/.wallpapers/` |
 
-Les packages Stow sont une liste explicite de 30 noms, détaillée dans le
+Les packages Stow sont une liste explicite de 29 noms, détaillée dans le
 [guide d'installation](installation.md). Il ne faut pas déduire cette liste de
 tous les répertoires de premier niveau : `.assets/` et `docs/` ne sont pas des
 packages. Il ne faut jamais exécuter `stow .`.

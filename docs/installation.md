@@ -63,14 +63,14 @@ installer. Comparer leur contenu à la machine cible et lire
 [`packages.md`](packages.md) ainsi que
 [`external-tools.md`](../.assets/external-tools.md) avant toute installation.
 
-## 5. Définir les 30 packages Stow
+## 5. Définir les 29 packages Stow
 
 Les commandes suivantes sont destinées à Bash :
 
 ```bash
 packages=(
   atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock
-  hyprwhspr kitty mako nvim opencode portal qt5ct qt6ct
+  hyprwhspr kitty mako nvim portal qt5ct qt6ct
   quickshell starship sway systemd themes tmux uwsm wallpapers wofi yazi
   ytmusic-tui zsh
 )

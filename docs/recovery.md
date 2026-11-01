@@ -28,12 +28,15 @@ git clone --recurse-submodules \
   https://github.com/labfytools/Dotfiles_ArchAP.git \
   "$HOME/.dotfiles"
 cd "$HOME/.dotfiles"
-git switch 0.1.0
+# Rester sur main pour restaurer l'état courant décrit dans ce guide.
 git submodule update --init --recursive
 ```
 
-La branche `0.1.0` donne le snapshot stable ; `main` est la branche de
-développement.
+La branche `0.1.0` fournit un snapshot historique stable avec son propre
+contrat de déploiement ; ne pas lui appliquer aveuglément la liste Stow actuelle.
+Pour l'état courant et ses 29 packages, utiliser `main` et ce guide.
+Pour l'ancien snapshot, basculer explicitement avec `git switch 0.1.0` et
+suivre la documentation livrée dans ce tag.
 
 ## 4. Restaurer les paquets officiels
 
@@ -50,7 +53,7 @@ exigent une décision spécifique ; aucun helper AUR n'est supposé magique.
 ## 6. Déployer Stow
 
 Suivre le [guide d'installation](installation.md) : définir explicitement les
-30 packages, exécuter le dry-run, résoudre les conflits, puis seulement lancer
+29 packages, exécuter le dry-run, résoudre les conflits, puis seulement lancer
 le déploiement réel. `docs/` et `.assets/` ne sont pas déployés.
 
 Installer les thèmes d’icônes utilisés via les paquets (cf. [icônes](icons.md)) :

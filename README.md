@@ -103,7 +103,7 @@ ArchASP
 └── Dotfiles_ArchAP   utilisateur · $HOME · Stow · systemd --user
 ```
 
-Les 30 packages Stow couvrent le desktop, le shell, le développement, les
+Les 29 packages Stow couvrent le desktop, le shell, le développement, les
 services utilisateur et l'apparence. `.assets/` contient les inventaires de
 reconstruction ; `docs/` contient la documentation et n'est jamais un package
 Stow. Voir le [contrat d'architecture](docs/architecture.md).
@@ -119,7 +119,7 @@ git clone --recurse-submodules \
 cd "$HOME/.dotfiles"
 
 packages=(atuin bat bin btop cliphist eza fastfetch fzf gtk-3.0 gtklock \
-  hyprwhspr kitty mako nvim opencode portal qt5ct qt6ct \
+  hyprwhspr kitty mako nvim portal qt5ct qt6ct \
   quickshell starship sway systemd themes tmux uwsm wallpapers wofi yazi \
   ytmusic-tui zsh)
 

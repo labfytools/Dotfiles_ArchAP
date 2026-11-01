@@ -52,6 +52,27 @@ du conteneur. Les surfaces layer-shell de QuickShell, ses notifications et les
 menus système ne sont pas des fenêtres classiques ciblées par `[floating]` ;
 leurs règles existantes restent en vigueur.
 
+## XDG, autostart et choix de composants (audit du 1er novembre 2026)
+
+Les chemins XDG déclarés dans `xdg-user-dirs/.config/user-dirs.dirs` existent :
+`$HOME`, `Downloads`, `Documents` et `Pictures`. La commande facultative
+`xdg-user-dir` n'est pas installée sur cette machine, mais les chemins
+configurés sont valides. Les favoris GTK pointant vers quatre répertoires
+supprimés ont été nettoyés ; sept chemins vérifiés ont été conservés.
+
+L'entrée MEGAsync `~/.config/autostart/megasync.desktop` était inopérante car
+`megasync` n'est plus installé. Elle a été archivée hors du dépôt sous
+`~/.local/share/dotfiles-archives/megasync-autostart-20261101.desktop`.
+Nextcloud reste lancé par `~/.config/autostart/Nextcloud.desktop` ; le script
+`nextcloud-sync` n'est pas un second autostart, mais une commande manuelle
+liée à `Mod+Alt+N`. Son verrou ne couvre que ses propres instances CLI : ne
+pas utiliser cette commande simultanément avec une synchronisation de
+l'application graphique sans vérification préalable des dossiers synchronisés.
+Proton Mail Bridge conserve son entrée explicitement désactivée (`Hidden=true`).
+Les scripts Wofi restent disponibles pour revenir temporairement à l'ancien
+presse-papiers, et Mako demeure masqué tant que QuickShell possède les
+notifications. Greetd/UWSM/Sway et le portail Yazi restent inchangés.
+
 ## Services et outils
 
 `labfy-quickshell-updates.timer` déclenche la vérification Arch/AUR sans
