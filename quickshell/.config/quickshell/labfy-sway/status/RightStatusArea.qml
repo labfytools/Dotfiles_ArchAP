@@ -5,6 +5,7 @@ import "StatusColorRoles.js" as StatusColorRoles
 
 Row {
     id: area
+    required property var hyprwhsprService
     required property var barWindow
     required property var wifiDevice
     required property var adapter
@@ -40,6 +41,10 @@ Row {
         spacing: 6
         height: 26
         NetworkIndicator { wifiDevice: area.wifiDevice; onActivated: area.openPageRequested(1) }
+        HyprwhsprIndicator {
+            service: area.hyprwhsprService
+            authenticationActive: area.barWindow.authenticationActive
+        }
         BluetoothIndicator { adapter: area.adapter; onActivated: area.openPageRequested(2) }
         BatteryIndicator { id: batteryIndicator; onActivated: area.openPageRequested(5) }
         ScrollIcon {

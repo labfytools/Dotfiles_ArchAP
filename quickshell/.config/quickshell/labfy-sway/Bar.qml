@@ -30,6 +30,7 @@ PanelWindow {
     required property var keepAwakeController
     required property var drawerService
     required property var osdService
+    required property var hyprwhsprService
     required property var monitorService
     screen: modelData
     FileView {
@@ -614,6 +615,7 @@ PanelWindow {
         // INVARIANT: la zone droite s'étend depuis le bord sans modifier l'ancrage central.
         RightStatusArea {
             id: rightStatusArea
+            hyprwhsprService: bar.hyprwhsprService
             anchors.right: monitorIndicator.left
             anchors.rightMargin: 5
             anchors.verticalCenter: parent.verticalCenter

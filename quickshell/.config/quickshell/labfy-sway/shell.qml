@@ -13,6 +13,7 @@ import "osd"
 import "applications"
 import "dock"
 import "systemmonitor"
+import "status"
 
 ShellRoot {
     id: shell
@@ -28,6 +29,8 @@ ShellRoot {
     // abonnement window ni son propre ordonnanceur de commandes.
     DrawerService { id: shellDrawerService; authenticationActive: shell.authenticationActive }
     MonitorService { id: shellMonitorService }
+    // CONTRACT: a single dictation monitor serves every output.
+    HyprwhsprService { id: shellHyprwhsprService }
     OsdService { id: shellOsdService; authenticationActive: shell.authenticationActive }
     signal authenticationOpening()
     function choosePolkitScreen(output) {
@@ -260,6 +263,7 @@ ShellRoot {
         model: Quickshell.screens
 
         Bar {
+            hyprwhsprService: shellHyprwhsprService
             drawerService: shellDrawerService
             osdService: shellOsdService
             monitorService: shellMonitorService
