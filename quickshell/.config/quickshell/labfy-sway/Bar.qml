@@ -59,7 +59,7 @@ PanelWindow {
         closeApplications(); closeOverview(); closeClipboard();
         controlCenter.visible = false; dateCenter.requestClose();
         windowStrip.closeMenu(); rightStatusArea.closeRemovableMedia();
-        rightStatusArea.closePrinting(); rightStatusArea.closePhotoBackup(); closeDrawer();
+        rightStatusArea.closePrinting(); rightStatusArea.closePhotoBackup(); rightStatusArea.closeUpdates(); closeDrawer();
         monitorService.open(screen.name);
     }
     Connections {
@@ -192,6 +192,7 @@ PanelWindow {
             rightStatusArea.closeRemovableMedia();
             rightStatusArea.closePrinting();
             rightStatusArea.closePhotoBackup();
+            rightStatusArea.closeUpdates();
             bar.closeDrawer();
         }
         function onApplicationsOpening(output) {
@@ -204,6 +205,7 @@ PanelWindow {
             rightStatusArea.closeRemovableMedia();
             rightStatusArea.closePrinting();
             rightStatusArea.closePhotoBackup();
+            rightStatusArea.closeUpdates();
             bar.closeDrawer();
         }
     }
@@ -256,6 +258,7 @@ PanelWindow {
             rightStatusArea.closeRemovableMedia();
             rightStatusArea.closePrinting();
             rightStatusArea.closePhotoBackup();
+            rightStatusArea.closeUpdates();
             bar.closeDrawer();
             clipboardLoader.active = true;
         }
@@ -282,6 +285,7 @@ PanelWindow {
         rightStatusArea.closeRemovableMedia();
         rightStatusArea.closePrinting();
         rightStatusArea.closePhotoBackup();
+        rightStatusArea.closeUpdates();
         bar.closeDrawer();
         overviewRequested = true;
         overviewLoader.active = true;
@@ -348,6 +352,7 @@ PanelWindow {
             windowStrip.closeMenu();
             rightStatusArea.closePrinting();
             rightStatusArea.closePhotoBackup();
+            rightStatusArea.closeUpdates();
             controlCenter.openPage(page);
             controlCenter.visible = true;
             return true;
@@ -366,6 +371,7 @@ PanelWindow {
             dateCenter.requestClose();
             rightStatusArea.closePrinting();
             rightStatusArea.closePhotoBackup();
+            rightStatusArea.closeUpdates();
             return windowStrip.openActiveMenu();
         }
     }
@@ -406,6 +412,27 @@ PanelWindow {
         }
     }
 
+    // CONTRACT: the update center follows the existing per-output popup exclusion.
+    function toggleUpdates() {
+        if (authenticationActive) return false;
+        const opening = !rightStatusArea.updatesOpen;
+        closeMonitor(); closeApplications(); closeOverview(); closeClipboard();
+        controlCenter.visible = false; dateCenter.requestClose(); windowStrip.closeMenu();
+        rightStatusArea.closeRemovableMedia(); rightStatusArea.closePrinting();
+        rightStatusArea.closePhotoBackup(); closeDrawer();
+        rightStatusArea.setUpdatesOpen(opening);
+        return true;
+    }
+    IpcHandler {
+        target: "updatesUi-" + bar.screen.name
+        function open(): bool {
+            if (bar.authenticationActive) return false;
+            return rightStatusArea.updatesOpen || bar.toggleUpdates();
+        }
+        function close(): bool { rightStatusArea.closeUpdates(); return true; }
+        function isOpen(): bool { return rightStatusArea.updatesOpen; }
+    }
+
     // Le bouton de sauvegarde utilise la même exclusion que les autres popups.
     function togglePhotoBackup() {
         closeMonitor();
@@ -420,6 +447,7 @@ PanelWindow {
         rightStatusArea.closeRemovableMedia();
         rightStatusArea.closePrinting();
         bar.closeDrawer();
+        rightStatusArea.closeUpdates();
         rightStatusArea.setPhotoBackupOpen(opening);
         return true;
     }
@@ -447,6 +475,7 @@ PanelWindow {
         rightStatusArea.closeRemovableMedia();
         rightStatusArea.closePrinting();
         rightStatusArea.closePhotoBackup();
+        rightStatusArea.closeUpdates();
         bar.closeDrawer();
         if (opening) dateCenter.requestOpen();
         else dateCenter.requestClose();
@@ -465,6 +494,7 @@ PanelWindow {
         rightStatusArea.closeRemovableMedia();
         rightStatusArea.closePrinting();
         rightStatusArea.closePhotoBackup();
+        rightStatusArea.closeUpdates();
     }
 
     Item {
@@ -578,6 +608,7 @@ PanelWindow {
                 rightStatusArea.closeRemovableMedia();
                 rightStatusArea.closePrinting();
                 rightStatusArea.closePhotoBackup();
+                rightStatusArea.closeUpdates();
                 bar.closeDrawer();
             }
         }
@@ -637,6 +668,7 @@ PanelWindow {
                 rightStatusArea.closeRemovableMedia();
                 rightStatusArea.closePrinting();
                 rightStatusArea.closePhotoBackup();
+                rightStatusArea.closeUpdates();
                 bar.closeDrawer();
                 controlCenter.currentPage = page;
                 controlCenter.visible = true;
@@ -652,6 +684,7 @@ PanelWindow {
                 rightStatusArea.closeRemovableMedia();
                 rightStatusArea.closePrinting();
                 rightStatusArea.closePhotoBackup();
+                rightStatusArea.closeUpdates();
                 bar.closeDrawer();
                 controlCenter.currentPage = 0;
                 controlCenter.visible = opening;
@@ -667,9 +700,11 @@ PanelWindow {
                 windowStrip.closeMenu();
                 rightStatusArea.closePrinting();
                 rightStatusArea.closePhotoBackup();
+                rightStatusArea.closeUpdates();
                 rightStatusArea.setRemovableMediaOpen(opening);
                 bar.closeDrawer();
             }
+            onToggleUpdatesRequested: bar.toggleUpdates()
             onTogglePrintingRequested: {
                 bar.closeMonitor();
                 if (bar.authenticationActive) return;
@@ -682,6 +717,7 @@ PanelWindow {
                 windowStrip.closeMenu();
                 rightStatusArea.closeRemovableMedia();
                 rightStatusArea.closePhotoBackup();
+                rightStatusArea.closeUpdates();
                 bar.closeDrawer();
                 rightStatusArea.setPrintingOpen(opening);
             }

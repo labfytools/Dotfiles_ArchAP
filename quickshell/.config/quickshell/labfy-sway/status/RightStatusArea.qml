@@ -16,6 +16,7 @@ Row {
     signal openPageRequested(int page)
     signal toggleControlCenterRequested()
     signal toggleRemovableMediaRequested()
+    signal toggleUpdatesRequested()
     signal togglePrintingRequested()
     signal togglePhotoBackupRequested()
     signal toggleClipboardRequested()
@@ -24,6 +25,9 @@ Row {
     function closeRemovableMedia() { removableMediaIndicator.popupOpen = false }
     function setRemovableMediaOpen(open) { removableMediaIndicator.popupOpen = open }
     readonly property bool removableMediaOpen: removableMediaIndicator.popupOpen
+    function closeUpdates() { updatesIndicator.popupOpen = false }
+    function setUpdatesOpen(open) { updatesIndicator.popupOpen = open }
+    readonly property bool updatesOpen: updatesIndicator.popupOpen
     function closePrinting() { printingIndicator.popupOpen = false }
     function setPrintingOpen(open) { printingIndicator.popupOpen = open }
     readonly property bool printingOpen: printingIndicator.popupOpen
@@ -91,7 +95,11 @@ Row {
             unlimited: area.keepAwakeController.keepAwakeMinutes === 0
             onActivated: area.openPageRequested(16)
         }
-        UpdatesIndicator { }
+        UpdatesIndicator {
+            id: updatesIndicator
+            barWindow: area.barWindow
+            onToggleRequested: area.toggleUpdatesRequested()
+        }
         RemovableMediaIndicator {
             id: removableMediaIndicator
             onToggleRequested: area.toggleRemovableMediaRequested()

@@ -20,6 +20,11 @@ for_window [app_id="labfy-yazi-filechooser"] floating enable, border pixel 2, mo
 # avec la bordure serveur et les coins SwayFX déjà configurés globalement.
 for_window [app_id="me.jtheoof.swappy"] floating enable, resize set 70ppt 70ppt, move position center, border pixel 2
 
+# WHY: la mise à jour interactive doit rester lisible sans modifier le tiling.
+# CONTRACT: installation et aperçu partagent cet app_id dédié ; les autres Kitty
+# conservent leur placement. La taille relative reste adaptée à la sortie active.
+for_window [app_id="^labfy-update-center$"] floating enable, resize set 65ppt 60ppt, move position center, border pixel 2
+
 #=================================================
 # Lardon
 #=================================================

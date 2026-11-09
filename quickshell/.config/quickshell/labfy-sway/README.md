@@ -396,3 +396,17 @@ Le dock à masquage automatique et le menu utilisent `applications/FavoritesServ
 et `ApplicationIcon.qml`. Le stockage existant reste inchangé. Architecture,
 interactions, tests headless, limites et procédure d’intégration :
 [Dock Tela / favoris V1](../../../../docs/quickshell-dock-tela-shared-favorites-v1.md).
+
+### Labfy Update Center V1
+
+Le clic sur l’indicateur ouvre les paquets et versions Arch/AUR, la maintenance
+locale et les annonces officielles. L’installation complète reste interactive
+avec confirmations QuickShell et Kitty. « Aperçu Kitty » ne lance aucune
+installation. Architecture, limites et validations :
+[documentation du centre](../../../../docs/quickshell-update-center-v1.md).
+
+Le Control Center contient aussi **Clavier RGB** : palette clavier saturée (Violet en premier), couleur
+personnalisée, intensité HID et retour explicite au **Mode ASUS**, via le CLI C17
+Labfy RGB sans privilège. Un clic sur une pastille applique la couleur ; les réglages personnalisés gardent leur validation explicite.
+La [documentation RGB](controlcenter/RGB_KEYBOARD.md) distingue l'historique
+commandé de l'état matériel et décrit l'option de restauration, désactivée par défaut.

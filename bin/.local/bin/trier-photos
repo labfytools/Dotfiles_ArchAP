@@ -2,7 +2,7 @@
 """Classement manuel de A_trier, compatible avec la photothèque Labfy.
 
 Photos et vidéos -> Photos/AAAA/AAAA-MM-JJ/
-RAW et XMP liés -> Originaux/AAAA/AAAA-MM-JJ/
+RAW, TIFF et XMP liés -> Originaux/AAAA/AAAA-MM-JJ/
 Aucun fichier existant n'est remplacé. Les autres fichiers restent dans A_trier.
 """
 
@@ -22,10 +22,12 @@ import unicodedata
 BASE = Path.home() / "Pictures" / "Phototheque"
 RAW = {".arw", ".dng", ".cr2", ".cr3", ".nef", ".nrw", ".raf",
        ".orf", ".rw2", ".pef", ".srw", ".3fr", ".iiq"}
-PHOTO = {".jpg", ".jpeg", ".jpe", ".png", ".tif", ".tiff",
+TIFF = {".tif", ".tiff"}
+ORIGINAL = RAW | TIFF
+PHOTO = {".jpg", ".jpeg", ".jpe", ".png",
          ".heic", ".heif", ".avif", ".webp", ".bmp"}
 VIDEO = {".mov", ".mp4", ".m4v", ".avi", ".mts", ".m2ts", ".3gp"}
-MEDIA = RAW | PHOTO | VIDEO
+MEDIA = ORIGINAL | PHOTO | VIDEO
 DATE_NAME = re.compile(r"(?<!\d)((?:19|20)\d{2})[-_]?(\d{2})[-_]?(\d{2})(?!\d)")
 EXIFTOOL = shutil.which("exiftool")
 
@@ -89,17 +91,17 @@ def renamed(path, index):
 
 
 def target_root(path, group, photos, originaux):
-    if path.suffix.lower() in RAW:
+    if path.suffix.lower() in ORIGINAL:
         return originaux
     if path.suffix.lower() != ".xmp":
         return photos
     associated = Path(path.name[:-4]).suffix.lower()
-    if associated in RAW:
+    if associated in ORIGINAL:
         return originaux
     if associated in PHOTO | VIDEO:
         return photos
-    # XMP générique : privilégier les RAW s'ils sont présents.
-    return originaux if any(p.suffix.lower() in RAW for p in group) else photos
+    # XMP générique : privilégier les originaux (RAW ou TIFF) présents.
+    return originaux if any(p.suffix.lower() in ORIGINAL for p in group) else photos
 
 
 def key(name):
@@ -178,7 +180,7 @@ def run(args):
         if not media:
             orphans += len(group)
             continue  # Ne pas déplacer les XMP orphelins.
-        media.sort(key=lambda p: (p.suffix.lower() not in RAW,
+        media.sort(key=lambda p: (p.suffix.lower() not in ORIGINAL,
                                   p.suffix.lower() in VIDEO, p.name))
         try:
             taken, origin = date_of(media[0])

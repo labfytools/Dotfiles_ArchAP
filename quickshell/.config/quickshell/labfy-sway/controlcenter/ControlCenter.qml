@@ -7,6 +7,7 @@ import Quickshell.Bluetooth
 import "../components"
 import "../theme"
 import "../sessionui"
+import "../rgbkeyboard"
 
 PopupWindow {
     id: popup
@@ -18,7 +19,7 @@ PopupWindow {
     readonly property var pages: ({ main: 0, wifi: 1, bluetooth: 2, session: 3,
         confirmation: 4, battery: 5, appearance: 6, wallpaper: 7, theme: 8,
         nightLight: 9, sunMode: 10, locationTime: 11, sessionManager: 12,
-        checkpointFailure: 13, avatar: 14, audio: 15, keepAwake: 16 })
+        checkpointFailure: 13, avatar: 14, audio: 15, keepAwake: 16, RGB_KEYBOARD: 17 })
     property int currentPage: pages.main
     function openPage(name) { if (pages[name] !== undefined) currentPage = pages[name]; }
     signal thresholdApplied()
@@ -131,6 +132,7 @@ PopupWindow {
         : currentPage === pages.wallpaper ? 550
         : currentPage === pages.appearance ? 610
         : currentPage === pages.locationTime || currentPage === pages.sessionManager ? 650
+        : currentPage === pages.RGB_KEYBOARD ? 610
         : currentPage === pages.audio ? 620 : 440
     visible: false
     // CONTRACT: PopupWindow n'applique un changement de grabFocus qu'après
@@ -215,6 +217,14 @@ PopupWindow {
                     MouseArea { id: appearancePointer; anchors.fill: parent; hoverEnabled: true; onClicked: popup.openPage("appearance") }
                 }
 
+                Rectangle {
+                    width: parent.width; height: 38; radius: 4
+                    color: rgbPointer.containsMouse ? Theme.buttonHover : Theme.buttonBackground
+                    NerdIcon { anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; text: "󰌌"; color: Theme.lavender; font.pixelSize: 18 }
+                    Text { anchors.left: parent.left; anchors.leftMargin: 42; anchors.verticalCenter: parent.verticalCenter; text: "Clavier RGB"; color: Theme.foreground; font.pixelSize: 13 }
+                    MouseArea { id: rgbPointer; anchors.fill: parent; hoverEnabled: true; onClicked: popup.openPage("RGB_KEYBOARD") }
+                }
+
                 Item {
                     width: parent.width
                     height: 30
@@ -250,6 +260,7 @@ PopupWindow {
 
             BluetoothPage {
                 id: bluetoothPage
+                onFileChooserRequested: popup.visible = false
                 adapter: popup.adapter
                 activePage: popup.visible && popup.currentPage === 2
                 onBackRequested: popup.openPage("main")
@@ -370,6 +381,11 @@ PopupWindow {
             // Append-only: les indices publics des pages précédentes restent stables.
             KeepAwakePage {
                 controller: popup.keepAwakeController
+                onBackRequested: popup.openPage("main")
+            }
+            // Append-only: existing navigation indices and controllers are intact.
+            RgbKeyboardPage {
+                activePage: popup.visible && popup.currentPage === popup.pages.RGB_KEYBOARD
                 onBackRequested: popup.openPage("main")
             }
         }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Io
 import Quickshell.Bluetooth
 import "../components"
 import "../theme"
@@ -10,6 +11,7 @@ Item {
     required property var adapter
     required property bool activePage
     signal backRequested()
+    signal fileChooserRequested()
     property var scanOwnedAdapter: null
     property string stage: "main" // main, details, forget, block
     property string selectedAddress: ""
@@ -46,7 +48,47 @@ Item {
         if (device.connected) return "Connecté";
         return device.paired ? "Appairé • déconnecté" : "Non appairé";
     }
-    function choose(device) { selectedAddress = device.address; message = ""; stage = "details"; }
+    property bool sendSupported: false
+    readonly property string sendHelper: Qt.resolvedUrl("../bin/bluetooth-send.py").toString().replace("file://", "")
+    Process {
+        id: sendProbe
+        property string address: ""
+        stdout: StdioCollector { onStreamFinished: {
+            if (sendProbe.address !== page.selectedAddress) return;
+            page.sendSupported = text.trim() === "supported";
+            if (text.trim() !== "supported" && text.trim() !== "unsupported") page.message = text.trim();
+        } }
+    }
+    Process {
+        id: sendProcess
+        stdout: StdioCollector { onStreamFinished: { if (text.trim()) page.message = text.trim(); } }
+        onExited: (code, status) => { if (code !== 0 || status !== 0) page.message = "Impossible de lancer ou terminer l’envoi Bluetooth. Vérifier Blueman et bluez-obex (sudo pacman -S blueman bluez-obex)."; }
+    }
+    // WHY: the details Loader destroys its button when the popup closes.
+    // CONTRACT: the page owns the timer/process; snapshot the destination before
+    // closing releases the keyboard grab and clears the device selection.
+    Timer {
+        id: sendLaunchTimer
+        interval: 50
+        onTriggered: sendProcess.running = true
+    }
+    function requestFileSend() {
+        if (sendProcess.running || sendLaunchTimer.running || !selectedDevice || !adapter) return;
+        message = "";
+        sendProcess.command = ["/usr/bin/python", sendHelper, "send", adapter.adapterId, selectedAddress];
+        fileChooserRequested();
+        sendLaunchTimer.start();
+    }
+    function probeSend() {
+        sendSupported = false;
+        if (sendProbe.running) sendProbe.running = false;
+        if (!selectedDevice || !adapter) return;
+        sendProbe.address = selectedAddress;
+        sendProbe.command = ["/usr/bin/python", sendHelper, "probe", adapter.adapterId, selectedAddress];
+        sendProbe.running = true;
+    }
+    onSelectedAddressChanged: probeSend()
+    function choose(device) { message = ""; selectedAddress = device.address; stage = "details"; probeSend(); }
     function back() {
         if (stage === "main") backRequested();
         else if (stage === "forget" || stage === "block") stage = "details";
@@ -157,6 +199,12 @@ Item {
                         }
                     }
                     ActionButton { label: "Oublier"; danger: true; visible: !!page.selectedDevice && page.selectedDevice.paired; onClicked: page.stage = "forget" }
+                }
+                ActionButton {
+                    label: "Envoyer un fichier…"
+                    visible: page.sendSupported
+                    enabled: !sendProcess.running && !!page.selectedDevice && !page.selectedDevice.blocked && !!page.adapter && page.adapter.enabled
+                    onClicked: page.requestFileSend()
                 }
                 Row {
                     spacing: 8
