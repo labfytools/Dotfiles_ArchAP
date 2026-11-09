@@ -150,18 +150,7 @@ gc() {
     read msg
     git commit -m "$msg"
 }
-gp() {
-    local branch target
-    branch="$(git branch --show-current)" || return 1
-    if [[ -z "$branch" ]]; then
-        print -u2 "Erreur : aucune branche Git active."
-        return 1
-    fi
-    # URL de fetch : une destination unique, même si origin déclare plusieurs pushurl.
-    target="$(git remote get-url origin)" || return 1
-    print -r -- "Push vers une seule destination : $target ($branch)"
-    git push "$target" "$branch"
-}
+alias gp='git push'
 alias gl='git log --oneline --graph --decorate'
 gpall() {
     local branch answer
