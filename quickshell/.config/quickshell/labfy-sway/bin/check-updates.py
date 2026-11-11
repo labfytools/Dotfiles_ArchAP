@@ -82,8 +82,11 @@ def packages(command, origin):
     if result.returncode:
         raise RuntimeError((result.stderr or result.stdout or f"Code {result.returncode}").strip()[:500])
     rows = []
+    # yay -Qua may append relative age [12h36m] or [2d3h]; it is not
+    # part of the available package version. Permit bounded AUR metadata only.
+    age = r"(?: \[(?:[0-9]{1,4}[a-zA-Z]{1,3}){1,8}\])?" if origin == "AUR" else ""
     for line in result.stdout.splitlines():
-        match = re.fullmatch(r"([a-zA-Z0-9@._+:-]+) (\S+) -> (\S+)", line.strip())
+        match = re.fullmatch(r"([a-zA-Z0-9@._+:-]+) (\S+) -> (\S+)" + age, line.strip())
         if not match:
             raise RuntimeError("Sortie du collecteur inattendue : " + line[:160])
         name, installed, available = match.groups()

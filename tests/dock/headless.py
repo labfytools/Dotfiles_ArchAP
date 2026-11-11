@@ -2,6 +2,7 @@
 """Private Sway only; production Dock/Menu, real Python bridge and input paths."""
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -13,7 +14,8 @@ from headless import Lab
 from ipc_proxy import IpcProxy
 
 SOURCE = REPO / 'quickshell/.config/quickshell/labfy-sway'
-ARTIFACTS = REPO / 'docs/validation/quickshell-dock-tela-polish-v2'
+ARTIFACTS = Path(os.environ.get('LABFY_DOCK_TEST_ARTIFACTS',
+                                str(REPO / 'docs/validation/quickshell-dock-tela-polish-v2')))
 NINE = ['firefox.desktop', 'kitty.desktop', 'yazi.desktop', 'nvim.desktop',
         'org.darktable.darktable.desktop', 'orca-slicer.desktop', 'org.freecad.FreeCAD.desktop',
         'org.kde.digikam.desktop', 'AppFlowy.desktop']
@@ -34,6 +36,10 @@ class DockLab(Lab):
 with DockLab() as lab:
     proxy=IpcProxy(lab.directory/'dock-ipc.sock',lab.socket)
     lab.env['SWAYSOCK']=str(lab.directory/'dock-ipc.sock')
+    # Capture helper in private HOME, bound only to the private Wayland socket.
+    capture_tool=Path(lab.env['HOME'])/'.local/libexec/labfy-wlthumbs'
+    capture_tool.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(Path.home()/'.local/libexec/labfy-wlthumbs',capture_tool)
     path = Path(lab.env['XDG_STATE_HOME']) / 'labfy-sway/applications-favorites.json'
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(dict(version=1, ids=NINE)))
@@ -80,6 +86,8 @@ ShellRoot {
   function state(): string {
    return JSON.stringify({ready:A.FavoritesService.ready, ids:A.FavoritesService.ids,
     error:A.FavoritesService.error, phase:dock.phase, revealed:dock.revealed,
+    separators:A.FavoritesService.separators,
+    dividerIds:Array.from(dock.contentItemRow.children).filter(t=>t.modelData && t.modelData.kind).map(t=>t.modelData.id),
     entries:dock.entries, theme:A.FavoritesService.iconTheme,
     menu:menu.active ? menu.item.favoriteIds : null,
     searchFocused:menu.active && menu.item.searchFocused,
@@ -87,6 +95,26 @@ ShellRoot {
     gridFocused:menu.active && menu.item.gridFocused,
     screenWidth:dock.screen.width,
     bodyY:dock.surfaceBody.y, width:dock.width, pointerX:dock.pointerX,
+    bodyX:dock.surfaceBody.x, bodyWidth:dock.surfaceBody.width,
+    sensorWidth:dock.edgeArea.width,
+    bodyMaskWidth:dock.bodyMaskRegion.width,
+    dismissMaskWidth:dock.dismissMaskRegion.width,
+    contextMaskWidth:dock.contextMaskRegion.width,
+    previewMaskWidth:dock.previewMaskRegion.width,
+    previewVisible:dock.previewVisible,
+    pendingPreviewId:dock.pendingPreviewId,
+    previewArmRunning:dock.previewArmRunning,
+    previewGeneration:dock.previewGeneration,
+    previewWindowIds:dock.previewEntry ? dock.previewEntry.windows.map(w=>w.id) : [],
+    previewCardCount:Array.from(dock.previewCardsRow.children).filter(c=>c.windowData).length,
+    previewImageCount:Object.keys(dock.previewImages).length,
+    hoveredTiles:Array.from(dock.contentItemRow.children)
+      .filter(t=>t.modelData && t.children[3] && t.children[3].containsMouse)
+      .map(t=>t.modelData.id),
+    dockPressed:dock.pressed,
+    dotCounts:Array.from(dock.contentItemRow.children)
+      .filter(t=>t.modelData && !t.modelData.kind)
+      .map(t=>({id:t.modelData.id,dots:t.dotCount})),
 
     tileWidth:dock.contentItemRow.children[0] ? dock.contentItemRow.children[0].width : 0,
     tiles:Array.from(dock.contentItemRow.children).filter(t => t.modelData).map(t => ({
@@ -94,7 +122,9 @@ ShellRoot {
       visualLeft:t.children[1].mapToItem(dock.contentItemRow.parent.parent,0,0).x,
       visualRight:t.children[1].mapToItem(dock.contentItemRow.parent.parent,46,0).x,
       iconWidth:t.children[1].width, imageStatus:t.children[1].children[0].status})),
-    context:!!dock.contextEntry});
+    context:!!dock.contextEntry,
+    contextAlpha:dock.contextCard.color.a,
+    dismissVisible:dock.contextDismissArea.visible});
   }
   function startFrames(): void {
    sweepFrames.intervals=[]; sweepFrames.origin=dock.width;
@@ -107,7 +137,20 @@ ShellRoot {
     geometryChanged:sweepFrames.geometryChanged,imageChanged:sweepFrames.imageChanged});
   }
   function edge(): void { input.mouseMove(dock.edgeArea, dock.edgeArea.width/2, 2); }
+  function edgeLeft(): void { input.mouseMove(dock.edgeArea, 2, 2); }
+  function edgeRight(): void { input.mouseMove(dock.edgeArea, dock.edgeArea.width-3, 2); }
   function body(): void { input.mouseMove(dock.surfaceBody, 35, 70); }
+  function hoverPinned(id:string): void {
+   const tile=Array.from(dock.contentItemRow.children).find(t=>t.modelData && t.modelData.id===id);
+   if(!tile) throw new Error('No tile '+id);
+   input.mouseMove(tile.children[3],tile.width/2,65);
+  }
+  function hoverPreview(): void { input.mouseMove(dock.previewPopupItem,25,30); }
+  function clickPreview(index:int): void {
+   const cards=Array.from(dock.previewCardsRow.children).filter(c=>c.windowData);
+   if(index<0 || index>=cards.length) throw new Error('No preview card');
+   input.mouseClick(cards[index],cards[index].width/2,cards[index].height/2);
+  }
   function sweep(x:real): void { input.mouseMove(dock.surfaceBody, x, 70); }
   function scrollEnd(): void {
    const v=dock.contentItemRow.parent.parent; v.contentX=Math.max(0,v.contentWidth-v.width);
@@ -116,6 +159,18 @@ ShellRoot {
   function leave(): void { input.mouseMove(dock.contentItem, 1, 1); }
   function menuToggle(id:string): void { if (!menu.active) menu.active=true; menu.item.toggleFavorite(id); }
   function dockToggle(id:string): void { A.FavoritesService.toggle(id); }
+  function addSeparatorAt(position:int): void { A.FavoritesService.addSeparator(position); }
+  function moveSeparatorTo(id:string,position:int): void { A.FavoritesService.moveSeparator(id,position); }
+  function removeSeparator(id:string): void { A.FavoritesService.removeSeparator(id); }
+  function openSeparatorMenu(): void {
+   const tile=Array.from(dock.contentItemRow.children).find(t=>t.modelData && t.modelData.kind==="separator");
+   if (!tile) throw new Error("missing separator tile");
+   input.mouseClick(tile,tile.width/2,65,Qt.RightButton);
+  }
+  function removeSeparatorFromMenu(): void {
+   const action=input.findChild(dock.contextCard,"dock-remove-separator");
+   input.mouseClick(action,action.width/2,action.height/2);
+  }
   function move(id:string, before:string): void { A.FavoritesService.move(id,before); }
   function closeMenu(): void { menu.active=false; }
   function tab(): void { input.keyClick(Qt.Key_Tab); }
@@ -126,6 +181,11 @@ ShellRoot {
   function rightClick(): void {
    input.mouseClick(dock.contentItemRow.children[0],27,65,Qt.RightButton);
   }
+  function hoverContext(): void { input.mouseMove(dock.contextCard,15,15); }
+  function clickAside(): void {
+   const area=dock.contextDismissArea;
+   input.mouseClick(area,5,Math.min(95,area.height-8));
+  }
   function dragFirstAfterSecond(): void {
    const first=dock.contentItemRow.children[0];
    input.mousePress(first,27,65,Qt.LeftButton);
@@ -133,7 +193,7 @@ ShellRoot {
    input.mouseRelease(first,125,65,Qt.LeftButton);
   }
   function activateFirst(): void { input.mouseClick(dock.contentItemRow.children[0],27,65); }
-  function context(): void { dock.openContext(dock.entries[0],dock.width/2); }
+  function context(): void { dock.openContext(dock.entries[0],dock.surfaceBody.width/2); }
   function closeContext(): void { dock.closeContext(); }
   function suppress(value:bool): void { dock.suppressed=value; }
   function focus(id:string): void { A.FavoritesService.focusWindow(id); }
@@ -159,10 +219,69 @@ ShellRoot {
     time.sleep(1.2)
     initial=wait(lambda s:s['ready'])
     assert initial['ids']==NINE and initial['phase']=='hidden', initial
+    # Regression: hidden popup areas must NOT subtract holes from the
+    # four-pixel sensor (especially at the centered dock position).
+    assert initial['sensorWidth']==initial['screenWidth'], initial
+    assert initial['previewMaskWidth']==0 and not initial['previewVisible'],initial
+    assert all(initial[key]==0 for key in
+               ('bodyMaskWidth', 'dismissMaskWidth', 'contextMaskWidth')), initial
     ARTIFACTS.mkdir(parents=True,exist_ok=True)
     def capture(name):
         subprocess.run(['grim',str(ARTIFACTS / (name+'.png'))],env=lab.env,check=True)
     capture('closed')
+    # Separator mutations must be durable and visible to the same live model.
+    call('edge'); wait(lambda s:s['revealed'])
+    call('addSeparatorAt',2)
+    state=wait(lambda s:len(s['separators'])==1 and len(s['dividerIds'])==1)
+    separator_id=state['separators'][0]['id']
+    assert state['separators'][0]['position']==2,state
+    assert state['dividerIds']==[separator_id],state
+    separator_file=Path(lab.env['XDG_STATE_HOME'])/'labfy-sway/dock-separators.json'
+    assert json.loads(separator_file.read_text())['separators'][0]['id']==separator_id
+    call('moveSeparatorTo',separator_id,3)
+    wait(lambda s:s['separators'][0]['position']==3)
+    call('openSeparatorMenu')
+    wait(lambda s:s['context'] and s['phase']=='held')
+    call('removeSeparatorFromMenu')
+    wait(lambda s:not s['separators'] and not s['dividerIds'] and not s['context'])
+    assert json.loads(separator_file.read_text())['separators']==[]
+    call('leave'); wait(lambda s:s['phase']=='hidden')
+    # Translucent menu; hover keeps it open, clicking beside closes at once;
+    # moving away allows a short grace without a visible close button.
+    call('edge'); wait(lambda s:s['revealed'])
+    call('rightClick')
+    opened=wait(lambda s:s['context'])
+    assert opened['dismissVisible'],opened
+    assert opened['dismissMaskWidth'] > 0 and opened['contextMaskWidth'] > 0, opened
+    assert abs(opened['contextAlpha'] - .85) < .01,opened
+    call('hoverContext'); time.sleep(.72)
+    assert call('state')['context'],call('state')
+    call('clickAside')
+    after_close=wait(lambda s:not s['context'])
+    assert after_close['dismissMaskWidth']==0 and after_close['contextMaskWidth']==0, after_close
+    call('edge'); wait(lambda s:s['revealed'])
+    call('rightClick'); wait(lambda s:s['context'])
+    call('leave'); wait(lambda s:not s['context'],2)
+    hidden_after_popup=wait(lambda s:s['phase']=='hidden')
+    assert all(hidden_after_popup[key]==0 for key in
+               ('bodyMaskWidth', 'dismissMaskWidth', 'contextMaskWidth')), hidden_after_popup
+    # A fresh center-edge hover must work after dismissing a popup.
+    call('edge')
+    center=wait(lambda s:s['revealed'])
+    assert center['sensorWidth']==center['screenWidth'], center
+    call('leave'); wait(lambda s:s['phase']=='hidden')
+    # Every horizontal position of the four-pixel strip must arm the same
+    # centered dock, including both physical screen corners.
+    assert initial['width']==initial['screenWidth'], initial
+    assert initial['sensorWidth']==initial['screenWidth'], initial
+    assert initial['bodyWidth']<initial['width'], initial
+    assert abs(initial['bodyX']*2 + initial['bodyWidth']-initial['width'])<1.1, initial
+    for corner in ('edgeLeft', 'edgeRight'):
+        call(corner)
+        revealed=wait(lambda s:s['revealed'])
+        assert revealed['sensorWidth']==revealed['screenWidth'], revealed
+        assert abs(revealed['bodyX']*2+revealed['bodyWidth']-revealed['width'])<1.1, revealed
+        call('leave'); wait(lambda s:s['phase']=='hidden')
     call('edge'); wait(lambda s:s['revealed']); time.sleep(.35)
     capture('open')
     resting=call('state')
@@ -264,18 +383,49 @@ ShellRoot {
     assert str(focused())==firewin
     for action in ('edge','body','leave'):
         call(action); time.sleep(.25); assert str(focused())==firewin
+    # Three real test windows must show three dots and three selectable cards.
+    extra1=lab.kitty('kitty')
+    extra2=lab.kitty('kitty')
+    grouped=wait(lambda s:any(e['id']=='kitty.desktop' and len(e['windows'])==3 for e in s['entries']))
+    dots=next(t for t in grouped['dotCounts'] if t['id']=='kitty.desktop')
+    assert dots['dots']==3,grouped
+    focus_before=focused()
+    call('edge'); wait(lambda s:s['revealed'])
+    call('hoverPinned','kitty.desktop')
+    peek=wait(lambda s:s['previewVisible'] and s['previewCardCount']==3,12)
+    assert peek['previewMaskWidth']>0 and len(peek['previewWindowIds'])==3,peek
+    assert focused()==focus_before,'Hover changed focus'
+    call('hoverPreview'); time.sleep(.8)
+    active_preview=call('state')
+    assert active_preview['previewVisible'],'Preview must stay open on hover'
+    captured=wait(lambda s:s['previewImageCount']>=1,5)
+    assert captured['previewImageCount'] <= 3,captured
+    print('PRIVATE_CAPTURED_PREVIEWS=',captured['previewImageCount'])
+    target=int(peek['previewWindowIds'][0])
+    call('clickPreview',0)
+    wait(lambda s:not s['previewVisible'])
+    for _ in range(20):
+        if focused()==target:break
+        time.sleep(.1)
+    assert focused()==target,(focused(),target)
+    call('leave'); wait(lambda s:s['phase']=='hidden')
+    cache=Path(lab.env['XDG_RUNTIME_DIR'])/'labfy-dock-window-thumbnails'
+    for _ in range(30):
+        if not cache.exists() or not list(cache.iterdir()):break
+        time.sleep(.15)
+    assert not cache.exists() or not list(cache.iterdir()),cache
     # Layer-shell surfaces cannot enter the Session V2 toplevel inventory.
     assert not any('labfy-sway-dock' in str(n.get('app_id','')) for n in lab.windows())
     lab.command('output HEADLESS-1 mode 800x600')
     resized=wait(lambda s:s['screenWidth']==800)
-    assert resized['width']<=776,resized
+    assert resized['width']==800 and resized['bodyWidth']<=776,resized
     # Magnified end icons keep their visual margin at both scroll limits.
     lab.command('output HEADLESS-1 mode 400x600')
     wait(lambda s:s['screenWidth']==400)
     call('edge'); wait(lambda s:s['revealed']); time.sleep(.3)
     call('scrollEnd'); call('sweep',325); time.sleep(.15)
     end=call('state')
-    assert end['tiles'][-1]['scale']>1 and end['tiles'][-1]['visualRight']<=end['width']-24,end
+    assert end['tiles'][-1]['scale']>1 and end['tiles'][-1]['visualRight']<=end['bodyWidth']-24,end
     call('scrollStart'); call('sweep',51); time.sleep(.15)
     start=call('state')
     assert start['tiles'][0]['scale']>1 and start['tiles'][0]['visualLeft']>=0,start
@@ -290,7 +440,8 @@ ShellRoot {
     assert wait(lambda s:s['ready'])['ids']==[]
     (ARTIFACTS/'result.json').write_text(json.dumps(dict(status='PASS',initial=initial,hoverSamples=samples,animationTiming=timing,frameSweep=frames,
         reordered=reordered['ids'],checks=['shared favorites','menu and dock mutations','durable reorder',
-        'empty restart','autohide','context hold','kitty multi-window','floating scratchpad explicit focus',
+        'empty restart','autohide','full-width left/right edge activation','centered visual dock',
+        'context hold','kitty multi-window','floating scratchpad explicit focus',
         'window close','no hover focus','real pointer drag','fixed layout transform hover', 'stable SVG readiness', 'lateral sweep 73 samples','IPC reconnect','Firefox private profile','desktop install/remove monitoring','external writer','keyboard menu navigation','resolution change','SwayFX dock blur disabled']),indent=2)+'\n')
     proxy.close()
     print('Dock headless: PASS',lab.directory)

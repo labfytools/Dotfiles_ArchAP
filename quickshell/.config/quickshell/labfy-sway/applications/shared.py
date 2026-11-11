@@ -5,6 +5,7 @@ remains backend.write_favorites, under its existing directory transaction lock.
 """
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import struct
@@ -15,6 +16,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gio, GioUnix, GLib, Gtk
 from backend import state_path, read_favorites, write_favorites, valid_id
+from dock_separators import path_for as separators_path_for, read as read_separators, write as write_separators
 
 # CONTRACT: private GtkIconTheme instance, never Gtk settings or desktop-wide
 # theme changes. GTK implements theme inheritance and absolute GIcon lookup.
@@ -105,10 +107,13 @@ def windows(tree):
         props = node.get('window_properties') or {}
         if not (node.get('app_id') or node.get('window')):
             continue
+        foreign = node.get('foreign_toplevel_identifier') or ''
+        if not isinstance(foreign, str) or re.fullmatch(r'[a-f0-9]{32}', foreign) is None:
+            foreign = ''
         result.append(dict(id=str(node['id']), title=node.get('name') or 'Fenêtre',
                            appId=node.get('app_id') or '', wmClass=props.get('class') or '',
                            instance=props.get('instance') or '', workspace=workspace,
-                           focused=bool(node.get('focused'))))
+                           foreignId=foreign, focused=bool(node.get('focused'))))
     return sorted(result, key=lambda w: int(w['id']))
 
 
@@ -135,13 +140,16 @@ def serve():
     list. File monitoring survives atomic replacement by watching the directory.
     """
     path = state_path()
+    separators_path = separators_path_for(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     apps = catalog()
     def publish(error=''):
         try:
             exists, ids = read_favorites(path)
+            separators = read_separators(separators_path)
             print(json.dumps(dict(ids=ids, exists=exists, apps=apps,
-                                  theme=ICON_THEME, error=error)), flush=True)
+                                  separators=separators, theme=ICON_THEME,
+                                  error=error)), flush=True)
         except (OSError, ValueError) as exc:
             print(json.dumps(dict(error=str(exc))), flush=True)
         return False
@@ -180,11 +188,16 @@ def serve():
                 data = json.loads(line)
                 action = data.get('action')
                 ids = data.get('ids')
-                if action not in ('add', 'remove', 'toggle', 'move', 'seed') or not isinstance(ids, list):
-                    raise ValueError('Commande de favoris invalide')
-                if action == 'seed' and (len(ids) > 4 or any(not valid_id(i) for i in ids)):
-                    raise ValueError('Favoris initiaux invalides')
-                write_favorites(path, action, ids)
+                if not isinstance(ids, list):
+                    raise ValueError('Commande invalide')
+                if action in ('dock-separator-add', 'dock-separator-remove', 'dock-separator-move'):
+                    write_separators(separators_path, action.removeprefix('dock-separator-'), ids)
+                elif action in ('add', 'remove', 'toggle', 'move', 'seed'):
+                    if action == 'seed' and (len(ids) > 4 or any(not valid_id(i) for i in ids)):
+                        raise ValueError('Favoris initiaux invalides')
+                    write_favorites(path, action, ids)
+                else:
+                    raise ValueError('Commande invalide')
                 publish()
             except (OSError, ValueError, TypeError) as exc:
                 publish(str(exc))

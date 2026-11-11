@@ -16,6 +16,7 @@ REQUEST = {"op": "bootstrap-eligibility"}
 MAP = {"op": "map-window", "uuid": "11111111-1111-4111-8111-111111111111", "runtime_token": "a" * 32}
 CLASSIFY = {"op": "classify-window", "runtime_token": MAP["runtime_token"]}
 WEBAPP = "firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded"
+IMMICH_WEBAPP = "firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50"
 
 
 def surface(app_id="firefox", con_id=42):
@@ -285,9 +286,9 @@ class BootstrapTests(unittest.TestCase):
 
     def test_classify_exact_catalogue_and_no_uuid_publication(self):
         self.assertEqual(APP_IDS, {"firefox", "org.mozilla.firefox"})
-        self.assertEqual(WEBAPP_IDS, {WEBAPP})
+        self.assertEqual(WEBAPP_IDS, {WEBAPP, IMMICH_WEBAPP})
         for app_id, kind in (("firefox", "browser"), ("org.mozilla.firefox", "browser"),
-                             (WEBAPP, "managed-webapp")):
+                             (WEBAPP, "managed-webapp"), (IMMICH_WEBAPP, "managed-webapp")):
             with self.subTest(app_id=app_id):
                 code, answers = self.wire(frame(CLASSIFY), serve=True, nodes=[surface(app_id)])
                 self.assertEqual(code, 0)
@@ -358,12 +359,14 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, "WINDOW_CLASS_UNSUPPORTED")
 
     def test_classify_does_not_extend_map_to_webapp(self):
-        code, answers = self.wire(frame(CLASSIFY) + frame(MAP), serve=True, nodes=[surface(WEBAPP)])
-        self.assertEqual(code, 0)
-        self.assertEqual(answers, [{"result": "OK", "kind": "managed-webapp",
-                                   "runtime_token": CLASSIFY["runtime_token"], "con_id": 42},
-                                  {"result": "CORRELATION_TIMEOUT"}])
-        self.assert_no_observations()
+        for webapp in (WEBAPP, IMMICH_WEBAPP):
+            with self.subTest(webapp=webapp):
+                code, answers = self.wire(frame(CLASSIFY) + frame(MAP), serve=True, nodes=[surface(webapp)])
+                self.assertEqual(code, 0)
+                self.assertEqual(answers, [{"result": "OK", "kind": "managed-webapp",
+                                           "runtime_token": CLASSIFY["runtime_token"], "con_id": 42},
+                                          {"result": "CORRELATION_TIMEOUT"}])
+                self.assert_no_observations()
 
     def test_classify_interleaved_browser_map_and_bootstrap_remain_compatible(self):
         code, answers = self.wire(frame(REQUEST) + frame(CLASSIFY) + frame(MAP) + frame(CLASSIFY), serve=True)

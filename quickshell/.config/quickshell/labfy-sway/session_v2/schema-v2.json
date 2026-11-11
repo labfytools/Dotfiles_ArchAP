@@ -482,11 +482,21 @@
             },
             "children": {
               "type": "array",
-              "minItems": 2,
+              "minItems": 1,
               "maxItems": 32,
               "items": {
                 "$ref": "#/$defs/tree"
               }
+            }
+          },
+          "if": {
+            "properties": {
+              "children": { "maxItems": 1 }
+            }
+          },
+          "then": {
+            "properties": {
+              "layout": { "enum": ["tabbed", "stacked"] }
             }
           }
         }

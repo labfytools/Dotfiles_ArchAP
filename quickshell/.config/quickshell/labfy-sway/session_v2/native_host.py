@@ -21,9 +21,11 @@ from .applications import DEFAULT
 
 EXTENSION_ID = "session-v2@labfy.org"
 APP_IDS = {identity for spec in DEFAULT if spec.application_id == "firefox" for identity in spec.app_ids}
+# Seules les webapps explicitement recensées et gérées par l’autostart Sway
+# sont exclues du provider UUID Firefox. Aucune découverte dynamique ici.
 WEBAPP_IDS = {identity for spec in DEFAULT
-              if spec.application_id == "whatsapp-web" and spec.strategy == "managed-autostart"
-              and spec.managed_by == "sway-autostart" for identity in spec.app_ids}
+              if spec.strategy == "managed-autostart" and spec.managed_by == "sway-autostart"
+              for identity in spec.app_ids if identity.startswith("firefox.webapp-")}
 
 
 def validate(message):

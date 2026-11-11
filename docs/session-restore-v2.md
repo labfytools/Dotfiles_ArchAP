@@ -66,6 +66,12 @@ modifié, focus pending/conflict et toute fenêtre pending. Executor lui fournit
 le contrôle structurel sur sa dernière observation avant publication. Une
 normalisation de parent unaire par Sway reste permise si placement, ordre et
 layout canonique sont conservés ; les ratios exacts restent hors contrat.
+Depuis le correctif du 11 novembre 2026, un conteneur `tabbed` ou `stacked`
+à enfant unique est conservé dans le checkpoint V2, avec son chemin et son
+layout. Seuls les parents unaires `splith`, `splitv` ou `none` sont aplatis.
+Le schéma V1 reste inchangé. La capture et la reconstruction ont été validées
+sur SwayFX headless isolé (`tests/session_v2/test_unary_layout.py` et
+`tests/session_v2/unary_layout_runtime.py`), sans déconnexion utilisateur.
 Ces contrôles ne sont **pas un CAS** : ils ne garantissent rien contre une
 modification postérieure à la dernière observation du compositeur.
 
@@ -82,6 +88,38 @@ suppression et restauration V2. L’aperçu ne modifie aucune fenêtre. Le backe
 fournit aussi `show` pour inspecter une session. Les noms sont limités à 64
 caractères ASCII alphanumériques, tirets et underscores, commençant par un
 caractère alphanumérique. Ne pas publier les sessions ou rapports runtime.
+
+## Incident du 11 novembre 2026 — fenêtre ChatGPT recréée au login
+
+La transaction `a88c486662da487aae136dce01f6ea92` a reconstruit 7/7
+slots et vérifié la structure finale, avant de refuser la vérification du
+focus : `RECOVERY_FOCUS_MISMATCH`, `final-observation` (con_id 17 attendu,
+con_id 32 observé). Les frontières antérieures au retour final du provider
+étaient conformes. Le premier conteneur XWayland ChatGPT 17 a ensuite disparu ;
+le conteneur 32 correspond au même `x11-class:Chatgpt` et au même PID 753170.
+Le processus ChatGPT venait de démarrer pendant le prewarm (vers 07:41:22),
+et la tentative s'est terminée vers 07:41:29. Cette chronologie indique un
+remapping de fenêtre concurrent, sans prouver la cause interne du remapping.
+Le journal a refusé de récupérer six emplacements sur structure changée et
+reste `RECOVERY_REQUIRED` : aucun retour arrière global n'est prétendu.
+
+Le patch V2 attend désormais **avant tout Recovery/Attempt** au moins 12 secondes
+à partir du lancement d'une nouvelle instance ChatGPT XWayland, et deux
+secondes de stabilité de son con_id/PID/starttime/placement. Les fenêtres déjà
+présentes ne sont pas concernées ; elles sont toujours contrôlées strictement.
+Si le délai de phase0 expire, le moteur diffère la restauration sans lancer de
+transaction. Aucun relâchement des contrôles après admission, aucun nouveau
+`focus` automatique et aucun remplacement d'identité dans Recovery.
+
+Les tests `test_startup_x11_stability.py` couvrent le changement 17 → 32,
+l'identité des fenêtres préexistantes, le client étranger et le timeout ;
+`test_xwayland.py` vérifie l'appel du gate depuis le prewarm réel du moteur.
+Résultats : 157 tests Python, reconstruction headless `tabbed`/`stacked` et
+scénario XWayland privé PASS. La reprise de session physique n'a pas été
+réexécutée. Les trois journaux et le checkpoint ont été archivés dans
+`~/.local/state/labfy-sway/session-v2-diagnostics/20261111-0741-chatgpt-window-remap`
+avec empreintes vérifiées. La transaction active exige un traitement séparé
+avec approbation : ne pas l'effacer ni retenter `apply-last` directement.
 
 ## Installation reproductible
 

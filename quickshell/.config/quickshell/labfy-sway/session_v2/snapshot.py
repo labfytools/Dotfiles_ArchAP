@@ -69,9 +69,12 @@ def capture(sway, catalog, provider, reason="manual"):
         if n.get("app_id") or n.get("window"): return leaf(n, workspace, path, False)
         children = n.get("nodes", [])
         if not children: return None
-        if len(children) == 1:
-            require(n["layout"] in ("splith", "splitv", "none"), "SINGLE_CHILD_LAYOUT_UNSUPPORTED")
+        # Sway peut conserver un onglet ou une pile avec une seule fenêtre.
+        # Ne normaliser que les parents splith/splitv/none : les conteneurs
+        # tabbed/stacked unaires portent un choix de présentation à restaurer.
+        if len(children) == 1 and n["layout"] in ("splith", "splitv", "none"):
             return convert(children[0], workspace, path)
+        require(n["layout"] in ("splith", "splitv", "tabbed", "stacked"), "TREE_LAYOUT")
         return {"layout": n["layout"], "children": [convert(c, workspace, path + (i,)) for i, c in enumerate(children)]}
     outputs = []
     for output in tree.get("nodes", []):

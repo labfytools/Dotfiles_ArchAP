@@ -154,6 +154,39 @@ class Executor:
             except OSError: raise Failure("TARGET_IDENTITY_CHANGED") from None
         return states
 
+    def _settle_fresh_chatgpt(self, baseline, spec, session, allowed, timeout,
+                              minimum_age=12.0, stable_for=2.0):
+        """Wait for a newly launched ChatGPT XWayland window to stop remapping.
+
+        This is PRE-TRANSACTION only. A freshly spawned ChatGPT process may
+        replace its first X11 window/con_id several seconds after mapping.
+        Never pin that first window as a durable Recovery origin. Pre-existing
+        clients remain immutable; only the newly launched application's
+        pre-admission identity may change. There is no retry after admission.
+        """
+        started = time.monotonic()
+        deadline = started + timeout
+        last, stable_since = None, None
+        while True:
+            now = time.monotonic()
+            require(now < deadline, "APPLICATION_WINDOWS_INCOMPLETE")
+            require(self.sway.session == session, "SWAY_SESSION_CHANGED")
+            current = self._observe_prepared()
+            self._check_prepared(baseline, current, exact=False)
+            require(all(s["app_id"] in allowed for i, s in current.items() if i not in baseline),
+                    "APPLICATION_MEMBERSHIP_CHANGED")
+            candidates = [s for s in current.values() if s["app_id"] in spec.app_ids]
+            signature = None
+            if len(candidates) == 1:
+                s = candidates[0]
+                signature = (s["con_id"], s["pid"], s["starttime"], s["app_id"], placement(s))
+            if signature != last:
+                last, stable_since = signature, now if signature is not None else None
+            if (signature is not None and now - started >= minimum_age
+                    and stable_since is not None and now - stable_since >= stable_for):
+                return current
+            time.sleep(.05)
+
     def _prewarm(self, data, timeout):
         """PHASE 0 sous le verrou V2, avant Recovery/Attempt et tout IPC mutant.
 
@@ -189,8 +222,14 @@ class Executor:
             missing = launch_count(app, count) if count == 0 else 0
             if missing:
                 require(time.monotonic() < end, "APPLICATION_WINDOWS_INCOMPLETE")
-                try: launch(spec, missing, self.env)
+                try: children = launch(spec, missing, self.env)
                 except OSError: raise Failure("APPLICATION_LAUNCH_FAILED") from None
+                # ChatGPT's freshly launched X11 shell may replace its first
+                # window ~7s after startup. Wait before observing a durable
+                # origin; an existing window never gets this exception.
+                if spec.application_id == "chatgpt" and children:
+                    observed = self._settle_fresh_chatgpt(observed, spec, session,
+                                    all_ids, max(.001, end - time.monotonic()))
         while True:
             require(self.sway.session == session, "SWAY_SESSION_CHANGED")
             current = self._observe_prepared()

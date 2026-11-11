@@ -16,6 +16,7 @@ from session_v2.snapshot import capture
 
 KEY = X11_CLASS_PREFIX + "Chatgpt"
 WEBAPP = "firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded"
+IMMICH_WEBAPP = "firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50"
 
 
 class Sway(BaseSway):
@@ -114,9 +115,18 @@ class XwaylandTests(unittest.TestCase):
             engine = Executor(sway, Catalog(), None, Path(temporary), "/forbidden", process_identity=lambda pid: 123)
             calls = []
             def launch(spec, count, env):
-                calls.append((spec.application_id, count)); sway.x11(9); return []
-            with patch("session_v2.executor.launch", side_effect=launch), patch.object(engine, "_apply", return_value="admitted"):
+                calls.append((spec.application_id, count)); sway.x11(9); return [object()]
+            def settled(baseline, spec, session, allowed, timeout):
+                self.assertEqual(spec.application_id, "chatgpt")
+                self.assertEqual(session, sway.session)
+                self.assertNotIn(9, baseline)
+                self.assertIn(KEY, allowed)
+                return engine._observe_prepared()
+            with patch("session_v2.executor.launch", side_effect=launch), \
+                 patch.object(engine, "_settle_fresh_chatgpt", side_effect=settled) as gate, \
+                 patch.object(engine, "_apply", return_value="admitted"):
                 self.assertEqual(engine.apply(data, True), "admitted")
+                gate.assert_called_once()
             self.assertEqual(calls, [("chatgpt", 1)])
             self.assertFalse((Path(temporary) / JOURNAL).exists())
         self.assertEqual(sway.commands, [])
@@ -155,18 +165,25 @@ class XwaylandTests(unittest.TestCase):
             self.assertEqual((runtime / JOURNAL).read_bytes(), before)
             self.assertEqual(sway.commands, [])
 
-    def test_whatsapp_autostart_owns_launch_and_unknown_webapp_is_refused(self):
-        catalog = Catalog(); spec = catalog.classify({"app_id": WEBAPP})
-        self.assertEqual((spec.strategy, spec.managed_by, spec.argv), ("managed-autostart", "sway-autostart", ()))
-        app = dict(application_id=spec.application_id, desktop_entry=spec.desktop_entry,
-                   strategy=spec.strategy, expected_windows=1, managed_by=spec.managed_by, identity_provider=None)
-        self.assertEqual(catalog.validate(app), spec)
-        self.assertEqual(launch_count(app, 0), 0)
-        self.assertEqual(launch_count(app, 1), 0)
-        with self.assertRaisesRegex(Failure, "UNEXPECTED_EXTRA_WINDOW"):
-            launch_count(app, 2)
-        with self.assertRaisesRegex(Failure, "APPLICATION_UNSUPPORTED"):
-            catalog.classify({"app_id": "firefox.webapp-unregistered"})
+    def test_explicit_webapps_autostart_owns_launch_and_unknown_is_refused(self):
+        catalog = Catalog()
+        for identity, expected_id in ((WEBAPP, "whatsapp-web"), (IMMICH_WEBAPP, "immich-web")):
+            with self.subTest(identity=identity):
+                spec = catalog.classify({"app_id": identity})
+                self.assertEqual(spec.application_id, expected_id)
+                self.assertEqual((spec.strategy, spec.managed_by, spec.argv),
+                                 ("managed-autostart", "sway-autostart", ()))
+                app = dict(application_id=spec.application_id, desktop_entry=spec.desktop_entry,
+                           strategy=spec.strategy, expected_windows=1,
+                           managed_by=spec.managed_by, identity_provider=None)
+                self.assertEqual(catalog.validate(app), spec)
+                self.assertEqual(launch_count(app, 0), 0)
+                self.assertEqual(launch_count(app, 1), 0)
+                with self.assertRaisesRegex(Failure, "UNEXPECTED_EXTRA_WINDOW"):
+                    launch_count(app, 2)
+        for identity in ("firefox.webapp-unregistered", IMMICH_WEBAPP + "-suffix"):
+            with self.assertRaisesRegex(Failure, "APPLICATION_UNSUPPORTED"):
+                catalog.classify({"app_id": identity})
 
     def test_swap_accepts_exact_x11_target_and_rejects_identity_changes(self):
         for change in (None, "class", "pid"):

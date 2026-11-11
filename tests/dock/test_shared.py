@@ -92,12 +92,16 @@ class Icons(unittest.TestCase):
 class Sway(unittest.TestCase):
     def test_wayland_xwayland_scratchpad_and_explicit_focus(self):
         tree=dict(nodes=[dict(type='workspace',name='__i3_scratch',floating_nodes=[
-            dict(id=42,window=3,window_properties={'class':'Fixture','instance':'fixture'},name='Arbitrary'),
-            dict(id=43,app_id='kitty',name='Completely different title')])])
+            dict(id=42,window=3,window_properties={'class':'Fixture','instance':'fixture'},
+                 foreign_toplevel_identifier='a'*32,name='Arbitrary'),
+            dict(id=43,app_id='kitty',foreign_toplevel_identifier='../invalid',
+                 name='Completely different title')])])
         windows=shared.windows(tree)
         self.assertEqual(windows[0]['wmClass'],'Fixture')
         self.assertEqual(windows[1]['appId'],'kitty')
         self.assertEqual(windows[0]['workspace'],'__i3_scratch')
+        self.assertEqual(windows[0]['foreignId'],'a'*32)
+        self.assertEqual(windows[1]['foreignId'],'')
         with patch.object(shared,'sway_request',side_effect=[tree,[{'success':True}],[{'success':True}]]) as ipc:
             shared.focus('42')
             self.assertEqual([c.args for c in ipc.call_args_list],[(4,''),(0,'[con_id=42] scratchpad show'),

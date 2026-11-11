@@ -12,6 +12,7 @@ Singleton {
     property var ids: []
     property var apps: []
     property var windows: []
+    property var separators: []
     property bool ready: false
     property bool available: false
     property string error: ""
@@ -24,6 +25,9 @@ Singleton {
     }
     function toggle(id) { mutate("toggle", [id]); }
     function move(id, before) { mutate("move", [id, before]); }
+    function addSeparator(position) { mutate("dock-separator-add", [position]); }
+    function removeSeparator(id) { mutate("dock-separator-remove", [id]); }
+    function moveSeparator(id, position) { mutate("dock-separator-move", [id, position]); }
     function launch(id) { act("launch", id); }
     function focusWindow(id) { act("focus", id); }
     function act(kind, id) {
@@ -45,6 +49,7 @@ Singleton {
                     service.error = state.error || "";
                     if (!state.ids) return;
                     service.ids = state.ids;
+                    service.separators = state.separators || [];
                     service.apps = Model.catalog(state.apps);
                     service.iconTheme = state.theme;
                     service.ready = true;

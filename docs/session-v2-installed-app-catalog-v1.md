@@ -111,6 +111,28 @@ lancements sont interceptés. Aucun test n'ouvre les applications de l'utilisate
 Le catalogue explicitement injecté par les tests est hermétique et ne découvre
 pas les applications de la machine.
 
+## Correctif ciblé Immich — 11 novembre 2026
+
+Après la correction des parents `tabbed`/`stacked` unaires, la déconnexion a
+renvoyé `APPLICATION_UNSUPPORTED`. L'inventaire Sway et GIO a identifié la
+webapp Immich `firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50`,
+présente dans le lanceur utilisateur et démarrée par l'autostart Sway sur
+le workspace 8. Le catalogue excluait cette webapp avec `provider-required`.
+
+La politique explicite `immich-web` adopte `managed-autostart` et
+`managed_by=sway-autostart`, comme WhatsApp. Le host natif Firefox reconnaît
+uniquement les webapps explicites gérées par Sway, jamais tout le préfixe
+`firefox.webapp-*` ; il ne leur attribue pas d'UUID de fenêtre navigateur.
+Les webapps inconnues restent refusées.
+
+Validation : 153 tests Python PASS, reconstruction SwayFX/XWayland privé avec
+ChatGPT, WhatsApp et Immich PASS ; les agencements unaires `tabbed` et `stacked`
+restent PASS. Le host Firefox a été reconnecté sans fermer le navigateur.
+Une capture réelle sur le bureau utilisateur (`capture --execute`, sans
+sauvegarde ni déconnexion) a réussi : six applications, sept fenêtres ;
+le checkpoint automatique antérieur est inchangé. La déconnexion et la
+restauration physiques restent à valider par l'utilisateur.
+
 ## Références
 
 - [Desktop Entry Specification — recognized keys](https://specifications.freedesktop.org/desktop-entry/latest/recognized-keys.html)

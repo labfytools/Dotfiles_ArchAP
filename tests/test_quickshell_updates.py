@@ -42,6 +42,26 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(rows[0]["origin"], "Arch")
         self.assertEqual(self.collect(["yay", "-Qua"], 0, "pkg-git 1 -> 2\n")[0]["origin"], "AUR")
 
+    def test_aur_relative_age_suffix_keeps_versions_and_count(self):
+        output = ("proton-pass-bin 1.43.0-1 -> 1.43.1-1 [12h36m]\n"
+                  "example-bin 2:2.0-1 -> 2:2.1-1 [2d3h]\n"
+                  "plain-git 1 -> 2\n")
+        rows = self.collect(["yay", "-Qua"], 0, output)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["name"], "proton-pass-bin")
+        self.assertEqual(rows[0]["available"], "1.43.1-1")
+        self.assertEqual(rows[1]["available"], "2:2.1-1")
+        self.assertEqual([row["origin"] for row in rows], ["AUR"] * 3)
+
+    def test_age_suffix_is_bounded_and_aur_only(self):
+        for output in ("pkg 1 -> 2 [something went wrong]\n",
+                       "pkg 1 -> 2 [12h36m] extra\n",
+                       "pkg 1 -> 2 [123456789h]\n" * 100):
+            with self.subTest(output=output[:40]), self.assertRaises(RuntimeError):
+                self.collect(["yay", "-Qua"], 0, output)
+        with self.assertRaises(RuntimeError):
+            self.collect(["checkupdates"], 0, "pkg 1 -> 2 [12h36m]\n")
+
     def test_errors_not_zero(self):
         for command, code, stdout, stderr in ((["checkupdates"], 1, "", ""), (["checkupdates"], 2, "", "failure"),
                                              (["yay"], 1, "", "network"), (["yay"], 0, "bad output", "")):

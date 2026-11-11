@@ -12,6 +12,7 @@ from session_v2.snapshot import capture
 from session_v2.storage import private_dir
 
 WEBAPP = "firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded"
+IMMICH_WEBAPP = "firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50"
 
 
 class Lab(BaseLab):
@@ -63,12 +64,13 @@ def main():
         lab.command('workspace "TEST_ONLY_TARGET"')
         chat, chat_process = lab.x11("Chatgpt")
         whatsapp = native.create(WEBAPP)
+        immich = native.create(IMMICH_WEBAPP)
         time.sleep(.2)
         data = capture(sway, Catalog(), None)
-        assert {a["application_id"] for a in data["applications"]} == {"chatgpt", "whatsapp-web"}
+        assert {a["application_id"] for a in data["applications"]} == {"chatgpt", "whatsapp-web", "immich-web"}
         assert all(s["identity_requirement"] == "exact" for s in data["window_slots"])
         (lab.directory / "snapshot.json").write_text(json.dumps(data, indent=2))
-        for node in (chat, whatsapp):
+        for node in (chat, whatsapp, immich):
             lab.command(f'[con_id={node["id"]}] move container to workspace "TEST_ONLY_SOURCE"')
         lab.command('workspace "TEST_ONLY_FOREIGN"')
         foreign, foreign_process = lab.x11("TEST_ONLY_Unknown")
@@ -91,7 +93,7 @@ def main():
         assert result["final_tree_verified"] and result["final_focus_verified"]
         tree = sway.tree()
         assert {n["id"] for n in sway.windows()} == before_ids
-        assert location(tree, chat["id"])[0] == location(tree, whatsapp["id"])[0] == "TEST_ONLY_TARGET"
+        assert all(location(tree, n["id"])[0] == "TEST_ONLY_TARGET" for n in (chat, whatsapp, immich))
         live_foreign = next(n for n in walk(tree) if n["id"] == foreign["id"])
         assert observe(tree, live_foreign, process_start) == foreign_before
         assert live_foreign["focused"]

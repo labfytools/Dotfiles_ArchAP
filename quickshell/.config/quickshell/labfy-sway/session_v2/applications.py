@@ -36,6 +36,8 @@ DEFAULT = (
     Spec("proton-pass", "proton-pass.desktop", ("proton-pass",), "single-window", ("/usr/bin/proton-pass",)),
     Spec("whatsapp-web", "firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded.desktop",
          ("firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded",), "managed-autostart", (), managed_by="sway-autostart"),
+    Spec("immich-web", "firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50.desktop",
+         ("firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50",), "managed-autostart", (), managed_by="sway-autostart"),
 )
 
 # Shared interpreters/launchers provide no application identity.

@@ -18,11 +18,13 @@ exec python3 ~/.config/sway/scripts/inactive-windows-transparency.py --opacity $
 
 assign [app_id="limusic-app"] workspace 10
 assign [app_id="firefox.webapp-fcd72ebe-94c5-4209-b3f6-bbaa7784cded"] workspace 9
+assign [app_id="firefox.webapp-40f22022-70af-4784-81ee-100e6a56dc50"] workspace 8
 
 # =================================================
 # Lancement des applications
 # =================================================
 
 exec "/usr/lib/firefox/firefox" "-taskbar-tab" "fcd72ebe-94c5-4209-b3f6-bbaa7784cded" "-new-window" "https://web.whatsapp.com/" "-container" "0"
+exec "/usr/lib/firefox/firefox" "-taskbar-tab" "40f22022-70af-4784-81ee-100e6a56dc50" "-new-window" "https://pic.labfytools.com/" "-container" "0"
 exec limusic-app
 exec autotiling

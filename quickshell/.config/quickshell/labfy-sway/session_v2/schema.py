@@ -115,7 +115,9 @@ def validate(data):
             fields(node, "layout children")
             require(type(node["layout"]) is str and node["layout"] in LAYOUTS, "TREE_LAYOUT")
             array(node["children"], 32)
-            require(len(node["children"]) >= 2 and all(c is not None for c in node["children"]), "TREE_ARITY")
+            count = len(node["children"])
+            unary_group = (data["version"] == 2 and count == 1 and node["layout"] in ("tabbed", "stacked"))
+            require((count >= 2 or unary_group) and all(c is not None for c in node["children"]), "TREE_ARITY")
             for i, c in enumerate(node["children"]): tree(c, workspace, path + (i,))
     for w in data["workspaces"]:
         fields(w, "workspace output root")
